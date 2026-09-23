@@ -695,7 +695,8 @@ export function useGestor() {
       (historial || []).forEach(p => {
         if (!p) return;
         const vFinal = Number((safeNum(p.venta) - (safeNum(p.venta) * safeNum(p.descuento) / 100)).toFixed(2));
-        if (p.fecha && p.fecha >= inicioMes) { 
+                const fechaVentas = (safeNum(p.venta) > 0 && p.fecha_venta) ? p.fecha_venta : p.fecha;
+        if (fechaVentas && fechaVentas >= inicioMes) {  
           ventasMes += vFinal;
           gastosMes += (safeNum(p.costo_lunas_int) + safeNum(p.costo_armazon_int) + 
                        safeNum(p.costo_accesorio_int) + safeNum(p.costo_tratamientos_int) + 
