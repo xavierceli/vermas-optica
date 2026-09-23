@@ -248,21 +248,28 @@ export function useGestor() {
       let datosAGuardar = { ...nuevoPrecio, costo_laboratorio: Number(safeNum(nuevoPrecio.costo_laboratorio).toFixed(2)), precio_sugerido: Number(safeNum(nuevoPrecio.precio_sugerido).toFixed(2)) };
       
       if (editandoPrecioId) {
-        await supabase.from('lista_precios').update(datosAGuardar).eq('id', editandoPrecioId);
+        const { error } = await supabase.from('lista_precios').update(datosAGuardar).eq('id', editandoPrecioId);
+        if (error) throw new Error(error.message);
         mostrarToast("Tarifa actualizada.", "success");
       } else {
-        await supabase.from('lista_precios').insert([datosAGuardar]);
+        const { error } = await supabase.from('lista_precios').insert([datosAGuardar]);
+        if (error) throw new Error(error.message);
         mostrarToast("Tarifa registrada.", "success");
       }
       setNuevoPrecio(precioInicial); setEditandoPrecioId(null); await obtenerDatos();
-    } catch(err) { mostrarToast("Error al guardar.", "error"); }
+    } catch(err) { mostrarToast("Error al guardar: " + err.message, "error"); }
   };
 
   const cargarParaEditarPrecio = (item) => { setNuevoPrecio({ ...item }); setEditandoPrecioId(item.id); window.scrollTo({ top: 0, behavior: 'smooth' }); };
   const eliminarPrecio = (id) => {
     solicitarConfirmacion("¿Seguro que deseas eliminar?", async () => {
-      await supabase.from('lista_precios').delete().eq('id', id);
-      mostrarToast("Eliminado.", "success"); await obtenerDatos();
+      try {
+        const { error } = await supabase.from('lista_precios').delete().eq('id', id);
+        if (error) throw new Error(error.message);
+        mostrarToast("Eliminado.", "success"); await obtenerDatos();
+      } catch (err) {
+        mostrarToast("Error al eliminar: " + err.message, "error");
+      }
     });
   };
 
@@ -279,14 +286,18 @@ export function useGestor() {
       Object.keys(datosAGuardar).forEach(key => { if (datosAGuardar[key] === '') datosAGuardar[key] = null; });
 
       if (editandoInvId) {
-        await supabase.from('inventario').update(datosAGuardar).eq('id', editandoInvId);
+        const { error } = await supabase.from('inventario').update(datosAGuardar).eq('id', editandoInvId);
+        if (error) throw new Error(error.message);
         mostrarToast("Inventario actualizado.", "success");
       } else {
         delete datosAGuardar.id;
-        await supabase.from('inventario').insert([datosAGuardar]);
+        const { error } = await supabase.from('inventario').insert([datosAGuardar]);
+        if (error) throw new Error(error.message);
         mostrarToast("Producto agregado.", "success");
       }
-      setNuevoItemInv(invInicial); setEditandoInvId(null); await obtenerDatos();
+      setNuevoItemInv(invInicial); setEditandoInvId(null);
+      setImagenSeleccionada(null);
+      await obtenerDatos();
     } catch(e) { 
       mostrarToast("Error: " + e.message, "error"); 
     } finally { setCargandoImagen(false); }
@@ -300,8 +311,13 @@ export function useGestor() {
   const cancelarEdicionInventario = () => { setNuevoItemInv(invInicial); setEditandoInvId(null); setImagenSeleccionada(null); };
   const eliminarItemInventario = (id) => {
     solicitarConfirmacion("¿Eliminar ítem?", async () => {
-      await supabase.from('inventario').delete().eq('id', id);
-      mostrarToast("Ítem eliminado.", "success"); await obtenerDatos();
+      try {
+        const { error } = await supabase.from('inventario').delete().eq('id', id);
+        if (error) throw new Error(error.message);
+        mostrarToast("Ítem eliminado.", "success"); await obtenerDatos();
+      } catch (err) {
+        mostrarToast("Error al eliminar: " + err.message, "error");
+      }
     });
   };
 
@@ -342,27 +358,32 @@ export function useGestor() {
 
       if (!modoOfflineForzado) {
         try {
-          const guardarConTimeout = async () => {
+                    const guardarConTimeout = async () => {
             let pac_id = paciente.paciente_id;
             if (pac_id) {
-              await supabase.from('pacientes_perfil').update(perfilData).eq('id', pac_id);
+              const { error: errUpd } = await supabase.from('pacientes_perfil').update(perfilData).eq('id', pac_id);
+              if (errUpd) throw new Error(errUpd.message);
             } else {
-              const { data: existe } = await supabase.from('pacientes_perfil').select('id').eq('cedula', paciente.cedula).maybeSingle();
+              const { data: existe, error: errSel } = await supabase.from('pacientes_perfil').select('id').eq('cedula', paciente.cedula).maybeSingle();
+              if (errSel) throw new Error(errSel.message);
               if (existe) { 
                 pac_id = existe.id; 
-                await supabase.from('pacientes_perfil').update(perfilData).eq('id', pac_id); 
+                const { error: errUpd } = await supabase.from('pacientes_perfil').update(perfilData).eq('id', pac_id);
+                if (errUpd) throw new Error(errUpd.message);
               } else { 
                 const { data: nuevo, error: errNuevo } = await supabase.from('pacientes_perfil').insert([perfilData]).select().single(); 
-                if (errNuevo) throw errNuevo;
+                if (errNuevo) throw new Error(errNuevo.message);
                 pac_id = nuevo.id; 
               }
             }
 
             clinicaData.paciente_id = pac_id;
             if (editandoId) {
-              await supabase.from('consultas_clinicas').update(clinicaData).eq('id', editandoId);
+              const { error: errCon } = await supabase.from('consultas_clinicas').update(clinicaData).eq('id', editandoId);
+              if (errCon) throw new Error(errCon.message);
             } else {
-              await supabase.from('consultas_clinicas').insert([clinicaData]);
+              const { error: errCon } = await supabase.from('consultas_clinicas').insert([clinicaData]);
+              if (errCon) throw new Error(errCon.message);
             }
           };
 
@@ -613,12 +634,20 @@ export function useGestor() {
 
   const cancelarPedido = (item) => {
     solicitarConfirmacion("¿Cancelar venta?", async () => {
-      if (item.pedido_id) {
-        if (navigator.onLine) await supabase.from('pedidos_ventas').delete().eq('id', item.pedido_id);
-        else await encolarOperacion('pedidos_ventas', 'DELETE', { id: item.pedido_id });
+      try {
+        if (item.pedido_id) {
+          if (navigator.onLine) {
+            const { error } = await supabase.from('pedidos_ventas').delete().eq('id', item.pedido_id);
+            if (error) throw new Error(error.message);
+          } else {
+            await encolarOperacion('pedidos_ventas', 'DELETE', { id: item.pedido_id });
+          }
+        }
+        setHistorial(prev => prev.map(p => p.id === item.id ? { ...p, pedido_id: null, venta: '', abono: '', estado: 'Ninguno' } : p));
+        mostrarToast("Pedido cancelado.", "success");
+      } catch (err) {
+        mostrarToast("Error al cancelar: " + err.message, "error");
       }
-      setHistorial(prev => prev.map(p => p.id === item.id ? { ...p, pedido_id: null, venta: '', abono: '', estado: 'Ninguno' } : p));
-      mostrarToast("Pedido cancelado.", "success"); 
     });
   };
 
