@@ -456,7 +456,7 @@ export function useGestor() {
     await obtenerDatos();
   };
 
-  const borrarHistoriaClinica = (item) => {
+  const borrarHistoriaClinica = (item, alEliminarLocal) => {
     // Guarda de seguridad: no permitir borrar consultas que tienen una venta asociada
     if (item.pedido_id) {
       return mostrarToast("Esta consulta tiene una VENTA asociada. Cancélala primero en la sección Pedidos y luego podrás borrar la consulta.", "warning");
@@ -478,6 +478,7 @@ export function useGestor() {
           await encolarOperacion('consultas_clinicas', 'DELETE', { id: item.id });
         }
         mostrarToast("Eliminado con éxito.", "success");
+        if (alEliminarLocal) alEliminarLocal();
       } catch (err) {
         mostrarToast("Error al eliminar: " + err.message, "error");
         await obtenerDatos();

@@ -200,10 +200,7 @@ export default function Historial({
                           
                           <td className="p-2 border-l text-center bg-red-50/20">
                             <button 
-                              onClick={async () => {
-                                borrarHistoriaClinica(reg);
-                                setRegistrosPaciente(prev => prev.filter(r => r.id !== reg.id));
-                              }} 
+                              onClick={() => borrarHistoriaClinica(reg, () => setRegistrosPaciente(prev => prev.filter(r => r.id !== reg.id)))} 
                               className="text-xs bg-red-100 text-red-600 hover:bg-red-200 p-1.5 rounded font-bold transition-colors shadow-sm" 
                               title="Eliminar esta consulta clínica"
                             >
