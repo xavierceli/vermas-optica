@@ -435,8 +435,8 @@ export function useGestor() {
     await obtenerDatos();
   };
 
-const borrarHistoriaClinica = (item) => {
-    // Guarda de seguridad: no borrar consultas que tienen una venta asociada
+  const borrarHistoriaClinica = (item) => {
+    // Guarda de seguridad: no permitir borrar consultas que tienen una venta asociada
     if (item.pedido_id) {
       return mostrarToast("Esta consulta tiene una VENTA asociada. Cancélala primero en la sección Pedidos y luego podrás borrar la consulta.", "warning");
     }
@@ -445,7 +445,9 @@ const borrarHistoriaClinica = (item) => {
       try {
         const histLocal = await leerBoveda('backup_historial') || [];
         await escribirBoveda('backup_historial', histLocal.filter(h => h.id !== item.id));
-      } catch (e) { console.warn(e); }
+      } catch (e) {
+        console.warn(e);
+      }
 
       try {
         if (navigator.onLine) {
@@ -457,7 +459,7 @@ const borrarHistoriaClinica = (item) => {
         mostrarToast("Eliminado con éxito.", "success");
       } catch (err) {
         mostrarToast("Error al eliminar: " + err.message, "error");
-        await obtenerDatos(); // Recarga por si el borrado optimista fue incorrecto
+        await obtenerDatos();
       }
     });
   };
@@ -550,7 +552,7 @@ const borrarHistoriaClinica = (item) => {
       let cons_id = pedidoSeleccionado.id || generarIdFantasma();
       let pedido_id_final = pedidoSeleccionado.pedido_id || generarIdFantasma();
 
-      const camposPedido = ['fecha', 'venta', 'abono', 'descuento', 'forma_pago', 'estado', 'notas', 'codigo_armazon', 'tipo_lente', 'material_lente', 'comprobante_url'];
+     const camposPedido = ['fecha', 'venta', 'abono', 'descuento', 'forma_pago', 'pago_nota', 'estado', 'notas', 'comprobante_url', 'codigo_armazon', 'tipo_armazon', 'param_horizontal', 'param_puente', 'param_vertical', 'param_diagonal', 'tipo_lente', 'material_lente', 'material_nota', 'accesorio_id', 'tratam_ninguno', 'tratam_ar', 'tratam_ar_azul', 'tratam_azul', 'tratam_tinturado', 'tratam_tinturado_nota', 'tratam_foto', 'tratam_foto_nota', 'tratam_trans', 'tratam_trans_nota', 'costo_armazon_int', 'costo_lunas_int', 'costo_accesorio_int', 'costo_tratamientos_int', 'costo_varios_int'];
       let datosVenta = { paciente_id: pac_id, consulta_id: cons_id };
       camposPedido.forEach(k => datosVenta[k] = pedidoSeleccionado[k] === '' ? null : pedidoSeleccionado[k]);
 
