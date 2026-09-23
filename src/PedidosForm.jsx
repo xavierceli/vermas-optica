@@ -73,7 +73,7 @@ export default function PedidosForm({
   const costoTotalInterno = safeNum(pedidoSeleccionado?.costo_armazon_int) + safeNum(pedidoSeleccionado?.costo_lunas_int) + safeNum(pedidoSeleccionado?.costo_accesorio_int) + safeNum(pedidoSeleccionado?.costo_tratamientos_int) + safeNum(pedidoSeleccionado?.costo_varios_int);
 
   return (
-    <div className="bg-white rounded-xl shadow-lg p-8 border-t-4 border-indigo-600 space-y-6">
+        <div className="bg-white rounded-xl shadow-lg p-8 pb-32 border-t-4 border-indigo-600 space-y-6">
       <div className="flex justify-between items-center border-b pb-4">
         <div>
           <h2 className="text-2xl font-bold text-gray-800">Orden de Laboratorio / Venta</h2>
@@ -365,8 +365,33 @@ export default function PedidosForm({
             </div>
           </div>
 
-        </div>
+                </div>
       </div>
+
+      {/* BARRA FIJA INFERIOR: total y guardado siempre visibles */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur border-t-4 border-indigo-600 shadow-2xl px-6 py-3 z-50 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-8">
+          <div>
+            <span className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider">Costo Final</span>
+            <span className="text-xl font-black text-gray-800">${pFinal.toFixed(2)}</span>
+          </div>
+          <div>
+            <span className="block text-[10px] font-bold text-gray-500 uppercase tracking-wider">Saldo Pendiente</span>
+            <span className="text-xl font-black text-red-500">${Math.max(0, pSaldo).toFixed(2)}</span>
+          </div>
+        </div>
+        <button 
+          onClick={async () => { 
+            if (procesando) return;
+            setProcesando(true); 
+            try { await guardarPedido(); } finally { setProcesando(false); } 
+          }} 
+          disabled={procesando}
+          className={`px-8 py-3 rounded-lg font-bold text-white shadow-lg transition-all ${procesando ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 active:scale-95'}`}>
+          {procesando ? '⏳ Guardando...' : '💾 Guardar Pedido'}
+        </button>
+      </div>
+
     </div>
   )
 }

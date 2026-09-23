@@ -516,6 +516,7 @@ export function useGestor() {
     if (!pedidoActual) return 0;
     let total = 0;
 
+    // ARMAZÓN (busca su precio en el inventario por código)
     if (pedidoActual.codigo_armazon) {
       const armazonEncontrado = (inventario || []).find(
         item => String(item.codigo).trim().toUpperCase() === String(pedidoActual.codigo_armazon).trim().toUpperCase()
@@ -525,9 +526,21 @@ export function useGestor() {
       }
     }
 
+    // ACCESORIO (busca su precio en el inventario por id)
+    if (pedidoActual.accesorio_id) {
+      const accesorioEncontrado = (inventario || []).find(
+        item => String(item.id) === String(pedidoActual.accesorio_id)
+      );
+      if (accesorioEncontrado && accesorioEncontrado.precio) {
+        total += safeNum(accesorioEncontrado.precio);
+      }
+    }
+
+    // MATERIAL DE LUNAS (precio base fijo)
     const pMat = { 'Plástico': 20, 'Policarbonato': 30, 'Reducido': 50, 'Hiperreducido': 70, 'Otros': 0 };
     if (pedidoActual.material_lente && pMat[pedidoActual.material_lente]) total += pMat[pedidoActual.material_lente];
 
+    // TRATAMIENTOS (precio fijo cada uno)
     const pTrat = { tratam_ar: 20, tratam_ar_azul: 20, tratam_azul: 35, tratam_tinturado: 20, tratam_foto: 55, tratam_trans: 100 };
     ['tratam_ar', 'tratam_ar_azul', 'tratam_azul', 'tratam_tinturado', 'tratam_foto', 'tratam_trans'].forEach(k => { 
       if (pedidoActual[k] === 'SI') total += pTrat[k]; 
@@ -553,7 +566,7 @@ export function useGestor() {
 
     setPedidoSeleccionado(prev => {
       const nuevo = { ...prev, [name]: val };
-      const camposQueAfectanPrecio = ['codigo_armazon', 'material_lente', 'tratam_ar', 'tratam_ar_azul', 'tratam_azul', 'tratam_tinturado', 'tratam_foto', 'tratam_trans', 'tratam_ninguno'];
+            const camposQueAfectanPrecio = ['codigo_armazon', 'material_lente', 'accesorio_id', 'tratam_ar', 'tratam_ar_azul', 'tratam_azul', 'tratam_tinturado', 'tratam_foto', 'tratam_trans', 'tratam_ninguno'];
 
       if (camposQueAfectanPrecio.includes(name)) {
         if (name === 'tratam_ninguno' && val === 'SI') {
