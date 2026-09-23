@@ -590,6 +590,11 @@ export function useGestor() {
      const camposPedido = ['fecha', 'venta', 'abono', 'descuento', 'forma_pago', 'pago_nota', 'estado', 'notas', 'comprobante_url', 'codigo_armazon', 'tipo_armazon', 'param_horizontal', 'param_puente', 'param_vertical', 'param_diagonal', 'tipo_lente', 'material_lente', 'material_nota', 'accesorio_id', 'tratam_ninguno', 'tratam_ar', 'tratam_ar_azul', 'tratam_azul', 'tratam_tinturado', 'tratam_tinturado_nota', 'tratam_foto', 'tratam_foto_nota', 'tratam_trans', 'tratam_trans_nota', 'costo_armazon_int', 'costo_lunas_int', 'costo_accesorio_int', 'costo_tratamientos_int', 'costo_varios_int'];
       let datosVenta = { paciente_id: pac_id, consulta_id: cons_id };
       camposPedido.forEach(k => datosVenta[k] = pedidoSeleccionado[k] === '' ? null : pedidoSeleccionado[k]);
+            // FIX: una venta NUEVA nace HOY — no hereda la fecha de la consulta antigua
+      const esPedidoNuevo = !pedidoSeleccionado.pedido_id || String(pedidoSeleccionado.pedido_id).startsWith('temp-');
+      if (esPedidoNuevo) {
+        datosVenta.fecha = hoy;
+      }
 
       if (navigator.onLine) {
         try {
