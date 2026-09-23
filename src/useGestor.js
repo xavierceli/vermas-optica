@@ -667,6 +667,7 @@ export function useGestor() {
 
   return {
     guardando,
+    obtenerDatos, solicitarConfirmacion,
     estaAutenticado, cargandoAuth, cerrarSesion,
     toast, confirmDialog, setConfirmDialog, vistaActual, setVistaActual,
     historial, inventario, listaPrecios, paciente, setPaciente, estadoInicial, editandoId, setEditandoId, 

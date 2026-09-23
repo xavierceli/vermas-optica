@@ -5,7 +5,7 @@ import { supabase } from './supabaseClient'
 export default function PedidosLista({
   crearVentaDirecta, busqueda, setBusqueda, pedidosFiltrados,
   imprimirRecibo, imprimirOrdenTrabajo, cancelarPedido, abrirPedido,
-  registrarAbonoRapido
+    refrescarDatos
 }) {
 
   const [abonosRapidos, setAbonosRapidos] = useState({});
@@ -21,17 +21,22 @@ export default function PedidosLista({
   const manejarCambioArchivo = (id, archivo) => setComprobantesRapidos(prev => ({ ...prev, [id]: archivo }));
 
   const cambiarEstadoRapido = async (item, nuevoEstado) => {
-    if (!item.pedido_id) return;
+    if (!item.pedido_id || String(item.pedido_id).startsWith('temp-')) {
+      return alert("Este pedido aún no está sincronizado con la nube. Conéctate a internet, espera unos segundos e intenta de nuevo.");
+    }
     try {
       const { error } = await supabase.from('pedidos_ventas').update({ estado: nuevoEstado }).eq('id', item.pedido_id);
       if (error) throw error;
-      window.location.reload(); 
+      await refrescarDatos();
     } catch (err) { alert("Error actualizando estado: " + err.message); }
   }
 
   const ejecutarCobro = async (item) => {
     const monto = safeNum(abonosRapidos[item.id]);
     if (monto <= 0) return alert("Por favor, ingrese un monto válido mayor a 0.");
+        if (!item.pedido_id || String(item.pedido_id).startsWith('temp-')) {
+      return alert("Este pedido aún no está sincronizado con la nube. Conéctate a internet, espera unos segundos e intenta de nuevo.");
+    }
 
     const formaPago = formasPagoRapidas[item.id] || 'Efectivo';
     let urlComprobanteFinal = item.comprobante_url || '';
@@ -68,7 +73,7 @@ export default function PedidosLista({
       
       setAbonosRapidos(prev => ({ ...prev, [item.id]: '' }));
       setComprobantesRapidos(prev => ({ ...prev, [item.id]: null }));
-      window.location.reload(); 
+            await refrescarDatos();
     } catch (e) { alert("Error al registrar el cobro rápido: " + e.message); }
   }
 

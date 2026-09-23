@@ -5,7 +5,7 @@ import { supabase } from './supabaseClient'
 export default function PedidosForm({
   pedidoSeleccionado, setPedidoSeleccionado, setVistaActual, guardarPedido,
   manejarCambioPedido, cambiarMedicionPedido, medidasPaciente, inventario,
-  accesorioOriginalId, forzarRecalculo
+    accesorioOriginalId, forzarRecalculo, confirmarAccion
 }) {
 
   // --- NUEVA LÓGICA DE CONTROL DE CAJA, ABONOS Y COMPROBANTES ---
@@ -14,6 +14,8 @@ export default function PedidosForm({
   const [nuevoAbonoNota, setNuevoAbonoNota] = useState('');
   const [imagenComprobante, setImagenComprobante] = useState(null);
   const [subiendoComprobante, setSubiendoComprobante] = useState(false);
+    const [procesando, setProcesando] = useState(false);
+  const [abonoAlAbrir] = useState(() => safeNum(pedidoSeleccionado?.abono));
 
   const registrarAbono = async () => {
     const monto = safeNum(nuevoAbonoMonto);
@@ -82,8 +84,24 @@ export default function PedidosForm({
           )}
         </div>
         <div className="space-x-3">
-          <button onClick={() => {setPedidoSeleccionado(null); setVistaActual('pedidos_lista')}} className="bg-gray-500 text-white px-4 py-2 rounded-lg font-medium">Volver</button>
-          <button onClick={guardarPedido} className="bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-2 rounded-lg font-bold shadow-md">Guardar Pedido</button>
+                  <button onClick={() => {
+            const salir = () => { setPedidoSeleccionado(null); setVistaActual('pedidos_lista'); };
+            if (safeNum(pedidoSeleccionado?.abono) !== abonoAlAbrir) {
+              confirmarAccion("Registraste abonos que aún NO se han guardado. Si sales ahora se perderán. ¿Salir de todos modos?", salir);
+            } else {
+              salir();
+            }
+          }} className="bg-gray-500 text-white px-4 py-2 rounded-lg font-medium">Volver</button>
+                    <button 
+            onClick={async () => { 
+              if (procesando) return;
+              setProcesando(true); 
+              try { await guardarPedido(); } finally { setProcesando(false); }
+            }} 
+            disabled={procesando}
+            className={`px-8 py-2 rounded-lg font-bold shadow-md text-white ${procesando ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'}`}>
+            {procesando ? 'Guardando...' : 'Guardar Pedido'}
+          </button>
         </div>
       </div>
 
