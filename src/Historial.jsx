@@ -195,8 +195,8 @@ export default function Historial({
                             </button>
                           </td>
                           <td className="p-2 border-r font-bold text-gray-700">{safeString(reg.fecha)}</td>
-                          <td className="p-2 border-r">{safeString(reg.esfera_od) || '0.00'}</td><td className="p-2 border-r">{safeString(reg.cilindro_od) || '0.00'}</td><td className="p-2 border-r">{safeString(reg.eje_od) || '0'}</td><td className="p-2 border-r">{safeString(reg.adicion_od) || '0.00'}</td><td className="p-2 border-r font-bold text-teal-700 bg-teal-50/30">{safeString(reg.avcc_od) || '-'}</td>
-                          <td className="p-2 border-r">{safeString(reg.esfera_oi) || '0.00'}</td><td className="p-2 border-r">{safeString(reg.cilindro_oi) || '0.00'}</td><td className="p-2 border-r">{safeString(reg.eje_oi) || '0'}</td><td className="p-2 border-r">{safeString(reg.adicion_oi) || '0.00'}</td><td className="p-2 font-bold text-teal-700 bg-teal-50/30">{safeString(reg.avcc_oi) || '-'}</td>
+                          <td className="p-2 border-r">{safeString(reg.esfera_od) || '—'}</td><td className="p-2 border-r">{safeString(reg.cilindro_od) || '—'}</td><td className="p-2 border-r">{safeString(reg.eje_od) || '—'}</td><td className="p-2 border-r">{safeString(reg.adicion_od) || '—'}</td><td className="p-2 border-r font-bold text-teal-700 bg-teal-50/30">{safeString(reg.avcc_od) || '-'}</td>
+                          <td className="p-2 border-r">{safeString(reg.esfera_oi) || '—'}</td><td className="p-2 border-r">{safeString(reg.cilindro_oi) || '—'}</td><td className="p-2 border-r">{safeString(reg.eje_oi) || '—'}</td><td className="p-2 border-r">{safeString(reg.adicion_oi) || '—'}</td><td className="p-2 font-bold text-teal-700 bg-teal-50/30">{safeString(reg.avcc_oi) || '-'}</td>
                           
                           <td className="p-2 border-l text-center bg-red-50/20">
                             <button 
@@ -383,8 +383,8 @@ export default function Historial({
                     <table className="w-full text-center text-sm bg-white rounded border overflow-hidden">
                       <thead className="bg-blue-50/50 text-gray-600"><tr><th className="p-2 border-b border-r"></th><th className="p-2 border-b border-r">Esf.</th><th className="p-2 border-b border-r">Cil.</th><th className="p-2 border-b border-r">Eje</th><th className="p-2 border-b">Adi.</th></tr></thead>
                       <tbody>
-                        <tr><td className="p-2 border-b border-r font-bold">OD</td><td className="p-2 border-b border-r">{safeString(item.esfera_od) || '0.00'}</td><td className="p-2 border-b border-r">{safeString(item.cilindro_od) || '0.00'}</td><td className="p-2 border-b border-r">{safeString(item.eje_od) || '0'}</td><td className="p-2 border-b">{safeString(item.adicion_od) || '0.00'}</td></tr>
-                        <tr><td className="p-2 border-r font-bold">OI</td><td className="p-2 border-r">{safeString(item.esfera_oi) || '0.00'}</td><td className="p-2 border-r">{safeString(item.cilindro_oi) || '0.00'}</td><td className="p-2 border-r">{safeString(item.eje_oi) || '0'}</td><td className="p-2">{safeString(item.adicion_oi) || '0.00'}</td></tr>
+                        <tr><td className="p-2 border-b border-r font-bold">OD</td><td className="p-2 border-b border-r">{safeString(item.esfera_od) || '—'}</td><td className="p-2 border-b border-r">{safeString(item.cilindro_od) || '—'}</td><td className="p-2 border-b border-r">{safeString(item.eje_od) || '—'}</td><td className="p-2 border-b">{safeString(item.adicion_od) || '—'}</td></tr>
+                        <tr><td className="p-2 border-r font-bold">OI</td><td className="p-2 border-r">{safeString(item.esfera_oi) || '—'}</td><td className="p-2 border-r">{safeString(item.cilindro_oi) || '—'}</td><td className="p-2 border-r">{safeString(item.eje_oi) || '—'}</td><td className="p-2">{safeString(item.adicion_oi) || '—'}</td></tr>
                       </tbody>
                     </table>
                     <div className="mt-4 flex flex-wrap gap-2">

@@ -676,16 +676,34 @@ export function useGestor() {
   const stats = (() => {
     try {
       const inicioMes = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
-      let ventasMes = 0; let abonosPendientes = 0;
+      let ventasMes = 0; let abonosPendientes = 0; let gastosMes = 0;
+      const cedulasUnicas = new Set();
       (historial || []).forEach(p => {
         if (!p) return;
         const vFinal = Number((safeNum(p.venta) - (safeNum(p.venta) * safeNum(p.descuento) / 100)).toFixed(2));
-        if (p.fecha && p.fecha >= inicioMes) { ventasMes += vFinal; }
+        if (p.fecha && p.fecha >= inicioMes) { 
+          ventasMes += vFinal;
+          gastosMes += (safeNum(p.costo_lunas_int) + safeNum(p.costo_armazon_int) + 
+                       safeNum(p.costo_accesorio_int) + safeNum(p.costo_tratamientos_int) + 
+                       safeNum(p.costo_varios_int));
+        }
         const abonoRedondeado = Number(safeNum(p.abono).toFixed(2));
         if (vFinal - abonoRedondeado > 0) abonosPendientes += (vFinal - abonoRedondeado);
+        if (safeString(p.nombre) !== 'CONSUMIDOR FINAL' && safeString(p.cedula) !== '' && safeString(p.cedula) !== '9999999999') {
+          cedulasUnicas.add(safeString(p.cedula));
+        }
       });
-      return { ventasMes: Number(ventasMes.toFixed(2)), abonosPendientes: Number(abonosPendientes.toFixed(2)), total: (historial || []).length };
-    } catch(e) { return { ventasMes: 0, abonosPendientes: 0, total: 0 }; }
+      return { 
+        ventasMes: Number(ventasMes.toFixed(2)), 
+        abonosPendientes: Number(abonosPendientes.toFixed(2)),
+        gastosMes: Number(gastosMes.toFixed(2)),
+        utilidadNeta: Number((ventasMes - gastosMes).toFixed(2)),
+        totalPacientes: cedulasUnicas.size,
+        total: (historial || []).length 
+      };
+    } catch(e) { 
+      return { ventasMes: 0, abonosPendientes: 0, gastosMes: 0, utilidadNeta: 0, totalPacientes: 0, total: 0 }; 
+    }
   })();
 
   const edadActual = calcularEdad(paciente?.fecha_nacimiento);
