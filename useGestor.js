@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from './supabaseClient'
 import { safeString, safeNum, comprimirImagen, calcularEdad } from './utilidades'
-import { leerBoveda, escribirBoveda, encolarOperacion, generarId, purgarTareasDeRegistro, eliminarTareaDeBandeja } from './motorOffline'
+import { leerBoveda, escribirBoveda, encolarOperacion, generarIdFantasma, eliminarTareaDeBandeja } from './motorOffline'
 
 export function useGestor() {
   const [estaAutenticado, setEstaAutenticado] = useState(false);
@@ -401,16 +401,12 @@ export function useGestor() {
       }
 
       if (modoOfflineForzado) {
-        // --- NUEVO: identidad definitiva desde el nacimiento ---
-        const idPaciente = paciente.paciente_id || generarId();
-        const idConsulta = editandoId || generarId();
-        clinicaData.paciente_id = idPaciente;
-        clinicaData.id = idConsulta; // la tarea viaja CON su id definitivo
-
-        // El perfil lleva su id solo cuando es NUEVO (para que la nube respete nuestra identidad)
+        const id_paciente_fantasma = paciente.paciente_id || generarIdFantasma();
+        const id_consulta_fantasma = editandoId || generarIdFantasma();
+        clinicaData.paciente_id = id_paciente_fantasma;
+        
         if (!paciente.paciente_id) {
-          perfilData.id = idPaciente;
-          await encolarOperacion('pacientes_perfil', 'INSERT', perfilData);
+          await encolarOperacion('pacientes_perfil', 'INSERT', { ...perfilData, id_temporal: id_paciente_fantasma });
         } else {
           await encolarOperacion('pacientes_perfil', 'UPDATE', { id: paciente.paciente_id, ...perfilData });
         }
@@ -422,8 +418,8 @@ export function useGestor() {
         }
 
         const registroLocalVisible = {
-          id: idConsulta,
-          paciente_id: idPaciente,
+          id: id_consulta_fantasma,
+          paciente_id: id_paciente_fantasma,
           fecha: clinicaData.fecha || hoy,
           cedula: perfilData.cedula,
           nombre: perfilData.nombre,
@@ -479,8 +475,7 @@ export function useGestor() {
           const { error } = await supabase.from('consultas_clinicas').delete().eq('id', item.id);
           if (error) throw new Error(error.message);
         } else {
-                    await encolarOperacion('consultas_clinicas', 'DELETE', { id: item.id });
-          await purgarTareasDeRegistro('consultas_clinicas', item.id);
+          await encolarOperacion('consultas_clinicas', 'DELETE', { id: item.id });
         }
         mostrarToast("Eliminado con éxito.", "success");
         if (alEliminarLocal) alEliminarLocal();
