@@ -87,7 +87,7 @@ export default function Login() {
       
       if (textoError.includes('fetch') || textoError.includes('network')) {
         setMensaje({ texto: 'Se perdió la conexión. Revisa tu internet e intenta de nuevo.', tipo: 'warning' });
-      } else if (textoError.includes('60 seconds') || textoError.includes('rate')) {
+              setMensaje({ texto: 'El servidor ha limitado los envíos porque hubo varios intentos recientes (el plan gratuito de Supabase permite muy pocos correos por hora). Espera al menos 1 hora y prueba UNA sola vez.', tipo: 'warning' });
         setMensaje({ texto: 'Por seguridad, solo se puede pedir el enlace cada 60 segundos. Espera un minuto e intenta de nuevo.', tipo: 'warning' });
       } else {
         setMensaje({ texto: 'Error: ' + (error?.message || 'desconocido'), tipo: 'error' });

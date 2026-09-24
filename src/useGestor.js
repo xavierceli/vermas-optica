@@ -334,16 +334,16 @@ export function useGestor() {
       setCargandoImagen(true);
       let urlImagen = nuevoItemInv.imagen_url || null;
 
-      // NUEVO: si el usuario eligió una foto, comprimirla y subirla al almacén
+      // Si el usuario eligió una foto, comprimirla y subirla al almacén existente
       if (imagenSeleccionada) {
         try {
           const archivoComprimido = await comprimirImagen(imagenSeleccionada);
-          const nombreArchivo = `productos/${Date.now()}-${generarId().substring(0, 8)}.jpg`;
+          const nombreArchivo = `producto_${Date.now()}_${generarId().substring(0, 8)}.jpg`;
           const { error: errSubida } = await supabase.storage
-            .from('productos')
+            .from('inventario_imagenes')
             .upload(nombreArchivo, archivoComprimido, { contentType: 'image/jpeg' });
           if (errSubida) throw new Error(errSubida.message);
-          const { data } = supabase.storage.from('productos').getPublicUrl(nombreArchivo);
+          const { data } = supabase.storage.from('inventario_imagenes').getPublicUrl(nombreArchivo);
           urlImagen = data.publicUrl;
         } catch (errImg) {
           mostrarToast("La foto no se pudo subir (" + errImg.message + "). El producto se guardará sin imagen.", "warning");
