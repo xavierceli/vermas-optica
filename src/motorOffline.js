@@ -93,3 +93,12 @@ export const moverABandejaMuerta = (tarea, motivo) => serializado(async () => {
   ]);
   await eliminarTareaDeBandeja(tarea.id_tarea);
 });
+// NUEVO: registra un intento fallido de una tarea y devuelve el total acumulado
+export const marcarIntentoFallido = (tarea) => serializado(async () => {
+  const colaActual = await leerBoveda('bandeja_salida') || [];
+  const idx = colaActual.findIndex(t => t.id_tarea === tarea.id_tarea);
+  if (idx === -1) return 0; // la tarea ya no existe, nada que hacer
+  colaActual[idx].intentos = (colaActual[idx].intentos || 0) + 1;
+  await escribirBoveda('bandeja_salida', colaActual);
+  return colaActual[idx].intentos;
+});
