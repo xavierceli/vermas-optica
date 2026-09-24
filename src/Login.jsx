@@ -12,8 +12,13 @@ export default function Login() {
   const [nuevaClave, setNuevaClave] = useState('');
   const [confirmarClave, setConfirmarClave] = useState('');
 
-  // Detectar si venimos del enlace de recuperación de contraseña
+  // Detectar si venimos del enlace de recuperación (por la URL o por el flag)
   useEffect(() => {
+    if (window.location.hash.includes('type=recovery')) {
+      sessionStorage.setItem('vermas_cambio_clave', '1');
+      // Limpiar la URL para no dejar tokens visibles en la barra del navegador
+      window.history.replaceState(null, '', window.location.pathname);
+    }
     if (sessionStorage.getItem('vermas_cambio_clave')) {
       setModoNuevaClave(true);
       setModoRecuperar(false);
@@ -26,11 +31,23 @@ export default function Login() {
     setCargando(true);
     setMensaje({ texto: '', tipo: '' });
     
+    // Honestidad primero: sin internet no se puede validar una contraseña
+    if (!navigator.onLine) {
+      setCargando(false);
+      return setMensaje({ texto: '⚠️ Sin conexión a internet. El inicio de sesión requiere internet (tu contraseña se valida en el servidor, por seguridad). Si ya habías ingresado en este dispositivo y NO cerraste sesión, simplemente abre la app: el sistema funciona sin internet con la bóveda local.', tipo: 'warning' });
+    }
+    
     try {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
     } catch (error) {
-      setMensaje({ texto: 'Credenciales incorrectas. Verifica tu correo o contraseña.', tipo: 'error' });
+      const textoError = String(error?.message || '').toLowerCase();
+      const esErrorRed = textoError.includes('fetch') || textoError.includes('network');
+      if (esErrorRed) {
+        setMensaje({ texto: 'Se perdió la conexión durante el inicio de sesión. Revisa tu internet e intenta de nuevo.', tipo: 'warning' });
+      } else {
+        setMensaje({ texto: 'Credenciales incorrectas. Verifica tu correo o contraseña.', tipo: 'error' });
+      }
     } finally {
       setCargando(false);
     }

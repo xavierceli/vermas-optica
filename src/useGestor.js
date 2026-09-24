@@ -78,17 +78,20 @@ export function useGestor() {
       if (montado) setCargandoAuth(false);
     }, 1000);
 
+    // Si viene de un enlace de recuperación, bloquear el acceso hasta crear la nueva clave
+    const cambioClavePendiente = sessionStorage.getItem('vermas_cambio_clave') === '1';
+
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (montado) {
         clearTimeout(timerSeguridad);
-        setEstaAutenticado(!!session);
-        obtenerDatos();
+        setEstaAutenticado(!!session && !cambioClavePendiente);
+        if (session && !cambioClavePendiente) obtenerDatos();
         setCargandoAuth(false);
       }
     }).catch(() => {
       if (montado) {
         clearTimeout(timerSeguridad);
-        obtenerDatos();
+        if (!cambioClavePendiente) obtenerDatos();
         setCargandoAuth(false);
       }
     });
@@ -102,9 +105,10 @@ export function useGestor() {
           setCargandoAuth(false);
           return;
         }
-        setEstaAutenticado(!!session);
+        const siguePendiente = sessionStorage.getItem('vermas_cambio_clave') === '1';
+        setEstaAutenticado(!!session && !siguePendiente);
         setCargandoAuth(false);
-        if (session) obtenerDatos();
+        if (session && !siguePendiente) obtenerDatos();
       }
     });
 
