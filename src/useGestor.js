@@ -71,6 +71,9 @@ export function useGestor() {
   const [accesorioOriginalId, setAccesorioOriginalId] = useState('');
   const [medidasPaciente, setMedidasPaciente] = useState([]);
 
+  // LOTE 6: números oficiales calculados por el servidor (exactos sobre TODA la base)
+  const [statsRemotos, setStatsRemotos] = useState(null);
+
   useEffect(() => {
     let montado = true;
 
@@ -99,7 +102,6 @@ export function useGestor() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (montado) {
         if (event === 'PASSWORD_RECOVERY') {
-          // Viene del enlace de recuperación: primero debe crear su nueva clave
           sessionStorage.setItem('vermas_cambio_clave', '1');
           setEstaAutenticado(false);
           setCargandoAuth(false);
@@ -160,13 +162,15 @@ export function useGestor() {
             if (tarea.tabla === 'pacientes_perfil') {
               delete datos.id_temporal;
               if (tarea.tipo === 'INSERT') {
+                const idOriginal = datos.id;
+                delete datos.id; // nunca pelear con la clave primaria del registro existente
                 const { data: perfilSubido, error } = await supabase.from('pacientes_perfil')
                   .upsert([datos], { onConflict: 'cedula' })
                   .select('id')
                   .single();
                 if (error) throw new Error(error.message);
-                if (perfilSubido && datos.id && perfilSubido.id !== datos.id) {
-                  remapeoIds[datos.id] = perfilSubido.id;
+                if (perfilSubido && idOriginal && perfilSubido.id !== idOriginal) {
+                  remapeoIds[idOriginal] = perfilSubido.id;
                 }
               } else if (tarea.tipo === 'UPDATE') {
                 const { id, ...resto } = datos;
@@ -222,25 +226,32 @@ export function useGestor() {
       }
 
       // 3. DESCARGA DE LA NUBE + MERGE (los pendientes no se borran de la vista)
-      const { data: hist } = await supabase.from('vista_pacientes').select('*').order('fecha', { ascending: false }).limit(50);
+      // LOTE 6: pacientes ÚNICOS (una fila por cédula, la más reciente) — listo para 10 mil pacientes
+      const { data: hist } = await supabase.from('vista_pacientes_unicos').select('*').order('fecha', { ascending: false }).limit(100);
       const { data: inv } = await supabase.from('inventario').select('*').order('id', { ascending: false });
       const { data: prec } = await supabase.from('lista_precios').select('*').order('id', { ascending: false });
 
       if (hist) {
         const tareasRestantes = await leerBoveda('bandeja_salida') || [];
+        // Consultas con tareas pendientes (nuevas o editadas sin subir)
         const idsPendientes = new Set(
           tareasRestantes.filter(t => t.tabla === 'consultas_clinicas' && t.tipo !== 'DELETE')
             .map(t => t.datos && t.datos.id).filter(Boolean)
         );
+        // También: consultas cuyas VENTAS aún no suben (la venta pendiente vive en el registro local)
+        tareasRestantes.filter(t => t.tabla === 'pedidos_ventas' && t.tipo !== 'DELETE')
+          .forEach(t => { if (t.datos && t.datos.consulta_id) idsPendientes.add(t.datos.consulta_id); });
         const locales = await leerBoveda('backup_historial') || [];
         const fantasmas = locales.filter(p => idsPendientes.has(p.id));
 
         const vistos = new Set();
-        const combinado = [...hist, ...fantasmas].filter(p => {
+        // FANTASMAS PRIMERO: la versión local (la más reciente) gana sobre la de la nube
+        const combinado = [...fantasmas, ...hist].filter(p => {
           if (vistos.has(p.id)) return false;
           vistos.add(p.id);
           return true;
         });
+        combinado.sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')));
 
         setHistorial(combinado);
         await escribirBoveda('backup_historial', combinado);
@@ -253,6 +264,10 @@ export function useGestor() {
         setListaPrecios(prec);
         await escribirBoveda('backup_precios', prec);
       }
+
+      // LOTE 6: stats oficiales calculados por el servidor (sobre TODA la base)
+      const { data: s } = await supabase.rpc('stats_negocio');
+      if (s && s[0]) setStatsRemotos(s[0]);
 
       // 4. AVISO: cuánto queda pendiente
       const restantes = (await leerBoveda('bandeja_salida') || []).length;
@@ -334,7 +349,6 @@ export function useGestor() {
       setCargandoImagen(true);
       let urlImagen = nuevoItemInv.imagen_url || null;
 
-      // Si el usuario eligió una foto, comprimirla y subirla al almacén existente
       if (imagenSeleccionada) {
         try {
           const archivoComprimido = await comprimirImagen(imagenSeleccionada);
@@ -351,7 +365,7 @@ export function useGestor() {
         }
       }
 
-      let datosAGuardar = { ...nuevoItemInv, imagen_url: urlImagen, precio: Number(safeNum(nuevoItemInv.precio).toFixed(2)), costo_compra: Number(safeNum(nuevoItemInv.costo_compra).toFixed(2)), stock: Math.round(safeNum(nuevoItemInv.stock)) || 1 };
+      let datosAGuardar = { ...nuevoItemInv, imagen_url: urlImagen, precio: Number(safeNum(nuevoItemInv.precio).toFixed(2)), costo_compra: Number(safeNum(nuevoItemInv.costo_compra).toFixed(2)),       stock: (nuevoItemInv.stock === '' || nuevoItemInv.stock === null) ? 1 : Math.max(0, Math.round(safeNum(nuevoItemInv.stock))) };
       Object.keys(datosAGuardar).forEach(key => { if (datosAGuardar[key] === '') datosAGuardar[key] = null; });
 
       if (editandoInvId) {
@@ -423,7 +437,6 @@ export function useGestor() {
       let clinicaData = {};
       camposClinica.forEach(k => clinicaData[k] = paciente[k] === '' ? null : paciente[k]);
 
-      // IDENTIDAD DEFINITIVA: los mismos ids sirven al flujo online y al offline
       const idPaciente = paciente.paciente_id || generarId();
       const idConsulta = editandoId || generarId();
 
@@ -434,14 +447,16 @@ export function useGestor() {
           const guardarEnLaNube = async () => {
             let pac_id = paciente.paciente_id;
             if (pac_id) {
-              const { error: errUpd } = await supabase.from('pacientes_perfil').update(perfilData).eq('id', pac_id);
+                            const perfilUpdate = Object.fromEntries(Object.entries(perfilData).filter(([, v]) => v !== null));
+              const { error: errUpd } = await supabase.from('pacientes_perfil').update(perfilUpdate).eq('id', pac_id);
               if (errUpd) throw new Error(errUpd.message);
             } else {
               const { data: existe, error: errSel } = await supabase.from('pacientes_perfil').select('id').eq('cedula', paciente.cedula).maybeSingle();
               if (errSel) throw new Error(errSel.message);
               if (existe) {
                 pac_id = existe.id;
-                const { error: errUpd } = await supabase.from('pacientes_perfil').update(perfilData).eq('id', pac_id);
+                              const perfilUpdate = Object.fromEntries(Object.entries(perfilData).filter(([, v]) => v !== null));
+              const { error: errUpd } = await supabase.from('pacientes_perfil').update(perfilUpdate).eq('id', pac_id);
                 if (errUpd) throw new Error(errUpd.message);
               } else {
                 const { error: errNuevo } = await supabase.from('pacientes_perfil').insert([{ ...perfilData, id: idPaciente }]);
@@ -495,6 +510,8 @@ export function useGestor() {
           alias: perfilData.alias || '',
           telefono: perfilData.telefono || '',
           correo: perfilData.correo || '',
+          fecha_nacimiento: perfilData.fecha_nacimiento || '',
+          antecedentes: perfilData.antecedentes || '',
           notas_clinicas: clinicaData.notas_clinicas || '',
           ...clinicaData,
           estado: 'Ninguno'
@@ -526,7 +543,6 @@ export function useGestor() {
   };
 
   const borrarHistoriaClinica = (item, alEliminarLocal) => {
-    // Guarda de seguridad: no permitir borrar consultas que tienen una venta asociada
     if (item.pedido_id) {
       return mostrarToast("Esta consulta tiene una VENTA asociada. Cancélala primero en la sección Pedidos y luego podrás borrar la consulta.", "warning");
     }
@@ -539,7 +555,6 @@ export function useGestor() {
         console.warn(e);
       }
 
-      // Purga: si había tareas pendientes de esta consulta, mueren también
       await purgarTareasDeRegistro('consultas_clinicas', item.id);
 
       try {
@@ -588,7 +603,6 @@ export function useGestor() {
     if (!pedidoActual) return 0;
     let total = 0;
 
-    // ARMAZÓN (busca su precio en el inventario por código)
     if (pedidoActual.codigo_armazon) {
       const armazonEncontrado = (inventario || []).find(
         item => String(item.codigo).trim().toUpperCase() === String(pedidoActual.codigo_armazon).trim().toUpperCase()
@@ -598,7 +612,6 @@ export function useGestor() {
       }
     }
 
-    // ACCESORIO (busca su precio en el inventario por id)
     if (pedidoActual.accesorio_id) {
       const accesorioEncontrado = (inventario || []).find(
         item => String(item.id) === String(pedidoActual.accesorio_id)
@@ -608,11 +621,9 @@ export function useGestor() {
       }
     }
 
-    // MATERIAL DE LUNAS (precio base fijo)
     const pMat = { 'Plástico': 20, 'Policarbonato': 30, 'Reducido': 50, 'Hiperreducido': 70, 'Otros': 0 };
     if (pedidoActual.material_lente && pMat[pedidoActual.material_lente]) total += pMat[pedidoActual.material_lente];
 
-    // TRATAMIENTOS (precio fijo cada uno)
     const pTrat = { tratam_ar: 20, tratam_ar_azul: 20, tratam_azul: 35, tratam_tinturado: 20, tratam_foto: 55, tratam_trans: 100 };
     ['tratam_ar', 'tratam_ar_azul', 'tratam_azul', 'tratam_tinturado', 'tratam_foto', 'tratam_trans'].forEach(k => { 
       if (pedidoActual[k] === 'SI') total += pTrat[k]; 
@@ -652,10 +663,8 @@ export function useGestor() {
     });
   };
 
-  // 🛡️ GUARDAR PEDIDO CON IDENTIDAD PROPIA (compatible con modo offline)
   const guardarPedido = async () => {
     try {
-      // IDENTIDAD: la venta nace con su id definitivo (mismo online y offline)
       const idPedido = (pedidoSeleccionado.pedido_id && !String(pedidoSeleccionado.pedido_id).startsWith('temp-'))
         ? pedidoSeleccionado.pedido_id
         : generarId();
@@ -666,7 +675,6 @@ export function useGestor() {
       let datosVenta = { id: idPedido, paciente_id: idPacientePedido, consulta_id: idConsultaPedido };
       camposPedido.forEach(k => datosVenta[k] = pedidoSeleccionado[k] === '' ? null : pedidoSeleccionado[k]);
 
-      // Una venta NUEVA nace HOY (no hereda la fecha de una consulta antigua)
       const esPedidoNuevo = !pedidoSeleccionado.pedido_id || String(pedidoSeleccionado.pedido_id).startsWith('temp-');
       if (esPedidoNuevo) {
         datosVenta.fecha = hoy;
@@ -678,7 +686,6 @@ export function useGestor() {
 
       if (navigator.onLine) {
         try {
-          // 1. Asegurar el perfil del paciente
           if (pedidoSeleccionado.paciente_id) {
             pac_id = pedidoSeleccionado.paciente_id;
           } else {
@@ -693,7 +700,6 @@ export function useGestor() {
             }
           }
 
-          // 2. Asegurar la consulta (las ventas cuelgan de una)
           if (pedidoSeleccionado.id) {
             cons_id = pedidoSeleccionado.id;
           } else {
@@ -702,7 +708,6 @@ export function useGestor() {
             cons_id = idConsultaPedido;
           }
 
-          // 3. Guardar la venta con upsert (imposible duplicar)
           datosVenta.paciente_id = pac_id;
           datosVenta.consulta_id = cons_id;
           const { error: errVenta } = await supabase.from('pedidos_ventas').upsert([datosVenta]);
@@ -716,7 +721,6 @@ export function useGestor() {
       }
 
       if (!guardadoOnline) {
-        // MODO OFFLINE: encolar lo que falte + la venta con su id definitivo
         datosVenta.paciente_id = pac_id || pedidoSeleccionado.paciente_id || idPacientePedido;
         datosVenta.consulta_id = cons_id || pedidoSeleccionado.id || idConsultaPedido;
 
@@ -730,7 +734,6 @@ export function useGestor() {
         mostrarToast("Guardado localmente (Offline).", "warning");
       }
 
-      // Actualizar el registro visible en el historial
       const { id: _idVenta, ...datosParaHistorial } = datosVenta;
       const itemHistorialActualizado = {
         ...pedidoSeleccionado,
@@ -756,16 +759,22 @@ export function useGestor() {
     solicitarConfirmacion("¿Cancelar venta?", async () => {
       try {
         if (item.pedido_id) {
+          // 1. PRIMERO la purga (para que no resucite)
+          await purgarTareasDeRegistro('pedidos_ventas', item.pedido_id);
+          // 2. DESPUÉS el DELETE (la purga ya no puede tocarlo)
           if (navigator.onLine) {
             const { error } = await supabase.from('pedidos_ventas').delete().eq('id', item.pedido_id);
             if (error) throw new Error(error.message);
           } else {
             await encolarOperacion('pedidos_ventas', 'DELETE', { id: item.pedido_id });
           }
-          // Purga: si la venta tenía tareas pendientes, mueren también (no resucita)
-          await purgarTareasDeRegistro('pedidos_ventas', item.pedido_id);
         }
+        // 3. Actualizar estado Y respaldo local (para que no reaparezca offline)
         setHistorial(prev => prev.map(p => p.id === item.id ? { ...p, pedido_id: null, venta: '', abono: '', estado: 'Ninguno' } : p));
+        try {
+          const backupActual = await leerBoveda('backup_historial') || [];
+          await escribirBoveda('backup_historial', backupActual.map(p => p.id === item.id ? { ...p, pedido_id: null, venta: '', abono: '', estado: 'Ninguno' } : p));
+        } catch (e) { console.warn(e); }
         mostrarToast("Pedido cancelado.", "success");
       } catch (err) {
         mostrarToast("Error al cancelar: " + err.message, "error");
@@ -795,7 +804,18 @@ export function useGestor() {
     return safeString(item.tipo_lente).toLowerCase().includes(q) || safeString(item.material).toLowerCase().includes(q) || safeString(item.rango_medida).toLowerCase().includes(q);
   });
 
+  // LOTE 6: stats con doble fuente — servidor (exacto sobre TODA la base) o local (plan B sin internet)
   const stats = (() => {
+    if (statsRemotos) {
+      return {
+        ventasMes: Number(statsRemotos.ventas_mes || 0),
+        abonosPendientes: Number(statsRemotos.abonos_pendientes || 0),
+        gastosMes: Number(statsRemotos.gastos_mes || 0),
+        utilidadNeta: Number(statsRemotos.utilidad_neta || 0),
+        totalPacientes: Number(statsRemotos.total_pacientes || 0),
+        total: (historial || []).length
+      };
+    }
     try {
       const inicioMes = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
       let ventasMes = 0; let abonosPendientes = 0; let gastosMes = 0;
