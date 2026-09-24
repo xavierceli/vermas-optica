@@ -287,14 +287,18 @@ export function useGestor() {
     let nuevoPaciente = { ...paciente, [name]: value };
 
     if (name === 'cedula') {
-      const pacienteExistente = (historial || []).find(p => safeString(p?.cedula) === safeString(value) && safeString(p?.nombre) !== 'CONSUMIDOR FINAL');
+      const docCompleto = String(value).length >= 10; // cédula completa (o pasaporte largo)
+      const pacienteExistente = docCompleto
+        ? (historial || []).find(p => safeString(p?.cedula) === safeString(value) && safeString(p?.nombre) !== 'CONSUMIDOR FINAL')
+        : null;
       if (pacienteExistente) {
         nuevoPaciente = { ...pacienteExistente, fecha: hoy, cedula: value, id: '', pedido_id: '' };
         ['venta', 'abono', 'notas', 'notas_clinicas', 'codigo_armazon', 'tipo_armazon', 'param_horizontal', 'param_puente', 'param_vertical', 'param_diagonal', 'tipo_lente', 'material_lente', 'material_nota', 'tratam_tinturado_nota', 'tratam_foto_nota', 'tratam_trans_nota', 'pago_nota', 'accesorio_id', 'costo_armazon_int', 'costo_lunas_int', 'costo_accesorio_int', 'costo_tratamientos_int', 'costo_varios_int', 'comprobante_url'].forEach(k => nuevoPaciente[k] = '');
         ['tratam_ar', 'tratam_ar_azul', 'tratam_azul', 'tratam_tinturado', 'tratam_foto', 'tratam_trans', 'tratam_ninguno'].forEach(k => nuevoPaciente[k] = 'NO');
         nuevoPaciente.descuento = '0'; nuevoPaciente.forma_pago = 'Efectivo'; nuevoPaciente.estado = 'Ninguno';
       } else {
-        nuevoPaciente = { ...estadoInicial, fecha: hoy, cedula: value };
+        // Paciente NUEVO o cédula incompleta: SOLO actualizar la cédula, jamás borrar el formulario
+        nuevoPaciente = { ...paciente, cedula: value };
       }
     }
     setPaciente(nuevoPaciente);
@@ -759,17 +763,25 @@ export function useGestor() {
     solicitarConfirmacion("¿Cancelar venta?", async () => {
       try {
         if (item.pedido_id) {
-          // 1. PRIMERO la purga (para que no resucite)
+          // 1. PRIMERO la purga
           await purgarTareasDeRegistro('pedidos_ventas', item.pedido_id);
-          // 2. DESPUÉS el DELETE (la purga ya no puede tocarlo)
-          if (navigator.onLine) {
+          // 2. Luego el DELETE — con verificación real de conectividad, no navigator.onLine
+          let onlineReal = false;
+          try {
+            await fetch(`https://uaflmzuklixcpqspiyqi.supabase.co/rest/v1/pedidos_ventas?select=id&limit=1`, { 
+              method: 'HEAD', mode: 'no-cors', cache: 'no-store' 
+            });
+            onlineReal = true;
+          } catch (e) { onlineReal = false; }
+
+          if (onlineReal) {
             const { error } = await supabase.from('pedidos_ventas').delete().eq('id', item.pedido_id);
             if (error) throw new Error(error.message);
           } else {
             await encolarOperacion('pedidos_ventas', 'DELETE', { id: item.pedido_id });
           }
         }
-        // 3. Actualizar estado Y respaldo local (para que no reaparezca offline)
+        // 3. Estado + respaldo local (incondicional)
         setHistorial(prev => prev.map(p => p.id === item.id ? { ...p, pedido_id: null, venta: '', abono: '', estado: 'Ninguno' } : p));
         try {
           const backupActual = await leerBoveda('backup_historial') || [];

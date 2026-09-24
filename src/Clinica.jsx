@@ -45,7 +45,17 @@ const BloqueAutoRef = ({ ojo, label, paciente, manejarCambio }) => (
   </Fragment>
 );
 
-const BloqueQueratometria = ({ ojo, label, paciente, manejarCambio }) => (
+const BloqueQueratometria = ({ ojo, label, paciente, manejarCambio }) => {
+  // Cálculos automáticos de queratometría
+  const k1 = parseFloat(paciente[`k1_d_${ojo}`]);
+  const k2 = parseFloat(paciente[`k2_d_${ojo}`]);
+  const k1Valido = !isNaN(k1) && k1 > 30 && k1 < 60;
+  const k2Valido = !isNaN(k2) && k2 > 30 && k2 < 60;
+  const k1mm = k1Valido ? (337.5 / k1).toFixed(2) : '';
+  const k2mm = k2Valido ? (337.5 / k2).toFixed(2) : '';
+  const astig = (k1Valido && k2Valido) ? Math.abs(k2 - k1).toFixed(2) : '';
+
+  return (
   <Fragment>
     <tr className={ojo === 'od' ? "border-b" : "border-b border-t-2 border-gray-300"}>
       <td className="p-1 border-r font-extrabold bg-gray-50 text-sm" rowSpan="3">{label}</td>
@@ -58,7 +68,7 @@ const BloqueQueratometria = ({ ojo, label, paciente, manejarCambio }) => (
       <td className="border-r border-b p-2 bg-gray-50">
         <div className="flex justify-between items-center gap-1">
           <span className="text-xs font-bold text-gray-700">K1</span>
-          <input readOnly value={safeString(paciente[`k1_mm_${ojo}`])} className="w-14 p-1 bg-transparent outline-none font-black text-gray-800 text-center text-sm" />
+          <input readOnly value={k1mm} className="w-14 p-1 bg-transparent outline-none font-black text-gray-800 text-center text-sm" title="Calculado: 337.5 / K1" />
         </div>
       </td>
       <td className="border-r border-b p-2">
@@ -81,7 +91,7 @@ const BloqueQueratometria = ({ ojo, label, paciente, manejarCambio }) => (
       <td className="border-r border-b p-2 bg-gray-50">
         <div className="flex justify-between items-center gap-1">
           <span className="text-xs font-bold text-gray-700">K2</span>
-          <input readOnly value={safeString(paciente[`k2_mm_${ojo}`])} className="w-14 p-1 bg-transparent outline-none font-black text-gray-800 text-center text-sm" />
+          <input readOnly value={k2mm} className="w-14 p-1 bg-transparent outline-none font-black text-gray-800 text-center text-sm" title="Calculado: 337.5 / K2" />
         </div>
       </td>
       <td className="border-r border-b p-2">
@@ -95,7 +105,7 @@ const BloqueQueratometria = ({ ojo, label, paciente, manejarCambio }) => (
       <td className="border-r p-2">
         <div className="flex justify-between items-center gap-1">
           <span className="text-xs font-black text-teal-800">Ast.Cor</span>
-          <input readOnly value={safeString(paciente[`astig_corneal_${ojo}`])} className="w-14 p-1 bg-white border border-teal-400 rounded outline-none font-black text-teal-800 text-center text-sm shadow-sm" />
+          <input readOnly value={astig} className="w-14 p-1 bg-white border border-teal-400 rounded outline-none font-black text-teal-800 text-center text-sm shadow-sm" title="Calculado: |K2 - K1|" />
         </div>
       </td>
       <td className="border-r p-2 bg-gray-50"></td>
@@ -108,6 +118,7 @@ const BloqueQueratometria = ({ ojo, label, paciente, manejarCambio }) => (
     </tr>
   </Fragment>
 );
+};
 
 export default function Clinica({
   paciente, setPaciente, estadoInicial, editandoId, setEditandoId,
