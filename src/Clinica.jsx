@@ -1,3 +1,5 @@
+import { useState, useEffect, useRef, Fragment } from 'react'
+import { safeString, calcularCerca, buscarPacientesEnSupabase } from './utilidades'
 import { useState, Fragment } from 'react'
 import { safeString, calcularCerca } from './utilidades'
 
@@ -116,13 +118,33 @@ export default function Clinica({
 }) {
   const [sugerenciasCedula, setSugerenciasCedula] = useState([]);
   const [mostrarSugerencias, setMostrarSugerencias] = useState(false);
+    const [sugerenciasNube, setSugerenciasNube] = useState([]);
+  const timerNube = useRef(null);
+
+  useEffect(() => () => { if (timerNube.current) clearTimeout(timerNube.current); }, []);
 
   const manejarEscrituraCedula = (e) => {
     manejarCambio(e); 
     const val = e.target.value.trim();
+    
+    // Búsqueda en la NUBE con pausa: encuentra pacientes aunque no estén en los últimos 100 locales
+    if (timerNube.current) clearTimeout(timerNube.current);
+    if (val.length >= 3 && navigator.onLine) {
+      timerNube.current = setTimeout(async () => {
+        try {
+          const resultados = await buscarPacientesEnSupabase(val);
+          setSugerenciasNube((resultados || []).filter(r => safeString(r?.nombre) !== 'CONSUMIDOR FINAL').slice(0, 5));
+        } catch (err) { /* silencioso: si falla, las sugerencias locales siguen */ }
+      }, 400);
+    } else {
+      setSugerenciasNube([]);
+    }
+    
     if (val.length >= 2) {
-      const matches = (historial || []).filter(h => 
-        safeString(h?.cedula).includes(val) || safeString(h?.nombre).toLowerCase().includes(val.toLowerCase()) || safeString(h?.alias).toLowerCase().includes(val.toLowerCase())
+      const base = [...sugerenciasNube, ...(historial || [])];
+      const matches = base.filter(h => 
+        h && safeString(h?.nombre) !== 'CONSUMIDOR FINAL' &&
+        (safeString(h?.cedula).includes(val) || safeString(h?.nombre).toLowerCase().includes(val.toLowerCase()) || safeString(h?.alias).toLowerCase().includes(val.toLowerCase()))
       );
       const unicos = Array.from(new Set(matches.map(s => s.cedula)))
         .map(ced => matches.find(s => s.cedula === ced));
@@ -145,6 +167,7 @@ export default function Clinica({
       fecha_nacimiento: pac.fecha_nacimiento || '',
       antecedentes: pac.antecedentes || ''
     });
+    setSugerenciasNube([]);
     setMostrarSugerencias(false);
   };
 

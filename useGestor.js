@@ -70,6 +70,7 @@ export function useGestor() {
   const [armazonOriginalCodigo, setArmazonOriginalCodigo] = useState('');
   const [accesorioOriginalId, setAccesorioOriginalId] = useState('');
   const [medidasPaciente, setMedidasPaciente] = useState([]);
+    const [statsRemotos, setStatsRemotos] = useState(null);
 
   useEffect(() => {
     let montado = true;
@@ -193,7 +194,7 @@ export function useGestor() {
       }
 
       // Descargar datos actualizados de la nube
-      const { data: hist } = await supabase.from('vista_pacientes').select('*').order('fecha', { ascending: false }).limit(50);
+            const { data: hist } = await supabase.from('vista_pacientes_unicos').select('*').order('fecha', { ascending: false }).limit(100);
       const { data: inv } = await supabase.from('inventario').select('*').order('id', { ascending: false });
       const { data: prec } = await supabase.from('lista_precios').select('*').order('id', { ascending: false });
 
@@ -693,6 +694,18 @@ export function useGestor() {
   });
 
   const stats = (() => {
+    // Fuente preferida: el servidor (exacto sobre toda la base, hasta con 10 mil pacientes)
+    if (statsRemotos) {
+      return {
+        ventasMes: Number(statsRemotos.ventas_mes || 0),
+        abonosPendientes: Number(statsRemotos.abonos_pendientes || 0),
+        gastosMes: Number(statsRemotos.gastos_mes || 0),
+        utilidadNeta: Number(statsRemotos.utilidad_neta || 0),
+        totalPacientes: Number(statsRemotos.total_pacientes || 0),
+        total: (historial || []).length
+      };
+    }
+    // Plan B (sin internet): calcular con lo que hay en la bóveda local
     try {
       const inicioMes = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
       let ventasMes = 0; let abonosPendientes = 0; let gastosMes = 0;
@@ -700,8 +713,8 @@ export function useGestor() {
       (historial || []).forEach(p => {
         if (!p) return;
         const vFinal = Number((safeNum(p.venta) - (safeNum(p.venta) * safeNum(p.descuento) / 100)).toFixed(2));
-                const fechaVentas = (safeNum(p.venta) > 0 && p.fecha_venta) ? p.fecha_venta : p.fecha;
-        if (fechaVentas && fechaVentas >= inicioMes) {  
+        const fechaVentas = (safeNum(p.venta) > 0 && p.fecha_venta) ? p.fecha_venta : p.fecha;
+        if (fechaVentas && fechaVentas >= inicioMes) { 
           ventasMes += vFinal;
           gastosMes += (safeNum(p.costo_lunas_int) + safeNum(p.costo_armazon_int) + 
                        safeNum(p.costo_accesorio_int) + safeNum(p.costo_tratamientos_int) + 

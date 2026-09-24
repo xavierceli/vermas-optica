@@ -121,7 +121,7 @@ export const descargarCSV = (datos, nombreArchivo) => {
 export const buscarPacientesEnSupabase = async (textoBusqueda) => {
   try {
     if (!textoBusqueda || textoBusqueda.trim().length < 2) return [];
-    const query = textoBusqueda.trim().toUpperCase();
+      const query = textoBusqueda.trim().toUpperCase().replace(/[(),]/g, ' ').replace(/\s+/g, ' ');
     const esNumero = /^\d+$/.test(query);
     const filtro = esNumero 
       ? `cedula.ilike.${query}%,nombre.ilike.%${query}%` 
