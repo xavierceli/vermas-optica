@@ -19,7 +19,7 @@ export function useGestor() {
 
   const [confirmDialog, setConfirmDialog] = useState({ visible: false, mensaje: '', onConfirm: null });
   const solicitarConfirmacion = (mensaje, onConfirmCallback) => {
-    setConfirmDialog({ visible: true, mensaje, onConfirm: onConfirmCallback });
+    setConfirmDialog({ visible: true, mensaje: mensaje, onConfirm: onConfirmCallback });
   };
 
   const dateObj = new Date();
@@ -133,10 +133,9 @@ export function useGestor() {
 
     try {
       const bandejaSalida = await leerBoveda('bandeja_salida') || [];
-      const remapeoIds = {}; // si un perfil ya existía con otro id, aquí queda la traducción
+      const remapeoIds = {};
 
       if (bandejaSalida.length > 0) {
-        // Los perfiles van primero (las consultas y ventas dependen de ellos)
         const tareasOrdenadas = [...bandejaSalida].sort((a, b) => {
           if (a.tabla === 'pacientes_perfil' && b.tabla !== 'pacientes_perfil') return -1;
           if (a.tabla !== 'pacientes_perfil' && b.tabla === 'pacientes_perfil') return 1;
@@ -148,15 +147,13 @@ export function useGestor() {
             let datos = { ...tarea.datos };
 
             if (tarea.tabla === 'pacientes_perfil') {
-              delete datos.id_temporal; // limpiar tareas muy viejas
+              delete datos.id_temporal;
               if (tarea.tipo === 'INSERT') {
-                // upsert por cédula: crea si no existe, actualiza si ya está. Imposible duplicar.
                 const { data: perfilSubido, error } = await supabase.from('pacientes_perfil')
                   .upsert([datos], { onConflict: 'cedula' })
                   .select('id')
                   .single();
                 if (error) throw new Error(error.message);
-                // Si la nube conservó otro id (perfil ya existía), guardar la traducción
                 if (perfilSubido && datos.id && perfilSubido.id !== datos.id) {
                   remapeoIds[datos.id] = perfilSubido.id;
                 }
@@ -167,7 +164,6 @@ export function useGestor() {
               }
 
             } else if (tarea.tabla === 'consultas_clinicas' || tarea.tabla === 'pedidos_ventas') {
-              // Resolver el paciente real: por remapeo, o buscando por cédula (tareas viejas con temp-)
               if (datos.paciente_id && remapeoIds[datos.paciente_id]) {
                 datos.paciente_id = remapeoIds[datos.paciente_id];
               } else if (datos.paciente_id && String(datos.paciente_id).startsWith('temp-') && datos.cedula) {
@@ -257,6 +253,65 @@ export function useGestor() {
     }
   };
 
+  const manejarCambio = (e) => {
+    let { name, value, type, tagName } = e.target;
+    if (name === 'correo') value = safeString(value).toLowerCase();
+    else if (type === 'text' || tagName === 'TEXTAREA') value = safeString(value).toUpperCase();
+    
+    let nuevoPaciente = { ...paciente, [name]: value };
+
+    if (name === 'cedula') {
+      const pacienteExistente = (historial || []).find(p => safeString(p?.cedula) === safeString(value) && safeString(p?.nombre) !== 'CONSUMIDOR FINAL');
+      if (pacienteExistente) {
+        nuevoPaciente = { ...pacienteExistente, fecha: hoy, cedula: value, id: '', pedido_id: '' };
+        ['venta', 'abono', 'notas', 'notas_clinicas', 'codigo_armazon', 'tipo_armazon', 'param_horizontal', 'param_puente', 'param_vertical', 'param_diagonal', 'tipo_lente', 'material_lente', 'material_nota', 'tratam_tinturado_nota', 'tratam_foto_nota', 'tratam_trans_nota', 'pago_nota', 'accesorio_id', 'costo_armazon_int', 'costo_lunas_int', 'costo_accesorio_int', 'costo_tratamientos_int', 'costo_varios_int', 'comprobante_url'].forEach(k => nuevoPaciente[k] = '');
+        ['tratam_ar', 'tratam_ar_azul', 'tratam_azul', 'tratam_tinturado', 'tratam_foto', 'tratam_trans', 'tratam_ninguno'].forEach(k => nuevoPaciente[k] = 'NO');
+        nuevoPaciente.descuento = '0'; nuevoPaciente.forma_pago = 'Efectivo'; nuevoPaciente.estado = 'Ninguno';
+      } else {
+        nuevoPaciente = { ...estadoInicial, fecha: hoy, cedula: value };
+      }
+    }
+    setPaciente(nuevoPaciente);
+    if (intentadoGuardar) setIntentadoGuardar(false);
+  };
+
+  const manejarCambioPrecio = (e) => {
+    let { name, value, type, tagName } = e.target;
+    if (type === 'text' || tagName === 'TEXTAREA') value = safeString(value).toUpperCase();
+    setNuevoPrecio({ ...nuevoPrecio, [name]: value });
+  };
+
+  const guardarPrecio = async () => {
+    try {
+      if (!nuevoPrecio.rango_medida) return mostrarToast("Ingresa el rango de medida.", "warning");
+      let datosAGuardar = { ...nuevoPrecio, costo_laboratorio: Number(safeNum(nuevoPrecio.costo_laboratorio).toFixed(2)), precio_sugerido: Number(safeNum(nuevoPrecio.precio_sugerido).toFixed(2)) };
+      
+      if (editandoPrecioId) {
+        const { error } = await supabase.from('lista_precios').update(datosAGuardar).eq('id', editandoPrecioId);
+        if (error) throw new Error(error.message);
+        mostrarToast("Tarifa actualizada.", "success");
+      } else {
+        const { error } = await supabase.from('lista_precios').insert([datosAGuardar]);
+        if (error) throw new Error(error.message);
+        mostrarToast("Tarifa registrada.", "success");
+      }
+      setNuevoPrecio(precioInicial); setEditandoPrecioId(null); await obtenerDatos();
+    } catch(err) { mostrarToast("Error al guardar: " + err.message, "error"); }
+  };
+
+  const cargarParaEditarPrecio = (item) => { setNuevoPrecio({ ...item }); setEditandoPrecioId(item.id); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+  const eliminarPrecio = (id) => {
+    solicitarConfirmacion("¿Seguro que deseas eliminar?", async () => {
+      try {
+        const { error } = await supabase.from('lista_precios').delete().eq('id', id);
+        if (error) throw new Error(error.message);
+        mostrarToast("Eliminado.", "success"); await obtenerDatos();
+      } catch (err) {
+        mostrarToast("Error al eliminar: " + err.message, "error");
+      }
+    });
+  };
+
   const manejarCambioInv = (e) => {
     let { name, value, type, tagName } = e.target;
     if (type === 'text' || tagName === 'TEXTAREA') value = safeString(value).toUpperCase();
@@ -315,7 +370,7 @@ export function useGestor() {
     return false;
   };
 
-  const guardarPacienteClinico = async () => {  const guardarPacienteClinico = async () => {
+  const guardarPacienteClinico = async () => {
     if (guardando) return;
 
     try {
@@ -431,6 +486,7 @@ export function useGestor() {
       setGuardando(false);
     }
   };
+
   const terminarGuardado = async () => {
     setPaciente(estadoInicial);
     setEditandoId(null);
@@ -552,7 +608,7 @@ export function useGestor() {
 
     setPedidoSeleccionado(prev => {
       const nuevo = { ...prev, [name]: val };
-            const camposQueAfectanPrecio = ['codigo_armazon', 'material_lente', 'accesorio_id', 'tratam_ar', 'tratam_ar_azul', 'tratam_azul', 'tratam_tinturado', 'tratam_foto', 'tratam_trans', 'tratam_ninguno'];
+      const camposQueAfectanPrecio = ['codigo_armazon', 'material_lente', 'accesorio_id', 'tratam_ar', 'tratam_ar_azul', 'tratam_azul', 'tratam_tinturado', 'tratam_foto', 'tratam_trans', 'tratam_ninguno'];
 
       if (camposQueAfectanPrecio.includes(name)) {
         if (name === 'tratam_ninguno' && val === 'SI') {
@@ -717,7 +773,7 @@ export function useGestor() {
       (historial || []).forEach(p => {
         if (!p) return;
         const vFinal = Number((safeNum(p.venta) - (safeNum(p.venta) * safeNum(p.descuento) / 100)).toFixed(2));
-                const fechaVentas = (safeNum(p.venta) > 0 && p.fecha_venta) ? p.fecha_venta : p.fecha;
+        const fechaVentas = (safeNum(p.venta) > 0 && p.fecha_venta) ? p.fecha_venta : p.fecha;
         if (fechaVentas && fechaVentas >= inicioMes) {  
           ventasMes += vFinal;
           gastosMes += (safeNum(p.costo_lunas_int) + safeNum(p.costo_armazon_int) + 
