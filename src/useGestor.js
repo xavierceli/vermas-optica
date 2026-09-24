@@ -354,6 +354,11 @@ export function useGestor() {
       let clinicaData = {};
       camposClinica.forEach(k => clinicaData[k] = paciente[k] === '' ? null : paciente[k]);
 
+            // IDENTIDAD DEFINITIVA: los mismos ids sirven al flujo online Y al offline.
+      // Así, si la red es lenta, nunca nacen dos registros distintos.
+      const idPaciente = paciente.paciente_id || generarId();
+      const idConsulta = editandoId || generarId();
+
       let modoOfflineForzado = !navigator.onLine;
 
       if (!modoOfflineForzado) {
@@ -371,9 +376,9 @@ export function useGestor() {
                 const { error: errUpd } = await supabase.from('pacientes_perfil').update(perfilData).eq('id', pac_id);
                 if (errUpd) throw new Error(errUpd.message);
               } else { 
-                const { data: nuevo, error: errNuevo } = await supabase.from('pacientes_perfil').insert([perfilData]).select().single(); 
+                             const { error: errNuevo } = await supabase.from('pacientes_perfil').upsert([{ ...perfilData, id: idPaciente }]); 
                 if (errNuevo) throw new Error(errNuevo.message);
-                pac_id = nuevo.id; 
+                pac_id = idPaciente;  
               }
             }
 
@@ -382,28 +387,28 @@ export function useGestor() {
               const { error: errCon } = await supabase.from('consultas_clinicas').update(clinicaData).eq('id', editandoId);
               if (errCon) throw new Error(errCon.message);
             } else {
-              const { error: errCon } = await supabase.from('consultas_clinicas').insert([clinicaData]);
+                            const { error: errCon } = await supabase.from('consultas_clinicas').upsert([{ ...clinicaData, id: idConsulta }]);
               if (errCon) throw new Error(errCon.message);
             }
           };
 
           await Promise.race([
             guardarConTimeout(),
-            new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 3000))
+            new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 10000))
           ]);
 
           mostrarToast("Consulta guardada en la nube.", "success");
           await terminarGuardado();
           return;
-        } catch {
+                } catch (err) {
+          console.warn("Guardado online falló, usando modo offline:", err?.message || err);
+          modoOfflineForzado = true;
+        }
           modoOfflineForzado = true;
         }
       }
 
       if (modoOfflineForzado) {
-        // --- NUEVO: identidad definitiva desde el nacimiento ---
-        const idPaciente = paciente.paciente_id || generarId();
-        const idConsulta = editandoId || generarId();
         clinicaData.paciente_id = idPaciente;
         clinicaData.id = idConsulta; // la tarea viaja CON su id definitivo
 
