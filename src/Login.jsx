@@ -60,6 +60,11 @@ export default function Login() {
       return;
     }
     
+    // Honestidad primero: el enlace se envía por correo, requiere internet
+    if (!navigator.onLine) {
+      return setMensaje({ texto: '⚠️ Sin conexión a internet. El enlace de recuperación se envía por correo electrónico, por lo que necesita conexión. Reconéctate e intenta de nuevo.', tipo: 'warning' });
+    }
+    
     setCargando(true);
     setMensaje({ texto: '', tipo: '' });
     
@@ -77,7 +82,16 @@ export default function Login() {
       }, 5000);
       
     } catch (error) {
-      setMensaje({ texto: 'Hubo un error conectando con el servidor. Intenta de nuevo.', tipo: 'error' });
+      console.error("Error en recuperación:", error);
+      const textoError = String(error?.message || '').toLowerCase();
+      
+      if (textoError.includes('fetch') || textoError.includes('network')) {
+        setMensaje({ texto: 'Se perdió la conexión. Revisa tu internet e intenta de nuevo.', tipo: 'warning' });
+      } else if (textoError.includes('60 seconds') || textoError.includes('rate')) {
+        setMensaje({ texto: 'Por seguridad, solo se puede pedir el enlace cada 60 segundos. Espera un minuto e intenta de nuevo.', tipo: 'warning' });
+      } else {
+        setMensaje({ texto: 'Error: ' + (error?.message || 'desconocido'), tipo: 'error' });
+      }
     } finally {
       setCargando(false);
     }
