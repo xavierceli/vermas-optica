@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
 
 export default function Login() {
@@ -7,8 +7,19 @@ export default function Login() {
   const [cargando, setCargando] = useState(false);
   const [mensaje, setMensaje] = useState({ texto: '', tipo: '' });
   
-  // Controlador para cambiar entre modo "Ingresar" y "Recuperar"
   const [modoRecuperar, setModoRecuperar] = useState(false);
+  const [modoNuevaClave, setModoNuevaClave] = useState(false);
+  const [nuevaClave, setNuevaClave] = useState('');
+  const [confirmarClave, setConfirmarClave] = useState('');
+
+  // Detectar si venimos del enlace de recuperación de contraseña
+  useEffect(() => {
+    if (sessionStorage.getItem('vermas_cambio_clave')) {
+      setModoNuevaClave(true);
+      setModoRecuperar(false);
+      setMensaje({ texto: 'Crea tu nueva contraseña para volver a ingresar.', tipo: 'warning' });
+    }
+  }, []);
 
   const manejarLogin = async (e) => {
     e.preventDefault();
@@ -18,7 +29,6 @@ export default function Login() {
     try {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
-      // Si es exitoso, App.jsx detectará la sesión automáticamente y cargará el sistema
     } catch (error) {
       setMensaje({ texto: 'Credenciales incorrectas. Verifica tu correo o contraseña.', tipo: 'error' });
     } finally {
@@ -44,7 +54,6 @@ export default function Login() {
       
       setMensaje({ texto: '¡Listo! Revisa tu bandeja de entrada o spam para crear tu nueva clave.', tipo: 'success' });
       
-      // Volver a la pantalla normal después de 5 segundos
       setTimeout(() => {
         setModoRecuperar(false);
         setMensaje({ texto: '', tipo: '' });
@@ -57,6 +66,33 @@ export default function Login() {
     }
   };
 
+  const guardarNuevaClave = async (e) => {
+    e.preventDefault();
+    if (nuevaClave.length < 6) {
+      return setMensaje({ texto: 'La contraseña debe tener al menos 6 caracteres.', tipo: 'warning' });
+    }
+    if (nuevaClave !== confirmarClave) {
+      return setMensaje({ texto: 'Las contraseñas no coinciden.', tipo: 'warning' });
+    }
+    
+    setCargando(true);
+    setMensaje({ texto: '', tipo: '' });
+    
+    try {
+      const { error } = await supabase.auth.updateUser({ password: nuevaClave });
+      if (error) throw error;
+      
+      sessionStorage.removeItem('vermas_cambio_clave');
+      setMensaje({ texto: '¡Contraseña actualizada! Entrando al sistema...', tipo: 'success' });
+      
+      setTimeout(() => window.location.reload(), 1500);
+    } catch (error) {
+      setMensaje({ texto: 'Error al actualizar: ' + error.message, tipo: 'error' });
+    } finally {
+      setCargando(false);
+    }
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100 p-4">
       <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border-t-8 border-teal-600">
@@ -64,7 +100,7 @@ export default function Login() {
         <div className="text-center mb-8">
           <h1 className="text-3xl font-black text-teal-800 tracking-wider">VER+ ÓPTICA</h1>
           <p className="text-gray-500 font-medium mt-1">
-            {modoRecuperar ? 'Recuperación de Acceso' : 'Sistema de Gestión Integrada'}
+            {modoNuevaClave ? 'Crear Nueva Contraseña' : modoRecuperar ? 'Recuperación de Acceso' : 'Sistema de Gestión Integrada'}
           </p>
         </div>
 
@@ -78,56 +114,89 @@ export default function Login() {
           </div>
         )}
 
-        <form onSubmit={modoRecuperar ? recuperarContrasena : manejarLogin} className="space-y-5">
-          <div>
-            <label className="block text-sm font-bold text-gray-700 mb-1">Correo Electrónico</label>
-            <input 
-              type="email" 
-              value={email}
-              // Forzamos minúsculas para correos
-              onChange={(e) => setEmail(e.target.value.toLowerCase())}
-              className="w-full p-3 border rounded-lg outline-none focus:ring-2 focus:ring-teal-500 bg-gray-50 focus:bg-white transition-all font-medium"
-              placeholder="tu@correo.com"
-              required
-            />
-          </div>
-
-          {!modoRecuperar && (
+        {modoNuevaClave ? (
+          <form onSubmit={guardarNuevaClave} className="space-y-5">
             <div>
-              <div className="flex justify-between items-center mb-1">
-                <label className="block text-sm font-bold text-gray-700">Contraseña</label>
-                <button 
-                  type="button" 
-                  onClick={() => { setModoRecuperar(true); setMensaje({texto:'', tipo:''}); }}
-                  className="text-xs text-teal-600 hover:text-teal-800 font-bold transition-colors"
-                >
-                  ¿Olvidaste tu contraseña?
-                </button>
-              </div>
+              <label className="block text-sm font-bold text-gray-700 mb-1">Nueva Contraseña</label>
               <input 
                 type="password" 
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                value={nuevaClave}
+                onChange={(e) => setNuevaClave(e.target.value)}
                 className="w-full p-3 border rounded-lg outline-none focus:ring-2 focus:ring-teal-500 bg-gray-50 focus:bg-white transition-all font-medium"
-                placeholder="••••••••"
-                required={!modoRecuperar}
+                placeholder="Mínimo 6 caracteres"
+                required 
               />
             </div>
-          )}
+            <div>
+              <label className="block text-sm font-bold text-gray-700 mb-1">Confirmar Contraseña</label>
+              <input 
+                type="password" 
+                value={confirmarClave}
+                onChange={(e) => setConfirmarClave(e.target.value)}
+                className="w-full p-3 border rounded-lg outline-none focus:ring-2 focus:ring-teal-500 bg-gray-50 focus:bg-white transition-all font-medium"
+                placeholder="Repite la nueva contraseña"
+                required 
+              />
+            </div>
+            <button 
+              type="submit" 
+              disabled={cargando}
+              className={`w-full p-3 rounded-lg font-black text-white shadow-md transition-all ${cargando ? 'bg-gray-400 cursor-not-allowed' : 'bg-teal-600 hover:bg-teal-700'}`}
+            >
+              {cargando ? 'Guardando...' : '🔐 Guardar Nueva Contraseña'}
+            </button>
+          </form>
+        ) : (
+          <form onSubmit={modoRecuperar ? recuperarContrasena : manejarLogin} className="space-y-5">
+            <div>
+              <label className="block text-sm font-bold text-gray-700 mb-1">Correo Electrónico</label>
+              <input 
+                type="email" 
+                value={email}
+                onChange={(e) => setEmail(e.target.value.toLowerCase())}
+                className="w-full p-3 border rounded-lg outline-none focus:ring-2 focus:ring-teal-500 bg-gray-50 focus:bg-white transition-all font-medium"
+                placeholder="tu@correo.com"
+                required
+              />
+            </div>
 
-          <button 
-            type="submit" 
-            disabled={cargando}
-            className={`w-full p-3 rounded-lg font-black text-white shadow-md transition-all ${
-              cargando ? 'bg-gray-400 cursor-not-allowed' : 
-              modoRecuperar ? 'bg-amber-500 hover:bg-amber-600' : 'bg-teal-600 hover:bg-teal-700'
-            }`}
-          >
-            {cargando ? 'Procesando...' : (modoRecuperar ? '📧 Enviar Enlace' : '🔐 Ingresar al Sistema')}
-          </button>
-        </form>
+            {!modoRecuperar && (
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="block text-sm font-bold text-gray-700">Contraseña</label>
+                  <button 
+                    type="button" 
+                    onClick={() => { setModoRecuperar(true); setMensaje({texto:'', tipo:''}); }}
+                    className="text-xs text-teal-600 hover:text-teal-800 font-bold transition-colors"
+                  >
+                    ¿Olvidaste tu contraseña?
+                  </button>
+                </div>
+                <input 
+                  type="password" 
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full p-3 border rounded-lg outline-none focus:ring-2 focus:ring-teal-500 bg-gray-50 focus:bg-white transition-all font-medium"
+                  placeholder="••••••••"
+                  required={!modoRecuperar}
+                />
+              </div>
+            )}
 
-        {modoRecuperar && (
+            <button 
+              type="submit" 
+              disabled={cargando}
+              className={`w-full p-3 rounded-lg font-black text-white shadow-md transition-all ${
+                cargando ? 'bg-gray-400 cursor-not-allowed' : 
+                modoRecuperar ? 'bg-amber-500 hover:bg-amber-600' : 'bg-teal-600 hover:bg-teal-700'
+              }`}
+            >
+              {cargando ? 'Procesando...' : (modoRecuperar ? '📧 Enviar Enlace' : '🔐 Ingresar al Sistema')}
+            </button>
+          </form>
+        )}
+
+        {modoRecuperar && !modoNuevaClave && (
           <div className="mt-6 text-center">
             <button 
               type="button" 

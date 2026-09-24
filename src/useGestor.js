@@ -93,8 +93,15 @@ export function useGestor() {
       }
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (montado) {
+        if (event === 'PASSWORD_RECOVERY') {
+          // Viene del enlace de recuperación: primero debe crear su nueva clave
+          sessionStorage.setItem('vermas_cambio_clave', '1');
+          setEstaAutenticado(false);
+          setCargandoAuth(false);
+          return;
+        }
         setEstaAutenticado(!!session);
         setCargandoAuth(false);
         if (session) obtenerDatos();
@@ -321,7 +328,26 @@ export function useGestor() {
   const guardarItemInventario = async () => {
     try {
       setCargandoImagen(true);
-      let datosAGuardar = { ...nuevoItemInv, precio: Number(safeNum(nuevoItemInv.precio).toFixed(2)), costo_compra: Number(safeNum(nuevoItemInv.costo_compra).toFixed(2)), stock: Math.round(safeNum(nuevoItemInv.stock)) || 1 };
+      let urlImagen = nuevoItemInv.imagen_url || null;
+
+      // NUEVO: si el usuario eligió una foto, comprimirla y subirla al almacén
+      if (imagenSeleccionada) {
+        try {
+          const archivoComprimido = await comprimirImagen(imagenSeleccionada);
+          const nombreArchivo = `productos/${Date.now()}-${generarId().substring(0, 8)}.jpg`;
+          const { error: errSubida } = await supabase.storage
+            .from('productos')
+            .upload(nombreArchivo, archivoComprimido, { contentType: 'image/jpeg' });
+          if (errSubida) throw new Error(errSubida.message);
+          const { data } = supabase.storage.from('productos').getPublicUrl(nombreArchivo);
+          urlImagen = data.publicUrl;
+        } catch (errImg) {
+          mostrarToast("La foto no se pudo subir (" + errImg.message + "). El producto se guardará sin imagen.", "warning");
+          urlImagen = nuevoItemInv.imagen_url || null;
+        }
+      }
+
+      let datosAGuardar = { ...nuevoItemInv, imagen_url: urlImagen, precio: Number(safeNum(nuevoItemInv.precio).toFixed(2)), costo_compra: Number(safeNum(nuevoItemInv.costo_compra).toFixed(2)), stock: Math.round(safeNum(nuevoItemInv.stock)) || 1 };
       Object.keys(datosAGuardar).forEach(key => { if (datosAGuardar[key] === '') datosAGuardar[key] = null; });
 
       if (editandoInvId) {

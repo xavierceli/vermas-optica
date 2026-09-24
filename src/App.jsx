@@ -32,17 +32,32 @@ function App() {
       }
     };
 
-    const radar = setInterval(verificarInternetReal, 3000);
-    window.addEventListener('offline', () => setEsOffline(true));
+    // Funciones con nombre: así los listeners SÍ se pueden eliminar correctamente
+    const marcarOffline = () => setEsOffline(true);
+
+    // Radar cada 30 segundos (antes eran 3: ~28,000 consultas diarias a Google)
+    const radar = setInterval(verificarInternetReal, 30000);
+    window.addEventListener('offline', marcarOffline);
     window.addEventListener('online', verificarInternetReal);
     verificarInternetReal();
 
     return () => {
       clearInterval(radar);
-      window.removeEventListener('offline', () => setEsOffline(true));
+      window.removeEventListener('offline', marcarOffline);
       window.removeEventListener('online', verificarInternetReal);
     };
   }, []);
+
+  // Cerrar el diálogo de confirmación con la tecla Escape
+  useEffect(() => {
+    const cerrarConEscape = (e) => {
+      if (e.key === 'Escape') g.setConfirmDialog({ visible: false });
+    };
+    if (g.confirmDialog.visible) {
+      window.addEventListener('keydown', cerrarConEscape);
+      return () => window.removeEventListener('keydown', cerrarConEscape);
+    }
+  }, [g.confirmDialog.visible]);
 
   // Si no está autenticado, mostramos el login de inmediato (evita quedarse congelado cargando)
   if (!g.estaAutenticado) return <Login />;
