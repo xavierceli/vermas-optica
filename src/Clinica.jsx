@@ -1,7 +1,5 @@
 import { useState, useEffect, useRef, Fragment } from 'react'
 import { safeString, calcularCerca, buscarPacientesEnSupabase } from './utilidades'
-import { useState, Fragment } from 'react'
-import { safeString, calcularCerca } from './utilidades'
 
 const FilaRefraccion = ({ ojo, label, paciente, manejarCambio, claseInputRef }) => (
   <tr className={ojo === 'od' ? "border-b hover:bg-gray-50" : "hover:bg-gray-50"}>
