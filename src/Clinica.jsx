@@ -46,14 +46,33 @@ const BloqueAutoRef = ({ ojo, label, paciente, manejarCambio }) => (
 );
 
 const BloqueQueratometria = ({ ojo, label, paciente, manejarCambio }) => {
-  // Cálculos automáticos de queratometría
+  // CÁLCULOS AUTOMÁTICOS DE QUERATOMETRÍA
   const k1 = parseFloat(paciente[`k1_d_${ojo}`]);
   const k2 = parseFloat(paciente[`k2_d_${ojo}`]);
+  const eje1 = parseFloat(paciente[`eje_k1_${ojo}`]);
+  const eje2 = parseFloat(paciente[`eje_k2_${ojo}`]);
   const k1Valido = !isNaN(k1) && k1 > 30 && k1 < 60;
   const k2Valido = !isNaN(k2) && k2 > 30 && k2 < 60;
+
+  // mm = 337.5 / D (índice queratométrico estándar) — solo visual
   const k1mm = k1Valido ? (337.5 / k1).toFixed(2) : '';
   const k2mm = k2Valido ? (337.5 / k2).toFixed(2) : '';
+
+  // Astigmatismo corneal = |K2 - K1|
   const astig = (k1Valido && k2Valido) ? Math.abs(k2 - k1).toFixed(2) : '';
+
+  // Eje del astigmatismo = eje del meridiano MÁS PLANO (menor dioptría)
+  const ejeAstig = (k1Valido && k2Valido)
+    ? (k1 <= k2 ? safeString(paciente[`eje_k1_${ojo}`]) : safeString(paciente[`eje_k2_${ojo}`]))
+    : '';
+
+  // Validación: los meridianos deben ser perpendiculares (±5° de tolerancia)
+  let perpendiculares = true;
+  if (!isNaN(eje1) && !isNaN(eje2)) {
+    let diff = Math.abs(eje1 - eje2) % 180;
+    if (diff > 90) diff = 180 - diff;
+    perpendiculares = Math.abs(diff - 90) <= 5;
+  }
 
   return (
   <Fragment>
@@ -74,7 +93,7 @@ const BloqueQueratometria = ({ ojo, label, paciente, manejarCambio }) => {
       <td className="border-r border-b p-2">
         <div className="flex justify-between items-center gap-1">
           <span className="text-xs font-bold text-gray-700">Rad1</span>
-          <input name={`eje_k1_${ojo}`} value={safeString(paciente[`eje_k1_${ojo}`])} onChange={manejarCambio} className="w-14 p-1 border border-gray-300 rounded outline-none text-center text-sm font-bold focus:ring-1 focus:ring-teal-500" />
+          <input name={`eje_k1_${ojo}`} value={safeString(paciente[`eje_k1_${ojo}`])} onChange={manejarCambio} className="w-14 p-1 border border-gray-300 rounded outline-none text-center text-sm font-bold focus:ring-1 focus:ring-teal-500" placeholder="°" />
         </div>
       </td>
       <td className="p-1" rowSpan="3">
@@ -97,7 +116,7 @@ const BloqueQueratometria = ({ ojo, label, paciente, manejarCambio }) => {
       <td className="border-r border-b p-2">
         <div className="flex justify-between items-center gap-1">
           <span className="text-xs font-bold text-gray-700">Rad2</span>
-          <input name={`eje_k2_${ojo}`} value={safeString(paciente[`eje_k2_${ojo}`])} onChange={manejarCambio} className="w-14 p-1 border border-gray-300 rounded outline-none text-center text-sm font-bold focus:ring-1 focus:ring-teal-500" />
+          <input name={`eje_k2_${ojo}`} value={safeString(paciente[`eje_k2_${ojo}`])} onChange={manejarCambio} className={`w-14 p-1 border rounded outline-none text-center text-sm font-bold focus:ring-1 focus:ring-teal-500 ${perpendiculares ? 'border-gray-300' : 'border-amber-400 bg-amber-50'}`} placeholder="°" title={perpendiculares ? '' : 'Aviso: Rad1 y Rad2 no son perpendiculares (deberían diferir ~90°) — revisa la lectura'} />
         </div>
       </td>
     </tr>
@@ -112,7 +131,7 @@ const BloqueQueratometria = ({ ojo, label, paciente, manejarCambio }) => {
       <td className="border-r p-2">
         <div className="flex justify-between items-center gap-1">
           <span className="text-xs font-bold text-gray-700">Eje</span>
-          <input name={`eje_astig_${ojo}`} value={safeString(paciente[`eje_astig_${ojo}`])} onChange={manejarCambio} className="w-14 p-1 border border-gray-300 rounded outline-none text-center text-sm font-bold focus:ring-1 focus:ring-teal-500" />
+          <input readOnly value={ejeAstig} className="w-14 p-1 bg-white border border-teal-400 rounded outline-none font-black text-teal-800 text-center text-sm shadow-sm" title="Calculado: eje del meridiano más plano" />
         </div>
       </td>
     </tr>

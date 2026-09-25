@@ -317,7 +317,7 @@ export default function Historial({
             const vta = safeNum(item.venta);
             const abono = safeNum(item.abono);
             const vFinal = vta - (vta * desc / 100);
-            const saldoPendiente = vFinal - abono;
+            const saldoPendiente = (typeof item.deuda_total === 'number') ? item.deuda_total : (vFinal - abono);
             const tieneDeuda = saldoPendiente > 0;
             const tienePedido = String(item.estado || 'Ninguno') !== 'Ninguno' || Number(item.venta || 0) > 0 || String(item.codigo_armazon || '') !== '' || String(item.accesorio_id || '') !== '';
             

@@ -251,6 +251,14 @@ export function useGestor() {
           vistos.add(p.id);
           return true;
         });
+                // LOTE 7: las ventas llevan su propia fecha (no la heredan de la consulta)
+        const mapaFechasVenta = {};
+        hist.forEach(h => { if (h.fecha_venta && h.pedido_id) mapaFechasVenta[h.pedido_id] = h.fecha_venta; });
+        combinado.forEach(p => {
+          if (p.pedido_id && mapaFechasVenta[p.pedido_id]) {
+            p.fecha_venta = mapaFechasVenta[p.pedido_id];
+          }
+        });
         combinado.sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')));
 
         setHistorial(combinado);
@@ -264,6 +272,12 @@ export function useGestor() {
         setListaPrecios(prec);
         await escribirBoveda('backup_precios', prec);
       }
+
+            // LOTE 7: deuda TOTAL por paciente (todas sus compras), adjunta a cada tarjeta
+      const { data: deudas } = await supabase.rpc('deudas_pacientes');
+      const mapaDeudas = {};
+      (deudas || []).forEach(d => { mapaDeudas[safeString(d.cedula)] = Number(d.deuda_total); });
+      setHistorial(prev => prev.map(p => ({ ...p, deuda_total: mapaDeudas[safeString(p?.cedula)] ?? 0 })));
 
       // LOTE 6: stats oficiales calculados por el servidor (sobre TODA la base)
       const { data: s } = await supabase.rpc('stats_negocio');
@@ -607,6 +621,7 @@ export function useGestor() {
     if (!pedidoActual) return 0;
     let total = 0;
 
+    // ARMAZÓN (busca su precio en el inventario por código)
     if (pedidoActual.codigo_armazon) {
       const armazonEncontrado = (inventario || []).find(
         item => String(item.codigo).trim().toUpperCase() === String(pedidoActual.codigo_armazon).trim().toUpperCase()
@@ -616,6 +631,7 @@ export function useGestor() {
       }
     }
 
+    // ACCESORIO (busca su precio en el inventario por id)
     if (pedidoActual.accesorio_id) {
       const accesorioEncontrado = (inventario || []).find(
         item => String(item.id) === String(pedidoActual.accesorio_id)
@@ -625,12 +641,27 @@ export function useGestor() {
       }
     }
 
-    const pMat = { 'Plástico': 20, 'Policarbonato': 30, 'Reducido': 50, 'Hiperreducido': 70, 'Otros': 0 };
-    if (pedidoActual.material_lente && pMat[pedidoActual.material_lente]) total += pMat[pedidoActual.material_lente];
+    // MATERIALES Y TRATAMIENTOS: leídos de TU TARIFARIO (tipo_lente='CALCULO', rango='BASE')
+    // Si no existe la fila, usa el precio histórico de respaldo para no quedarte en $0
+    const bases = (listaPrecios || []).filter(p => safeString(p.tipo_lente) === 'CALCULO' && safeString(p.rango_medida) === 'BASE');
+    const precioDe = (material) => {
+      const fila = bases.find(b => safeString(b.material).trim().toUpperCase() === String(material).trim().toUpperCase());
+      if (fila) return safeNum(fila.precio_sugerido);
+      const respaldo = { 'PLÁSTICO': 20, 'POLICARBONATO': 30, 'REDUCIDO': 50, 'HIPERREDUCIDO': 70, 'OTROS': 0,
+        'AR VERDE': 20, 'AR AZUL': 20, 'FILTRO AZUL': 35, 'TINTURADO': 20, 'FOTOCROMÁTICO': 55, 'TRANSITION': 100 };
+      return respaldo[String(material).trim().toUpperCase()] || 0;
+    };
 
-    const pTrat = { tratam_ar: 20, tratam_ar_azul: 20, tratam_azul: 35, tratam_tinturado: 20, tratam_foto: 55, tratam_trans: 100 };
-    ['tratam_ar', 'tratam_ar_azul', 'tratam_azul', 'tratam_tinturado', 'tratam_foto', 'tratam_trans'].forEach(k => { 
-      if (pedidoActual[k] === 'SI') total += pTrat[k]; 
+    if (pedidoActual.material_lente && pedidoActual.material_lente !== 'Otros') {
+      total += precioDe(pedidoActual.material_lente);
+    }
+
+    const mapaTratamientos = {
+      tratam_ar: 'AR Verde', tratam_ar_azul: 'AR Azul', tratam_azul: 'Filtro Azul',
+      tratam_tinturado: 'Tinturado', tratam_foto: 'Fotocromático', tratam_trans: 'Transition'
+    };
+    Object.keys(mapaTratamientos).forEach(k => {
+      if (pedidoActual[k] === 'SI') total += precioDe(mapaTratamientos[k]);
     });
 
     return Number(total.toFixed(2));
@@ -679,9 +710,12 @@ export function useGestor() {
       let datosVenta = { id: idPedido, paciente_id: idPacientePedido, consulta_id: idConsultaPedido };
       camposPedido.forEach(k => datosVenta[k] = pedidoSeleccionado[k] === '' ? null : pedidoSeleccionado[k]);
 
+      // Fecha: NUEVA venta nace HOY; venta EXISTENTE conserva su fecha original
       const esPedidoNuevo = !pedidoSeleccionado.pedido_id || String(pedidoSeleccionado.pedido_id).startsWith('temp-');
       if (esPedidoNuevo) {
         datosVenta.fecha = hoy;
+      } else if (pedidoSeleccionado.fecha_venta) {
+        datosVenta.fecha = pedidoSeleccionado.fecha_venta; // la fecha REAL de la venta, no la de la consulta
       }
 
       let pac_id = null;
