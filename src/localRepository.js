@@ -772,21 +772,41 @@ export const obtenerSnapshotLocal = async () => {
 };
 
 const markLocalOperationSyncedImpl = async operation => {
-  const entityTable = {
-    GUARDAR_CONSULTA: 'consultations',
-    CREAR_VENTA: 'sales',
-    EDITAR_VENTA: 'sales',
-    REGISTRAR_PAGO: 'payments',
-    CAMBIAR_ESTADO_VENTA: 'sales',
-    ANULAR_VENTA: 'sales',
-    ARCHIVAR_CONSULTA: 'consultations',
-    UPSERT_INVENTARIO: 'inventory',
-    UPSERT_PRECIO: 'prices'
-  }[operation.type];
-  if (entityTable) {
-    const table = localDb[entityTable];
-    const entity = await table.get(operation.entityId);
-    if (entity) await table.put({ ...entity, syncStatus: 'synced', updatedAt: nowIso() });
+  const marcarSincronizado = async (tabla, id) => {
+    if (!id) return;
+    const entity = await localDb[tabla].get(id);
+    if (entity) await localDb[tabla].put({ ...entity, syncStatus: 'synced', updatedAt: nowIso() });
+  };
+  const interno = operation.payload?.p_payload || {};
+  switch (operation.type) {
+    case 'GUARDAR_CONSULTA':
+      await marcarSincronizado('consultations', operation.entityId);
+      await marcarSincronizado('patients', interno.paciente?.id);
+      break;
+    case 'CREAR_VENTA':
+    case 'EDITAR_VENTA':
+      await marcarSincronizado('sales', operation.entityId);
+      await marcarSincronizado('patients', interno.paciente?.id);
+      await marcarSincronizado('consultations', interno.consulta_id);
+      break;
+    case 'REGISTRAR_PAGO':
+    case 'REEMBOLSAR_PAGO':
+      await marcarSincronizado('payments', operation.entityId);
+      await marcarSincronizado('sales', operation.payload?.p_pedido_id);
+      break;
+    case 'CAMBIAR_ESTADO_VENTA':
+    case 'ANULAR_VENTA':
+      await marcarSincronizado('sales', operation.entityId);
+      break;
+    case 'ARCHIVAR_CONSULTA':
+      await marcarSincronizado('consultations', operation.entityId);
+      break;
+    case 'UPSERT_INVENTARIO':
+      await marcarSincronizado('inventory', operation.entityId);
+      break;
+    case 'UPSERT_PRECIO':
+      await marcarSincronizado('prices', operation.entityId);
+      break;
   }
 };
 // --- Adjuntos offline ------------------------------------------------------
