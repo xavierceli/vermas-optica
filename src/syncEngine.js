@@ -60,6 +60,9 @@ const refreshCounts = async () => {
   const operations = await localDb.outbox.toArray();
   status.pending = operations.filter(row => row.status === 'pending' || row.status === 'failed').length;
   status.conflicts = operations.filter(row => row.status === 'conflict').length;
+  status.fallos = operations
+    .filter(row => row.status === 'failed' || row.status === 'conflict')
+    .map(row => ({ tipo: row.type, motivo: row.lastError || 'Sin detalle del servidor', estado: row.status }));
 };
 
 const subscribe = listener => {
@@ -226,9 +229,10 @@ const pullServerCache = async () => {
 
 export const sincronizarAhora = async ({ pull = true } = {}) => {
   if (running) { await refreshCounts(); emit(); return status; }
-  running = true;
+running = true;
   status.phase = 'syncing';
   status.lastError = null;
+  status.sesionInvalida = false;
   emit();
 
   try {
