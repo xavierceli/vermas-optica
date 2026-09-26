@@ -458,8 +458,8 @@ if (sync) {
   };
 
   const borrarHistoriaClinica = async (item) => {
-    if (item.pedido_id) {
-      return mostrarToast('Esta consulta tiene una venta asociada. Anular la venta no elimina el historial clínico.', 'warning');
+    if (item.pedido_id && safeString(item.estado) !== 'Anulado') {
+      return mostrarToast('Esta consulta tiene una venta ACTIVA. Anula la venta primero y luego podrás archivar la consulta.', 'warning');
     }
     try {
       await archivarConsultaLocal(item.id);
@@ -746,6 +746,7 @@ if (sync) {
       const cedulasUnicas = new Set();
       (historial || []).forEach(p => {
         if (!p) return;
+        if (safeString(p.estado) === 'Anulado') return;
         const vFinal = calcularTotal(p.venta, p.descuento);
         const fechaVentas = (safeNum(p.venta) > 0 && p.fecha_venta) ? p.fecha_venta : p.fecha;
         if (fechaVentas && fechaVentas >= inicioMes) {  
