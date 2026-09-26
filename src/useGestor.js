@@ -5,7 +5,7 @@ import { localDb, createUuid as generarId, resetLocalDatabase } from './localDb'
 import { archivarConsultaLocal, guardarConsultaLocal, guardarInventarioLocal, guardarPrecioLocal, guardarVentaLocal, obtenerSnapshotLocal, importLegacyCache, anularVentaLocal, eliminarInventarioLocal, eliminarPrecioLocal, guardarAdjuntoLocal, anularVentaConReembolso } from './localRepository'
 import { iniciarMotorSync, suscribirSync, sincronizarAhora, fijarSesionAusente } from './syncEngine'
 import { enrolarDispositivo, leerEnrolamiento, intentarDesbloqueo, revocarEnrolamiento, pinValido } from './seguridad'
-import { aplicarAvisoQueratometria } from './reglas'
+import { aplicarAvisoQueratometria, calcularTotal } from './reglas'
 
 export function useGestor() {
   const [estaAutenticado, setEstaAutenticado] = useState(false);
@@ -130,9 +130,11 @@ export function useGestor() {
     aplicarSnapshotLocal(snapshot);
     const remoteStats = (await localDb.meta.get('remoteStats'))?.value || null;
     if (remoteStats) setStatsRemotos(remoteStats);
-    if (sync) {
+if (sync) {
       void sincronizarAhora({ pull: true }).then(async () => {
         aplicarSnapshotLocal(await obtenerSnapshotLocal());
+        const statsFrescos = (await localDb.meta.get('remoteStats'))?.value || null;
+        if (statsFrescos) setStatsRemotos(statsFrescos);
       });
     }
     return snapshot;
@@ -655,7 +657,7 @@ export function useGestor() {
       setPedidoSeleccionado(null);
       setVistaActual('pedidos_lista');
       mostrarToast('Venta guardada en este dispositivo.', 'success');
-      void obtenerDatos({ sync: false }).then(() => sincronizarAhora({ pull: false }));
+      void obtenerDatos({ sync: true });
       return true;
 } catch (e) {
       mostrarToast('Error al guardar pedido: ' + e.message, 'error');
@@ -683,7 +685,7 @@ export function useGestor() {
           ? await anularVentaConReembolso({ saleId: item.pedido_id, method: 'Efectivo' })
           : await anularVentaLocal(item.pedido_id);
         await obtenerDatos({ sync: false });
-        const estado = await sincronizarAhora({ pull: false });
+        ({ pull: true })
         const falloServidor = estado?.phase === 'error' ? estado.lastError : null;
         if (falloServidor) {
           mostrarToast('Hecho en este dispositivo, pero el servidor lo rechazó: ' + falloServidor, 'error');
@@ -728,7 +730,7 @@ export function useGestor() {
 
   // LOTE 6: stats con doble fuente — servidor (exacto sobre TODA la base) o local (plan B sin internet)
   const stats = (() => {
-    if (statsRemotos) {
+    if (statsRemotos && !modoSinConexion) {
       return {
         ventasMes: Number(statsRemotos.ventas_mes || 0),
         abonosPendientes: Number(statsRemotos.abonos_pendientes || 0),
@@ -744,7 +746,7 @@ export function useGestor() {
       const cedulasUnicas = new Set();
       (historial || []).forEach(p => {
         if (!p) return;
-        const vFinal = Number((safeNum(p.venta) - (safeNum(p.venta) * safeNum(p.descuento) / 100)).toFixed(2));
+        const vFinal = calcularTotal(p.venta, p.descuento);
         const fechaVentas = (safeNum(p.venta) > 0 && p.fecha_venta) ? p.fecha_venta : p.fecha;
         if (fechaVentas && fechaVentas >= inicioMes) {  
           ventasMes += vFinal;
