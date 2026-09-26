@@ -400,6 +400,12 @@ export function useGestor() {
 
     try {
       if (!validarDocumento(paciente.cedula)) return mostrarToast("DOCUMENTO INVÁLIDO.", "error");
+      if (editandoId) {
+        const original = (historial || []).find(h => String(h?.id) === String(editandoId));
+        if (original && safeString(original.cedula).trim().toUpperCase() !== safeString(paciente.cedula).trim().toUpperCase()) {
+          return mostrarToast('No se puede cambiar la cédula de una evaluación guardada. Si es otro paciente, regístralo desde Historial.', 'warning');
+        }
+      }
 
       const camposRefraccionObligatorios = ['avsl_od', 'avsc_od', 'esfera_od', 'cilindro_od', 'eje_od', 'adicion_od', 'dnp_od', 'avcl_od', 'avcc_od', 'avsl_oi', 'avsc_oi', 'esfera_oi', 'cilindro_oi', 'eje_oi', 'adicion_oi', 'dnp_oi', 'avcl_oi', 'avcc_oi'];
       const faltantes = camposRefraccionObligatorios.filter(campo => safeString(paciente[campo]).trim() === '');
@@ -582,8 +588,11 @@ export function useGestor() {
     });
   };
 
+  const guardandoPedidoRef = useRef(false);
   const guardarPedido = async ({ montoAdicional = 0 } = {}) => {
+    if (guardandoPedidoRef.current) return false;
     if (!pedidoSeleccionado) return;
+    guardandoPedidoRef.current = true;
 
     try {
       if (!validarDocumento(pedidoSeleccionado.cedula)) {
@@ -620,7 +629,7 @@ export function useGestor() {
             metodo: venta.forma_pago,
             referencia: safeString(pedidoSeleccionado.pago_nota) || null,
             comprobantePath: safeString(pedidoSeleccionado.comprobante_url) || null,
-            idempotencyKey: idPedido
+            idempotencyKey: pedidoSeleccionado._nueva_venta ? idPedido : generarId()
           }
         : null;
 
@@ -648,9 +657,11 @@ export function useGestor() {
       mostrarToast('Venta guardada en este dispositivo.', 'success');
       void obtenerDatos({ sync: false }).then(() => sincronizarAhora({ pull: false }));
       return true;
-    } catch (e) {
+} catch (e) {
       mostrarToast('Error al guardar pedido: ' + e.message, 'error');
       return false;
+    } finally {
+      guardandoPedidoRef.current = false;
     }
   };
   const cancelarPedido = (item) => {
