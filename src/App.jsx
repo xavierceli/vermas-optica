@@ -1,80 +1,91 @@
-import { useState, useEffect } from 'react'
-import Login from './Login'
-import Inventario from './Inventario'
-import Historial from './Historial'
-import Clinica from './Clinica'
-import Tarifario from './Tarifario'
-import PedidosLista from './PedidosLista'
-import PedidosForm from './PedidosForm'
-import Dashboard from './Dashboard'
-import { imprimirOrdenTrabajo, imprimirRecibo } from './impresiones'
+import { useEffect, lazy, Suspense } from 'react'
 import { useGestor } from './useGestor'
+import { imprimirOrdenTrabajo, imprimirRecibo } from './impresiones'
+
+// Las vistas se cargan bajo demanda. Antes todas viajaban en el bundle inicial
+// (mas de 700 kB) aunque el usuario solo mirara el historial: el telefono
+// descargaba clinica, inventario, tarifario y dashboard sin abrirlos nunca.
+const Login = lazy(() => import('./Login'));
+const Historial = lazy(() => import('./Historial'));
+const Clinica = lazy(() => import('./Clinica'));
+const Inventario = lazy(() => import('./Inventario'));
+const Tarifario = lazy(() => import('./Tarifario'));
+const Dashboard = lazy(() => import('./Dashboard'));
+const PedidosLista = lazy(() => import('./PedidosLista'));
+const PedidosForm = lazy(() => import('./PedidosForm'));
+
+const Cargando = () => (
+  <div className="flex items-center justify-center gap-3 py-20 text-gray-500">
+    <span className="w-6 h-6 border-4 border-teal-500 border-t-transparent rounded-full animate-spin" />
+    <span className="font-bold text-sm">Cargando…</span>
+  </div>
+);
 
 function App() {
   const g = useGestor(); 
   
-  const [esOffline, setEsOffline] = useState(!navigator.onLine);
-
-  useEffect(() => {
-    const verificarInternetReal = async () => {
-      if (!navigator.onLine) {
-        setEsOffline(true);
-        return;
-      }
-      
-      try {
-        await fetch('https://www.google.com/favicon.ico?ping=' + Date.now(), { 
-          mode: 'no-cors' 
-        });
-        setEsOffline(false);
-      } catch (error) {
-        setEsOffline(true);
-      }
-    };
-
-    // Funciones con nombre: así los listeners SÍ se pueden eliminar correctamente
-    const marcarOffline = () => setEsOffline(true);
-
-    // Radar cada 30 segundos (antes eran 3: ~28,000 consultas diarias a Google)
-    const radar = setInterval(verificarInternetReal, 30000);
-    window.addEventListener('offline', marcarOffline);
-    window.addEventListener('online', verificarInternetReal);
-    verificarInternetReal();
-
-    return () => {
-      clearInterval(radar);
-      window.removeEventListener('offline', marcarOffline);
-      window.removeEventListener('online', verificarInternetReal);
-    };
-  }, []);
-
+  const esOffline = g.syncEstado?.online === false;
+  const pendientes = g.syncEstado?.pending || 0;
+  const conflictos = g.syncEstado?.conflicts || 0;
+  const faseSync = g.syncEstado?.phase || 'idle';
+  const sincronizando = faseSync === 'syncing';
+  const hayErrorSync = faseSync === 'error' && !!g.syncEstado?.lastError;
+  const sesionInvalida = !!g.syncEstado?.sesionInvalida;
+  const estadoOutbox = sesionInvalida
+    ? { texto: 'Sesion expirada', detalle: 'Vuelve a iniciar sesion', clases: 'bg-red-100 text-red-800 border-red-300', icono: '🔑' }
+    : hayErrorSync
+    ? { texto: 'Error al sincronizar', detalle: String(g.syncEstado.lastError).slice(0, 90), clases: 'bg-red-100 text-red-800 border-red-300', icono: '⛔' }
+    : conflictos > 0
+      ? { texto: 'Conflictos', detalle: `${conflictos} por revisar`, clases: 'bg-amber-100 text-amber-800 border-amber-300', icono: '⚠️' }
+      : esOffline
+        ? { texto: 'Sin conexion', detalle: pendientes > 0 ? `Pendientes: ${pendientes}` : 'Todo guardado aqui', clases: 'bg-slate-800 text-slate-100 border-slate-600', icono: '📴' }
+        : sincronizando
+          ? { texto: 'Sincronizando...', detalle: pendientes > 0 ? `Pendientes: ${pendientes}` : 'Enviando a la nube', clases: 'bg-blue-100 text-blue-800 border-blue-300', icono: '🔄' }
+          : pendientes > 0
+            ? { texto: `Pendientes: ${pendientes}`, detalle: 'En cola de salida', clases: 'bg-blue-100 text-blue-800 border-blue-300', icono: '⏳' }
+            : { texto: 'Sincronizado', detalle: 'Nube al dia', clases: 'bg-emerald-100 text-emerald-800 border-emerald-300', icono: '✅' };
+  const dialogoVisible = g.confirmDialog.visible;
+  const setDialogoConfirmacion = g.setConfirmDialog;
   // Cerrar el diálogo de confirmación con la tecla Escape
   useEffect(() => {
     const cerrarConEscape = (e) => {
-      if (e.key === 'Escape') g.setConfirmDialog({ visible: false });
+      if (e.key === 'Escape') setDialogoConfirmacion({ visible: false });
     };
-    if (g.confirmDialog.visible) {
+    if (dialogoVisible) {
       window.addEventListener('keydown', cerrarConEscape);
       return () => window.removeEventListener('keydown', cerrarConEscape);
     }
-  }, [g.confirmDialog.visible]);
+  }, [dialogoVisible, setDialogoConfirmacion]);
 
   // Si no está autenticado, mostramos el login de inmediato (evita quedarse congelado cargando)
-  if (!g.estaAutenticado) return <Login />;
+  if (!g.estaAutenticado) {
+    return (
+      <Suspense fallback={<Cargando />}>
+        <Login
+          dispositivo={g.dispositivo}
+          entrarSinConexion={g.entrarSinConexion}
+          modoSinConexion={g.modoSinConexion}
+        />
+      </Suspense>
+    );
+  }
 
   return (
-    <div className={`min-h-screen bg-gray-50 p-6 relative ${esOffline ? 'pt-14' : ''}`} translate="no">
+    <div className={`min-h-screen bg-gray-50 p-6 relative ${esOffline || pendientes > 0 ? 'pt-14' : ''}`} translate="no">
 
-      {/* --- HUD DE ALERTA ROJA PERMANENTE --- */}
-      {esOffline && (
-        <div className="fixed top-0 left-0 w-full bg-red-600 text-white text-center py-2 font-black text-xs md:text-sm z-[200] shadow-md flex items-center justify-center gap-2">
-          <span className="animate-pulse text-lg">🔴</span> 
-          MODO OFFLINE ACTIVO: Sin conexión a internet. El sistema sigue funcionando con la bóveda local.
+      {(esOffline || pendientes > 0 || conflictos > 0 || g.modoSinConexion) && (
+        <div className={`fixed top-0 left-0 w-full text-white text-center py-2 font-black text-xs md:text-sm z-[200] shadow-md flex items-center justify-center gap-3 px-4 ${g.modoSinConexion ? 'bg-purple-800' : conflictos > 0 ? 'bg-amber-600' : esOffline ? 'bg-slate-800' : 'bg-blue-700'}`}>
+          <span>{g.modoSinConexion ? '🔓' : conflictos > 0 ? '⚠️' : esOffline ? '📴' : '🔄'}</span>
+          <span>{g.modoSinConexion
+            ? 'Modo sin conexión: entraste con el PIN local. Los cambios se guardan aquí y se subirán al volver a iniciar sesión.'
+            : conflictos > 0 ? `${conflictos} conflictos requieren revisión.`
+            : esOffline ? 'Modo local: los datos se guardan en este dispositivo.'
+            : `${pendientes} operaciones sincronizando.`}</span>
+          {pendientes > 0 && !esOffline && !g.modoSinConexion && <button onClick={() => g.sincronizarAhora()} className="rounded bg-white/20 px-2 py-1">Sincronizar ahora</button>}
         </div>
       )}
-
       {g.toast && (
-        <div className={`fixed top-6 right-6 z-[100] flex items-center gap-3 px-6 py-4 rounded-xl shadow-2xl transition-all ${
+        <div className={`fixed top-20 right-6 z-[300] flex items-center gap-3 px-6 py-4 rounded-xl shadow-2xl transition-all max-w-md ${
           g.toast.tipo === 'success' ? 'bg-teal-600 text-white' : g.toast.tipo === 'error' ? 'bg-red-600 text-white' : 'bg-amber-500 text-white'
         }`}>
           <span className="text-2xl">{g.toast.tipo === 'success' ? '✅' : g.toast.tipo === 'error' ? '❌' : '⚠️'}</span>
@@ -97,7 +108,27 @@ function App() {
 
       <div className="max-w-[1400px] mx-auto space-y-6">
         <div className="bg-white p-4 rounded-xl shadow-sm flex flex-col md:flex-row justify-between items-center border gap-4">
-          <h1 className="font-extrabold text-teal-800 text-2xl tracking-wider">VER+ ÓPTICA</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="font-extrabold text-teal-800 text-2xl tracking-wider">VER+ ÓPTICA</h1>
+            <span
+              title="Version desplegada. Si un arreglo no funciona, comprueba este codigo."
+              className="text-[9px] font-mono text-gray-300 bg-gray-100 px-1.5 py-0.5 rounded"
+            >
+              v{typeof __BUILD_ID__ === 'undefined' ? '?' : __BUILD_ID__}
+            </span>
+            <button
+              type="button"
+              onClick={() => g.sincronizarAhora()}
+              title={`Cola Outbox: ${pendientes} pendiente(s). Ultima sincronizacion: ${g.syncEstado?.lastSync ? new Date(g.syncEstado.lastSync).toLocaleTimeString() : 'nunca'}`}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-black shadow-sm transition-colors ${estadoOutbox.clases} ${sincronizando ? 'animate-pulse' : ''}`}
+            >
+              <span>{estadoOutbox.icono}</span>
+              <span className="leading-tight text-left">
+                <span className="block">{estadoOutbox.texto}</span>
+                <span className="block text-[10px] font-bold opacity-75">{estadoOutbox.detalle}</span>
+              </span>
+            </button>
+          </div>
           <div className="flex flex-wrap gap-2 items-center">
             <button onClick={() => g.setVistaActual('historial')} className={`px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-all ${g.vistaActual === 'historial' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>📋 Historial</button>
             <button onClick={() => {g.setVistaActual('nueva_medicion'); g.setEditandoId(null); g.setPaciente(g.estadoInicial)}} className={`px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-all ${g.vistaActual === 'nueva_medicion' ? 'bg-teal-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>🩺 Clínica</button>
@@ -111,6 +142,8 @@ function App() {
           </div>
         </div>
 
+        <Suspense fallback={<Cargando />}>
+
         {g.vistaActual === 'dashboard' && <Dashboard stats={g.stats} historial={g.historial} inventario={g.inventario} />}
         {g.vistaActual === 'precios' && <Tarifario nuevoPrecio={g.nuevoPrecio} setNuevoPrecio={g.setNuevoPrecio} precioInicial={g.precioInicial} editandoPrecioId={g.editandoPrecioId} setEditandoPrecioId={g.setEditandoPrecioId} manejarCambioPrecio={g.manejarCambioPrecio} guardarPrecio={g.guardarPrecio} busquedaPrecio={g.busquedaPrecio} setBusquedaPrecio={g.setBusquedaPrecio} listaPreciosFiltrada={g.listaPreciosFiltrada} cargarParaEditarPrecio={g.cargarParaEditarPrecio} eliminarPrecio={g.eliminarPrecio} />}
         {g.vistaActual === 'inventario' && <Inventario inventario={g.inventario} nuevoItemInv={g.nuevoItemInv} editandoInvId={g.editandoInvId} cargandoImagen={g.cargandoImagen} manejarCambioInv={g.manejarCambioInv} setImagenSeleccionada={g.setImagenSeleccionada} guardarItemInventario={g.guardarItemInventario} cancelarEdicionInventario={g.cancelarEdicionInventario} cargarParaEditarInventario={g.cargarParaEditarInventario} eliminarItemInventario={g.eliminarItemInventario} />}
@@ -118,6 +151,8 @@ function App() {
         {g.vistaActual === 'nueva_medicion' && <Clinica paciente={g.paciente} setPaciente={g.setPaciente} estadoInicial={g.estadoInicial} editandoId={g.editandoId} setEditandoId={g.setEditandoId} guardarPacienteClinico={g.guardarPacienteClinico} manejarCambio={g.manejarCambio} edadActual={g.edadActual} claseInputRef={g.claseInputRef} historial={g.historial} guardando={g.guardando} />}
         {g.vistaActual === 'pedidos_lista' && <PedidosLista crearVentaDirecta={g.crearVentaDirecta} busqueda={g.busqueda} setBusqueda={g.setBusqueda} pedidosFiltrados={g.pedidosFiltrados} imprimirRecibo={imprimirRecibo} imprimirOrdenTrabajo={imprimirOrdenTrabajo} cancelarPedido={g.cancelarPedido} abrirPedido={g.abrirPedido} refrescarDatos={g.obtenerDatos} />}
         {g.vistaActual === 'pedidos_form' && g.pedidoSeleccionado && <PedidosForm pedidoSeleccionado={g.pedidoSeleccionado} setPedidoSeleccionado={g.setPedidoSeleccionado} setVistaActual={g.setVistaActual} guardarPedido={g.guardarPedido} manejarCambioPedido={g.manejarCambioPedido} cambiarMedicionPedido={g.cambiarMedicionPedido} medidasPaciente={g.medidasPaciente} inventario={g.inventario} accesorioOriginalId={g.accesorioOriginalId} forzarRecalculo={g.forzarRecalculo} confirmarAccion={g.solicitarConfirmacion} />}
+        </Suspense>
+
       </div>
     </div>
   )

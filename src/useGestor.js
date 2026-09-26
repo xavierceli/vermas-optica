@@ -1,7 +1,11 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from './supabaseClient'
 import { safeString, safeNum, comprimirImagen, calcularEdad } from './utilidades'
-import { leerBoveda, escribirBoveda, encolarOperacion, generarId, purgarTareasDeRegistro, eliminarTareaDeBandeja, marcarIntentoFallido, moverABandejaMuerta } from './motorOffline'
+import { localDb, createUuid as generarId, resetLocalDatabase } from './localDb'
+import { archivarConsultaLocal, guardarConsultaLocal, guardarInventarioLocal, guardarPrecioLocal, guardarVentaLocal, obtenerSnapshotLocal, importLegacyCache, anularVentaLocal, eliminarInventarioLocal, eliminarPrecioLocal, guardarAdjuntoLocal, anularVentaConReembolso } from './localRepository'
+import { iniciarMotorSync, suscribirSync, sincronizarAhora, fijarSesionAusente } from './syncEngine'
+import { enrolarDispositivo, leerEnrolamiento, intentarDesbloqueo, revocarEnrolamiento, pinValido } from './seguridad'
+import { aplicarAvisoQueratometria } from './reglas'
 
 export function useGestor() {
   const [estaAutenticado, setEstaAutenticado] = useState(false);
@@ -67,12 +71,105 @@ export function useGestor() {
   const [intentadoGuardar, setIntentadoGuardar] = useState(false);
   
   const [pedidoSeleccionado, setPedidoSeleccionado] = useState(null);
-  const [armazonOriginalCodigo, setArmazonOriginalCodigo] = useState('');
   const [accesorioOriginalId, setAccesorioOriginalId] = useState('');
   const [medidasPaciente, setMedidasPaciente] = useState([]);
 
   // LOTE 6: números oficiales calculados por el servidor (exactos sobre TODA la base)
   const [statsRemotos, setStatsRemotos] = useState(null);
+  const [syncEstado, setSyncEstado] = useState({ phase: 'idle', online: true, pending: 0, conflicts: 0, lastSync: null, lastError: null });
+  // Entrada con PIN local: hay datos en el dispositivo pero no sesion del servidor.
+  const [modoSinConexion, setModoSinConexion] = useState(false);
+  const [dispositivo, setDispositivo] = useState({ enrolado: false, cargando: true, identidad: null });
+
+  const refrescarDispositivo = async () => {
+    const enrolamiento = await leerEnrolamiento(localDb.meta);
+    setDispositivo({ enrolado: Boolean(enrolamiento), cargando: false, identidad: enrolamiento?.identidad || null });
+  };
+
+  const configurarAccesoSinConexion = async pin => {
+    if (!pinValido(pin)) {
+      mostrarToast('El PIN debe tener entre 4 y 8 dígitos.', 'warning');
+      return false;
+    }
+    await enrolarDispositivo({ pin, identidad: dispositivo.identidad, meta: localDb.meta });
+    await refrescarDispositivo();
+    mostrarToast('Acceso sin conexión configurado en este dispositivo.', 'success');
+    return true;
+  };
+
+  const desactivarAccesoSinConexion = async () => {
+    await revocarEnrolamiento(localDb.meta);
+    await refrescarDispositivo();
+    mostrarToast('Acceso sin conexión desactivado.', 'success');
+  };
+
+
+
+  const cerrarSesion = () => {
+    const estabaSinConexion = modoSinConexion;
+    const aviso = estabaSinConexion
+      ? 'Vas a salir del modo sin conexión. Los datos de este dispositivo NO se borran: puedes volver a entrar con tu PIN.'
+      : '¿Estás seguro de cerrar sesión? Tendrás que volver a ingresar con tus credenciales.';
+    solicitarConfirmacion(aviso, async () => {
+      setModoSinConexion(false);
+      fijarSesionAusente(false);
+      if (!estabaSinConexion) await supabase.auth.signOut();
+    });
+  };
+
+  const aplicarSnapshotLocal = snapshot => {
+    if (!snapshot) return;
+    setHistorial(snapshot.historial || []);
+    setInventario(snapshot.inventory || []);
+    setListaPrecios(snapshot.prices || []);
+  };
+
+  const obtenerDatos = async ({ sync = true } = {}) => {
+    await importLegacyCache();
+    const snapshot = await obtenerSnapshotLocal();
+    aplicarSnapshotLocal(snapshot);
+    const remoteStats = (await localDb.meta.get('remoteStats'))?.value || null;
+    if (remoteStats) setStatsRemotos(remoteStats);
+    if (sync) {
+      void sincronizarAhora({ pull: true }).then(async () => {
+        aplicarSnapshotLocal(await obtenerSnapshotLocal());
+      });
+    }
+    return snapshot;
+  };
+  useEffect(() => {
+    iniciarMotorSync();
+    return suscribirSync(setSyncEstado);
+  }, []);
+  useEffect(() => {
+    let vigente = true;
+    leerEnrolamiento(localDb.meta).then(enrolamiento => {
+      if (vigente) setDispositivo({ enrolado: Boolean(enrolamiento), cargando: false, identidad: enrolamiento?.identidad || null });
+    });
+    return () => { vigente = false; };
+  }, []);
+  // Desbloqueo con PIN local: abre los datos YA guardados en este dispositivo.
+  // No genera ningun token del servidor, por lo que la sincronizacion queda
+  // suspendida hasta que se vuelva a entrar con correo y contrasena.
+  const entrarSinConexion = async pin => {
+    const resultado = await intentarDesbloqueo({
+      pin,
+      meta: localDb.meta,
+      alBloquear: async () => {
+        await resetLocalDatabase();
+        mostrarToast('Demasiados intentos. Los datos de este dispositivo se borraron por seguridad.', 'error');
+      }
+    });
+    if (resultado.ok) {
+      setModoSinConexion(true);
+      fijarSesionAusente(true);
+      setEstaAutenticado(true);
+      await obtenerDatos({ sync: false });
+      mostrarToast('Modo sin conexión: los datos locales están disponibles.', 'warning');
+      return { ok: true };
+    }
+    return resultado;
+  };
 
   useEffect(() => {
     let montado = true;
@@ -88,7 +185,11 @@ export function useGestor() {
       if (montado) {
         clearTimeout(timerSeguridad);
         setEstaAutenticado(!!session && !cambioClavePendiente);
-        if (session && !cambioClavePendiente) obtenerDatos();
+        if (session && !cambioClavePendiente) {
+          fijarSesionAusente(false);
+          setModoSinConexion(false);
+          obtenerDatos();
+        }
         setCargandoAuth(false);
       }
     }).catch(() => {
@@ -103,6 +204,11 @@ export function useGestor() {
       if (montado) {
         if (event === 'PASSWORD_RECOVERY') {
           sessionStorage.setItem('vermas_cambio_clave', '1');
+          // Un restablecimiento de contrasena nunca debe coexistir con el acceso
+          // por PIN: si alguien esta cambiando la clave, el dispositivo no puede
+          // quedarse abierto con el desbloqueo local.
+          setModoSinConexion(false);
+          fijarSesionAusente(false);
           setEstaAutenticado(false);
           setCargandoAuth(false);
           return;
@@ -119,179 +225,9 @@ export function useGestor() {
       clearTimeout(timerSeguridad);
       subscription?.unsubscribe();
     };
+    // La suscripción de auth debe vivir una sola vez.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const cerrarSesion = () => {
-    solicitarConfirmacion("¿Estás seguro de cerrar sesión? Tendrás que volver a ingresar con tus credenciales.", async () => {
-      await supabase.auth.signOut();
-    });
-  };
-
-  const obtenerDatos = async () => {
-    // 1. CARGA INMEDIATA DESDE BÓVEDA LOCAL (nunca quedarse sin datos)
-    try {
-      const invLocal = await leerBoveda('backup_inventario') || [];
-      const histLocal = await leerBoveda('backup_historial') || [];
-      const precLocal = await leerBoveda('backup_precios') || [];
-
-      if (invLocal.length > 0) setInventario(invLocal);
-      if (histLocal.length > 0) setHistorial(histLocal);
-      if (precLocal.length > 0) setListaPrecios(precLocal);
-    } catch (e) {
-      console.warn("Error leyendo bóveda local de inicio:", e);
-    }
-
-    // 2. SINCRONIZACIÓN CON LA NUBE
-    if (!navigator.onLine) return;
-
-    try {
-      const bandejaSalida = await leerBoveda('bandeja_salida') || [];
-      const remapeoIds = {};
-
-      if (bandejaSalida.length > 0) {
-        const tareasOrdenadas = [...bandejaSalida].sort((a, b) => {
-          if (a.tabla === 'pacientes_perfil' && b.tabla !== 'pacientes_perfil') return -1;
-          if (a.tabla !== 'pacientes_perfil' && b.tabla === 'pacientes_perfil') return 1;
-          return 0;
-        });
-
-        for (const tarea of tareasOrdenadas) {
-          try {
-            let datos = { ...tarea.datos };
-
-            if (tarea.tabla === 'pacientes_perfil') {
-              delete datos.id_temporal;
-              if (tarea.tipo === 'INSERT') {
-                const idOriginal = datos.id;
-                delete datos.id; // nunca pelear con la clave primaria del registro existente
-                const { data: perfilSubido, error } = await supabase.from('pacientes_perfil')
-                  .upsert([datos], { onConflict: 'cedula' })
-                  .select('id')
-                  .single();
-                if (error) throw new Error(error.message);
-                if (perfilSubido && idOriginal && perfilSubido.id !== idOriginal) {
-                  remapeoIds[idOriginal] = perfilSubido.id;
-                }
-              } else if (tarea.tipo === 'UPDATE') {
-                const { id, ...resto } = datos;
-                const { error } = await supabase.from('pacientes_perfil').update(resto).eq('id', id);
-                if (error) throw new Error(error.message);
-              }
-
-            } else if (tarea.tabla === 'consultas_clinicas' || tarea.tabla === 'pedidos_ventas') {
-              if (datos.paciente_id && remapeoIds[datos.paciente_id]) {
-                datos.paciente_id = remapeoIds[datos.paciente_id];
-              } else if (datos.paciente_id && String(datos.paciente_id).startsWith('temp-') && datos.cedula) {
-                const { data: perfilReal, error: errBusca } = await supabase.from('pacientes_perfil').select('id').eq('cedula', datos.cedula).maybeSingle();
-                if (errBusca) throw new Error(errBusca.message);
-                if (perfilReal) datos.paciente_id = perfilReal.id;
-              }
-              delete datos.cedula;
-              delete datos.nombre;
-
-              if (tarea.tipo === 'INSERT') {
-                const { error } = await supabase.from(tarea.tabla).upsert([datos]);
-                if (error) throw new Error(error.message);
-              } else if (tarea.tipo === 'UPDATE') {
-                const { id, ...resto } = datos;
-                const { error } = await supabase.from(tarea.tabla).update(resto).eq('id', id);
-                if (error) throw new Error(error.message);
-              } else if (tarea.tipo === 'DELETE') {
-                const { error } = await supabase.from(tarea.tabla).delete().eq('id', datos.id);
-                if (error) throw new Error(error.message);
-              }
-
-            } else {
-              if (tarea.tipo === 'UPDATE') {
-                const { id, ...resto } = datos;
-                const { error } = await supabase.from(tarea.tabla).update(resto).eq('id', id);
-                if (error) throw new Error(error.message);
-              } else if (tarea.tipo === 'DELETE') {
-                const { error } = await supabase.from(tarea.tabla).delete().eq('id', datos.id);
-                if (error) throw new Error(error.message);
-              }
-            }
-
-            await eliminarTareaDeBandeja(tarea.id_tarea);
-
-          } catch (errTarea) {
-            console.error("Fallo tarea:", errTarea);
-            const intentos = await marcarIntentoFallido(tarea);
-            if (intentos >= 5) {
-              await moverABandejaMuerta(tarea, String(errTarea?.message || errTarea));
-              mostrarToast("Una operación no pudo sincronizarse tras varios intentos y quedó archivada para revisión.", "error");
-            }
-          }
-        }
-      }
-
-      // 3. DESCARGA DE LA NUBE + MERGE (los pendientes no se borran de la vista)
-      // LOTE 6: pacientes ÚNICOS (una fila por cédula, la más reciente) — listo para 10 mil pacientes
-      const { data: hist } = await supabase.from('vista_pacientes_unicos').select('*').order('fecha', { ascending: false }).limit(100);
-      const { data: inv } = await supabase.from('inventario').select('*').order('id', { ascending: false });
-      const { data: prec } = await supabase.from('lista_precios').select('*').order('id', { ascending: false });
-
-      if (hist) {
-        const tareasRestantes = await leerBoveda('bandeja_salida') || [];
-        // Consultas con tareas pendientes (nuevas o editadas sin subir)
-        const idsPendientes = new Set(
-          tareasRestantes.filter(t => t.tabla === 'consultas_clinicas' && t.tipo !== 'DELETE')
-            .map(t => t.datos && t.datos.id).filter(Boolean)
-        );
-        // También: consultas cuyas VENTAS aún no suben (la venta pendiente vive en el registro local)
-        tareasRestantes.filter(t => t.tabla === 'pedidos_ventas' && t.tipo !== 'DELETE')
-          .forEach(t => { if (t.datos && t.datos.consulta_id) idsPendientes.add(t.datos.consulta_id); });
-        const locales = await leerBoveda('backup_historial') || [];
-        const fantasmas = locales.filter(p => idsPendientes.has(p.id));
-
-        const vistos = new Set();
-        // FANTASMAS PRIMERO: la versión local (la más reciente) gana sobre la de la nube
-        const combinado = [...fantasmas, ...hist].filter(p => {
-          if (vistos.has(p.id)) return false;
-          vistos.add(p.id);
-          return true;
-        });
-                // LOTE 7: las ventas llevan su propia fecha (no la heredan de la consulta)
-        const mapaFechasVenta = {};
-        hist.forEach(h => { if (h.fecha_venta && h.pedido_id) mapaFechasVenta[h.pedido_id] = h.fecha_venta; });
-        combinado.forEach(p => {
-          if (p.pedido_id && mapaFechasVenta[p.pedido_id]) {
-            p.fecha_venta = mapaFechasVenta[p.pedido_id];
-          }
-        });
-        combinado.sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')));
-
-        setHistorial(combinado);
-        await escribirBoveda('backup_historial', combinado);
-      }
-      if (inv) {
-        setInventario(inv);
-        await escribirBoveda('backup_inventario', inv);
-      }
-      if (prec) {
-        setListaPrecios(prec);
-        await escribirBoveda('backup_precios', prec);
-      }
-
-            // LOTE 7: deuda TOTAL por paciente (todas sus compras), adjunta a cada tarjeta
-      const { data: deudas } = await supabase.rpc('deudas_pacientes');
-      const mapaDeudas = {};
-      (deudas || []).forEach(d => { mapaDeudas[safeString(d.cedula)] = Number(d.deuda_total); });
-      setHistorial(prev => prev.map(p => ({ ...p, deuda_total: mapaDeudas[safeString(p?.cedula)] ?? 0 })));
-
-      // LOTE 6: stats oficiales calculados por el servidor (sobre TODA la base)
-      const { data: s } = await supabase.rpc('stats_negocio');
-      if (s && s[0]) setStatsRemotos(s[0]);
-
-      // 4. AVISO: cuánto queda pendiente
-      const restantes = (await leerBoveda('bandeja_salida') || []).length;
-      if (restantes > 0) {
-        mostrarToast(`⏳ ${restantes} operación(es) esperando sincronizar. Se reintentarán.`, "warning");
-      }
-    } catch (e) {
-      console.warn("Fallo sincronización online:", e);
-    }
-  };
 
   const manejarCambio = (e) => {
     let { name, value, type, tagName } = e.target;
@@ -300,6 +236,11 @@ export function useGestor() {
     
     let nuevoPaciente = { ...paciente, [name]: value };
 
+    // REGLA CLÍNICA: cualquier queratometría alta deja constancia en observaciones.
+    const campoQueratometria = /^(k1_d|k2_d)_(od|oi)$/.exec(name);
+    if (campoQueratometria) {
+      nuevoPaciente = aplicarAvisoQueratometria(nuevoPaciente, campoQueratometria[2]);
+    }
     if (name === 'cedula') {
       const docCompleto = String(value).length >= 10; // cédula completa (o pasaporte largo)
       const pacienteExistente = docCompleto
@@ -327,31 +268,33 @@ export function useGestor() {
 
   const guardarPrecio = async () => {
     try {
-      if (!nuevoPrecio.rango_medida) return mostrarToast("Ingresa el rango de medida.", "warning");
-      let datosAGuardar = { ...nuevoPrecio, costo_laboratorio: Number(safeNum(nuevoPrecio.costo_laboratorio).toFixed(2)), precio_sugerido: Number(safeNum(nuevoPrecio.precio_sugerido).toFixed(2)) };
-      
-      if (editandoPrecioId) {
-        const { error } = await supabase.from('lista_precios').update(datosAGuardar).eq('id', editandoPrecioId);
-        if (error) throw new Error(error.message);
-        mostrarToast("Tarifa actualizada.", "success");
-      } else {
-        const { error } = await supabase.from('lista_precios').insert([datosAGuardar]);
-        if (error) throw new Error(error.message);
-        mostrarToast("Tarifa registrada.", "success");
-      }
-      setNuevoPrecio(precioInicial); setEditandoPrecioId(null); await obtenerDatos();
-    } catch(err) { mostrarToast("Error al guardar: " + err.message, "error"); }
+      if (!nuevoPrecio.rango_medida) return mostrarToast('Ingresa el rango de medida.', 'warning');
+      const datosAGuardar = {
+        ...nuevoPrecio,
+        costo_laboratorio: Number(safeNum(nuevoPrecio.costo_laboratorio).toFixed(2)),
+        precio_sugerido: Number(safeNum(nuevoPrecio.precio_sugerido).toFixed(2))
+      };
+      await guardarPrecioLocal({ id: editandoPrecioId || undefined, ...datosAGuardar });
+      setNuevoPrecio(precioInicial);
+      setEditandoPrecioId(null);
+      await obtenerDatos({ sync: false });
+      void sincronizarAhora({ pull: false });
+      mostrarToast('Tarifa guardada en este dispositivo.', 'success');
+    } catch (err) {
+      mostrarToast('Error al guardar: ' + err.message, 'error');
+    }
   };
 
   const cargarParaEditarPrecio = (item) => { setNuevoPrecio({ ...item }); setEditandoPrecioId(item.id); window.scrollTo({ top: 0, behavior: 'smooth' }); };
   const eliminarPrecio = (id) => {
-    solicitarConfirmacion("¿Seguro que deseas eliminar?", async () => {
+    solicitarConfirmacion('¿Seguro que deseas eliminar?', async () => {
       try {
-        const { error } = await supabase.from('lista_precios').delete().eq('id', id);
-        if (error) throw new Error(error.message);
-        mostrarToast("Eliminado.", "success"); await obtenerDatos();
+        await eliminarPrecioLocal(id);
+        await obtenerDatos({ sync: false });
+        void sincronizarAhora({ pull: false });
+        mostrarToast('Tarifa eliminada localmente.', 'success');
       } catch (err) {
-        mostrarToast("Error al eliminar: " + err.message, "error");
+        mostrarToast('Error al eliminar: ' + err.message, 'error');
       }
     });
   };
@@ -368,40 +311,59 @@ export function useGestor() {
       let urlImagen = nuevoItemInv.imagen_url || null;
 
       if (imagenSeleccionada) {
-        try {
-          const archivoComprimido = await comprimirImagen(imagenSeleccionada);
-          const nombreArchivo = `producto_${Date.now()}_${generarId().substring(0, 8)}.jpg`;
-          const { error: errSubida } = await supabase.storage
-            .from('inventario_imagenes')
-            .upload(nombreArchivo, archivoComprimido, { contentType: 'image/jpeg' });
-          if (errSubida) throw new Error(errSubida.message);
-          const { data } = supabase.storage.from('inventario_imagenes').getPublicUrl(nombreArchivo);
-          urlImagen = data.publicUrl;
-        } catch (errImg) {
-          mostrarToast("La foto no se pudo subir (" + errImg.message + "). El producto se guardará sin imagen.", "warning");
-          urlImagen = nuevoItemInv.imagen_url || null;
+        const archivoComprimido = await comprimirImagen(imagenSeleccionada);
+        const nombreArchivo = `producto_${Date.now()}_${generarId().substring(0, 8)}.jpg`;
+        // Se intenta subir; si no hay red o el bucket falla, la foto se guarda
+        // como Blob en el dispositivo y sube sola al recuperar conexion. Antes
+        // se perdia en silencio pese a que el aviso prometia lo contrario.
+        let subido = false;
+        if (navigator.onLine) {
+          try {
+            const { error: errSubida } = await supabase.storage
+              .from('inventario_imagenes')
+              .upload(nombreArchivo, archivoComprimido, { contentType: 'image/jpeg', upsert: true });
+            if (errSubida) throw new Error(errSubida.message);
+            const { data } = supabase.storage.from('inventario_imagenes').getPublicUrl(nombreArchivo);
+            urlImagen = data.publicUrl;
+            subido = true;
+          } catch (errImg) {
+            console.warn('No se pudo subir la foto ahora, se guardara localmente:', errImg);
+          }
+        }
+        if (!subido) {
+          await guardarAdjuntoLocal({
+            blob: archivoComprimido,
+            nombre: nombreArchivo,
+            mime: 'image/jpeg',
+            bucket: 'inventario_imagenes',
+            refType: 'inventario',
+            refId: editandoInvId || nuevoItemInv.id || generarId()
+          });
+          urlImagen = null;
+          mostrarToast('Sin conexión: la foto quedó guardada en este dispositivo y se subirá sola.', 'warning');
         }
       }
 
-      let datosAGuardar = { ...nuevoItemInv, imagen_url: urlImagen, precio: Number(safeNum(nuevoItemInv.precio).toFixed(2)), costo_compra: Number(safeNum(nuevoItemInv.costo_compra).toFixed(2)),       stock: (nuevoItemInv.stock === '' || nuevoItemInv.stock === null) ? 1 : Math.max(0, Math.round(safeNum(nuevoItemInv.stock))) };
+      const datosAGuardar = {
+        ...nuevoItemInv,
+        imagen_url: urlImagen,
+        precio: Number(safeNum(nuevoItemInv.precio).toFixed(2)),
+        costo_compra: Number(safeNum(nuevoItemInv.costo_compra).toFixed(2)),
+        stock: nuevoItemInv.stock === '' || nuevoItemInv.stock === null ? 1 : Math.max(0, Math.round(safeNum(nuevoItemInv.stock)))
+      };
       Object.keys(datosAGuardar).forEach(key => { if (datosAGuardar[key] === '') datosAGuardar[key] = null; });
-
-      if (editandoInvId) {
-        const { error } = await supabase.from('inventario').update(datosAGuardar).eq('id', editandoInvId);
-        if (error) throw new Error(error.message);
-        mostrarToast("Inventario actualizado.", "success");
-      } else {
-        delete datosAGuardar.id;
-        const { error } = await supabase.from('inventario').insert([datosAGuardar]);
-        if (error) throw new Error(error.message);
-        mostrarToast("Producto agregado.", "success");
-      }
-      setNuevoItemInv(invInicial); setEditandoInvId(null);
+      await guardarInventarioLocal({ id: editandoInvId || undefined, ...datosAGuardar });
+      setNuevoItemInv(invInicial);
+      setEditandoInvId(null);
       setImagenSeleccionada(null);
-      await obtenerDatos();
-    } catch(e) { 
-      mostrarToast("Error: " + e.message, "error"); 
-    } finally { setCargandoImagen(false); }
+      await obtenerDatos({ sync: false });
+      void sincronizarAhora({ pull: false });
+      mostrarToast('Producto guardado en este dispositivo.', 'success');
+    } catch (e) {
+      mostrarToast('Error: ' + e.message, 'error');
+    } finally {
+      setCargandoImagen(false);
+    }
   };
 
   const cargarParaEditarInventario = (item) => {
@@ -411,13 +373,14 @@ export function useGestor() {
   };
   const cancelarEdicionInventario = () => { setNuevoItemInv(invInicial); setEditandoInvId(null); setImagenSeleccionada(null); };
   const eliminarItemInventario = (id) => {
-    solicitarConfirmacion("¿Eliminar ítem?", async () => {
+    solicitarConfirmacion('¿Eliminar ítem?', async () => {
       try {
-        const { error } = await supabase.from('inventario').delete().eq('id', id);
-        if (error) throw new Error(error.message);
-        mostrarToast("Ítem eliminado.", "success"); await obtenerDatos();
+        await eliminarInventarioLocal(id);
+        await obtenerDatos({ sync: false });
+        void sincronizarAhora({ pull: false });
+        mostrarToast('Ítem eliminado localmente.', 'success');
       } catch (err) {
-        mostrarToast("Error al eliminar: " + err.message, "error");
+        mostrarToast('Error al eliminar: ' + err.message, 'error');
       }
     });
   };
@@ -455,96 +418,22 @@ export function useGestor() {
       let clinicaData = {};
       camposClinica.forEach(k => clinicaData[k] = paciente[k] === '' ? null : paciente[k]);
 
-      const idPaciente = paciente.paciente_id || generarId();
-      const idConsulta = editandoId || generarId();
+      const idConsulta = editandoId || safeString(paciente.id) || generarId();
 
-      let modoOfflineForzado = !navigator.onLine;
-
-      if (!modoOfflineForzado) {
-        try {
-          const guardarEnLaNube = async () => {
-            let pac_id = paciente.paciente_id;
-            if (pac_id) {
-                            const perfilUpdate = Object.fromEntries(Object.entries(perfilData).filter(([, v]) => v !== null));
-              const { error: errUpd } = await supabase.from('pacientes_perfil').update(perfilUpdate).eq('id', pac_id);
-              if (errUpd) throw new Error(errUpd.message);
-            } else {
-              const { data: existe, error: errSel } = await supabase.from('pacientes_perfil').select('id').eq('cedula', paciente.cedula).maybeSingle();
-              if (errSel) throw new Error(errSel.message);
-              if (existe) {
-                pac_id = existe.id;
-                              const perfilUpdate = Object.fromEntries(Object.entries(perfilData).filter(([, v]) => v !== null));
-              const { error: errUpd } = await supabase.from('pacientes_perfil').update(perfilUpdate).eq('id', pac_id);
-                if (errUpd) throw new Error(errUpd.message);
-              } else {
-                const { error: errNuevo } = await supabase.from('pacientes_perfil').insert([{ ...perfilData, id: idPaciente }]);
-                if (errNuevo) throw new Error(errNuevo.message);
-                pac_id = idPaciente;
-              }
-            }
-
-            clinicaData.paciente_id = pac_id;
-            clinicaData.id = idConsulta;
-            const { error: errCon } = await supabase.from('consultas_clinicas').upsert([clinicaData]);
-            if (errCon) throw new Error(errCon.message);
-          };
-
-          await Promise.race([
-            guardarEnLaNube(),
-            new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 10000))
-          ]);
-
-          mostrarToast("Consulta guardada en la nube.", "success");
-          await terminarGuardado();
-          return;
-        } catch (err) {
-          console.warn("Guardado online falló, usando modo offline:", err?.message || err);
-          modoOfflineForzado = true;
-        }
+      // Conservar el ID antes del envío permite reintentar sin duplicar la evaluación.
+      if (!editandoId && !paciente.id) {
+        setPaciente(prev => ({ ...prev, id: idConsulta }));
       }
 
-      if (modoOfflineForzado) {
-        clinicaData.paciente_id = idPaciente;
-        clinicaData.id = idConsulta;
+      await guardarConsultaLocal({
+        patient: { ...perfilData, patient_id: paciente.patient_id || paciente.id },
+        consultation: { ...clinicaData, id: idConsulta }
+      });
 
-        if (!paciente.paciente_id) {
-          await encolarOperacion('pacientes_perfil', 'INSERT', { ...perfilData, id: idPaciente });
-        } else {
-          await encolarOperacion('pacientes_perfil', 'UPDATE', { id: paciente.paciente_id, ...perfilData });
-        }
-
-        if (editandoId) {
-          await encolarOperacion('consultas_clinicas', 'UPDATE', { id: editandoId, ...clinicaData, cedula: perfilData.cedula });
-        } else {
-          await encolarOperacion('consultas_clinicas', 'INSERT', { ...clinicaData, cedula: perfilData.cedula });
-        }
-
-        const registroLocalVisible = {
-          id: idConsulta,
-          paciente_id: idPaciente,
-          fecha: clinicaData.fecha || hoy,
-          cedula: perfilData.cedula,
-          nombre: perfilData.nombre,
-          alias: perfilData.alias || '',
-          telefono: perfilData.telefono || '',
-          correo: perfilData.correo || '',
-          fecha_nacimiento: perfilData.fecha_nacimiento || '',
-          antecedentes: perfilData.antecedentes || '',
-          notas_clinicas: clinicaData.notas_clinicas || '',
-          ...clinicaData,
-          estado: 'Ninguno'
-        };
-
-        setHistorial(prev => [registroLocalVisible, ...prev.filter(p => p.cedula !== registroLocalVisible.cedula)]);
-        const actualHist = await leerBoveda('backup_historial') || [];
-        await escribirBoveda('backup_historial', [registroLocalVisible, ...actualHist]);
-
-        mostrarToast("Guardado localmente. ¡Ya visible en tu historial!", "warning");
-        setPaciente(estadoInicial);
-        setEditandoId(null);
-        setIntentadoGuardar(false);
-        setVistaActual('historial');
-      }
+      mostrarToast('Consulta guardada en este dispositivo.', 'success');
+      await terminarGuardado();
+      void sincronizarAhora({ pull: false });
+      return;
     } catch(e) { 
       mostrarToast("Error: " + e.message, "error"); 
     } finally {
@@ -557,38 +446,21 @@ export function useGestor() {
     setEditandoId(null);
     setIntentadoGuardar(false);
     setVistaActual('historial');
-    await obtenerDatos();
+    await obtenerDatos({ sync: false });
   };
 
-  const borrarHistoriaClinica = (item, alEliminarLocal) => {
+  const borrarHistoriaClinica = async (item) => {
     if (item.pedido_id) {
-      return mostrarToast("Esta consulta tiene una VENTA asociada. Cancélala primero en la sección Pedidos y luego podrás borrar la consulta.", "warning");
+      return mostrarToast('Esta consulta tiene una venta asociada. Anular la venta no elimina el historial clínico.', 'warning');
     }
-    solicitarConfirmacion("Vas a eliminar este registro permanentemente. ¿Continuar?", async () => {
-      setHistorial(prev => prev.filter(h => h.id !== item.id));
-      try {
-        const histLocal = await leerBoveda('backup_historial') || [];
-        await escribirBoveda('backup_historial', histLocal.filter(h => h.id !== item.id));
-      } catch (e) {
-        console.warn(e);
-      }
-
-      await purgarTareasDeRegistro('consultas_clinicas', item.id);
-
-      try {
-        if (navigator.onLine) {
-          const { error } = await supabase.from('consultas_clinicas').delete().eq('id', item.id);
-          if (error) throw new Error(error.message);
-        } else {
-          await encolarOperacion('consultas_clinicas', 'DELETE', { id: item.id });
-        }
-        mostrarToast("Eliminado con éxito.", "success");
-        if (alEliminarLocal) alEliminarLocal();
-      } catch (err) {
-        mostrarToast("Error al eliminar: " + err.message, "error");
-        await obtenerDatos();
-      }
-    });
+    try {
+      await archivarConsultaLocal(item.id);
+      await obtenerDatos({ sync: false });
+      void sincronizarAhora({ pull: false });
+      mostrarToast('Consulta archivada localmente.', 'success');
+    } catch (err) {
+      mostrarToast('No se pudo archivar la consulta: ' + err.message, 'error');
+    }
   };
 
   const cargarParaEditarClinico = (item) => {
@@ -603,13 +475,25 @@ export function useGestor() {
     ['tratam_ar', 'tratam_ar_azul', 'tratam_azul', 'tratam_tinturado', 'tratam_foto', 'tratam_trans', 'tratam_ninguno'].forEach(k => { if(!itemFormateado[k]) itemFormateado[k] = 'NO'; });
     if(!itemFormateado.descuento) itemFormateado.descuento = '0';
     if(!itemFormateado.forma_pago) itemFormateado.forma_pago = 'Efectivo';
+
+    const esVentaNueva = !safeString(itemFormateado.pedido_id);
+    itemFormateado._nueva_venta = esVentaNueva;
+    if (esVentaNueva) itemFormateado.pedido_id = generarId();
+
     const visitas = (historial || []).filter(h => safeString(h?.cedula) === safeString(item.cedula) && safeString(h?.nombre) !== 'CONSUMIDOR FINAL');
-    setMedidasPaciente(visitas); setPedidoSeleccionado(itemFormateado); setArmazonOriginalCodigo(itemFormateado.codigo_armazon || ''); setAccesorioOriginalId(itemFormateado.accesorio_id || ''); setVistaActual('pedidos_form');
+    setMedidasPaciente(visitas); setPedidoSeleccionado(itemFormateado); setAccesorioOriginalId(itemFormateado.accesorio_id || ''); setVistaActual('pedidos_form');
   };
 
   const crearVentaDirecta = () => {
-    const ventaNueva = { ...estadoInicial, nombre: 'CONSUMIDOR FINAL', cedula: '9999999999', estado: 'Entregado' };
-    setMedidasPaciente([]); setPedidoSeleccionado(ventaNueva); setArmazonOriginalCodigo(''); setAccesorioOriginalId(''); setVistaActual('pedidos_form');
+    const ventaNueva = {
+      ...estadoInicial,
+      pedido_id: generarId(),
+      _nueva_venta: true,
+      nombre: 'CONSUMIDOR FINAL',
+      cedula: '9999999999',
+      estado: 'Entregado'
+    };
+    setMedidasPaciente([]); setPedidoSeleccionado(ventaNueva); setAccesorioOriginalId(''); setVistaActual('pedidos_form');
   };
 
   const cambiarMedicionPedido = (e) => {
@@ -698,132 +582,113 @@ export function useGestor() {
     });
   };
 
-  const guardarPedido = async () => {
+  const guardarPedido = async ({ montoAdicional = 0 } = {}) => {
+    if (!pedidoSeleccionado) return;
+
     try {
-      const idPedido = (pedidoSeleccionado.pedido_id && !String(pedidoSeleccionado.pedido_id).startsWith('temp-'))
-        ? pedidoSeleccionado.pedido_id
-        : generarId();
-      const idPacientePedido = pedidoSeleccionado.paciente_id || generarId();
-      const idConsultaPedido = pedidoSeleccionado.id || generarId();
-
-      const camposPedido = ['fecha', 'venta', 'abono', 'descuento', 'forma_pago', 'pago_nota', 'estado', 'notas', 'comprobante_url', 'codigo_armazon', 'tipo_armazon', 'param_horizontal', 'param_puente', 'param_vertical', 'param_diagonal', 'tipo_lente', 'material_lente', 'material_nota', 'accesorio_id', 'tratam_ninguno', 'tratam_ar', 'tratam_ar_azul', 'tratam_azul', 'tratam_tinturado', 'tratam_tinturado_nota', 'tratam_foto', 'tratam_foto_nota', 'tratam_trans', 'tratam_trans_nota', 'costo_armazon_int', 'costo_lunas_int', 'costo_accesorio_int', 'costo_tratamientos_int', 'costo_varios_int'];
-      let datosVenta = { id: idPedido, paciente_id: idPacientePedido, consulta_id: idConsultaPedido };
-      camposPedido.forEach(k => datosVenta[k] = pedidoSeleccionado[k] === '' ? null : pedidoSeleccionado[k]);
-
-      // Fecha: NUEVA venta nace HOY; venta EXISTENTE conserva su fecha original
-      const esPedidoNuevo = !pedidoSeleccionado.pedido_id || String(pedidoSeleccionado.pedido_id).startsWith('temp-');
-      if (esPedidoNuevo) {
-        datosVenta.fecha = hoy;
-      } else if (pedidoSeleccionado.fecha_venta) {
-        datosVenta.fecha = pedidoSeleccionado.fecha_venta; // la fecha REAL de la venta, no la de la consulta
+      if (!validarDocumento(pedidoSeleccionado.cedula)) {
+        throw new Error('El documento del paciente no es válido.');
       }
 
-      let pac_id = null;
-      let cons_id = null;
-      let guardadoOnline = false;
+      const idPedido = pedidoSeleccionado.pedido_id || pedidoSeleccionado.id || generarId();
+      const consultationId = pedidoSeleccionado.id || generarId();
+      const cedulaPaciente = safeString(pedidoSeleccionado.cedula).trim().toUpperCase();
+      const nombrePaciente = safeString(pedidoSeleccionado.nombre).trim() || (cedulaPaciente === '9999999999' ? 'CONSUMIDOR FINAL' : '');
+      if (!nombrePaciente) throw new Error('El nombre del paciente es obligatorio.');
 
-      if (navigator.onLine) {
-        try {
-          if (pedidoSeleccionado.paciente_id) {
-            pac_id = pedidoSeleccionado.paciente_id;
-          } else {
-            const { data: existe, error: errSel } = await supabase.from('pacientes_perfil').select('id').eq('cedula', pedidoSeleccionado.cedula).maybeSingle();
-            if (errSel) throw new Error(errSel.message);
-            if (existe) {
-              pac_id = existe.id;
-            } else {
-              const { error: errPerfil } = await supabase.from('pacientes_perfil').insert([{ id: idPacientePedido, cedula: pedidoSeleccionado.cedula, nombre: pedidoSeleccionado.nombre }]);
-              if (errPerfil) throw new Error(errPerfil.message);
-              pac_id = idPacientePedido;
-            }
+      const patientId = pedidoSeleccionado.patient_id || pedidoSeleccionado.paciente_id || generarId();
+      const camposPedido = ['venta', 'abono', 'descuento', 'forma_pago', 'pago_nota', 'estado', 'notas', 'comprobante_url', 'codigo_armazon', 'tipo_armazon', 'param_horizontal', 'param_puente', 'param_vertical', 'param_diagonal', 'tipo_lente', 'material_lente', 'material_nota', 'accesorio_id', 'tratam_ninguno', 'tratam_ar', 'tratam_ar_azul', 'tratam_azul', 'tratam_tinturado', 'tratam_tinturado_nota', 'tratam_foto', 'tratam_foto_nota', 'tratam_trans', 'tratam_trans_nota', 'costo_armazon_int', 'costo_lunas_int', 'costo_accesorio_int', 'costo_tratamientos_int', 'costo_varios_int'];
+      const venta = {};
+      camposPedido.forEach(k => { venta[k] = pedidoSeleccionado[k] === '' ? null : pedidoSeleccionado[k]; });
+      venta.id = idPedido;
+      venta.pedido_id = idPedido;
+      venta.patient_id = patientId;
+      venta.consultation_id = consultationId;
+      venta.fecha = hoy;
+      venta.abono = pedidoSeleccionado._nueva_venta ? '0' : safeString(pedidoSeleccionado.abono || '0');
+      venta.pago_nota = pedidoSeleccionado.pago_nota || '';
+      venta.descuento = venta.descuento ?? '0';
+      venta.forma_pago = venta.forma_pago || 'Efectivo';
+      venta.estado = venta.estado || 'En laboratorio';
+
+      const montoAPagar = pedidoSeleccionado._nueva_venta
+        ? Number(safeNum(pedidoSeleccionado.abono).toFixed(2))
+        : Number(safeNum(montoAdicional).toFixed(2));
+      const initialPayment = montoAPagar > 0
+        ? {
+            monto: montoAPagar,
+            metodo: venta.forma_pago,
+            referencia: safeString(pedidoSeleccionado.pago_nota) || null,
+            comprobantePath: safeString(pedidoSeleccionado.comprobante_url) || null,
+            idempotencyKey: idPedido
           }
+        : null;
 
-          if (pedidoSeleccionado.id) {
-            cons_id = pedidoSeleccionado.id;
-          } else {
-            const { error: errCons } = await supabase.from('consultas_clinicas').insert([{ id: idConsultaPedido, paciente_id: pac_id, fecha: hoy }]);
-            if (errCons) throw new Error(errCons.message);
-            cons_id = idConsultaPedido;
-          }
+      await guardarVentaLocal({
+        patient: {
+          id: patientId,
+          patient_id: patientId,
+          cedula: cedulaPaciente,
+          nombre: nombrePaciente,
+          alias: pedidoSeleccionado.alias,
+          telefono: pedidoSeleccionado.telefono,
+          correo: pedidoSeleccionado.correo,
+          fecha_nacimiento: pedidoSeleccionado.fecha_nacimiento,
+          antecedentes: pedidoSeleccionado.antecedentes
+        },
+        consultationId,
+        sale: venta,
+        initialPayment
+      });
 
-          datosVenta.paciente_id = pac_id;
-          datosVenta.consulta_id = cons_id;
-          const { error: errVenta } = await supabase.from('pedidos_ventas').upsert([datosVenta]);
-          if (errVenta) throw new Error(errVenta.message);
-
-          guardadoOnline = true;
-          mostrarToast("Orden guardada en la nube.", "success");
-        } catch (e) {
-          console.warn("Fallo guardado online de pedido, rescatando offline...", e);
-        }
-      }
-
-      if (!guardadoOnline) {
-        datosVenta.paciente_id = pac_id || pedidoSeleccionado.paciente_id || idPacientePedido;
-        datosVenta.consulta_id = cons_id || pedidoSeleccionado.id || idConsultaPedido;
-
-        if (!pac_id && !pedidoSeleccionado.paciente_id) {
-          await encolarOperacion('pacientes_perfil', 'INSERT', { id: idPacientePedido, cedula: pedidoSeleccionado.cedula, nombre: pedidoSeleccionado.nombre });
-        }
-        if (!cons_id && !pedidoSeleccionado.id) {
-          await encolarOperacion('consultas_clinicas', 'INSERT', { id: idConsultaPedido, paciente_id: datosVenta.paciente_id, fecha: hoy, cedula: pedidoSeleccionado.cedula });
-        }
-        await encolarOperacion('pedidos_ventas', 'INSERT', { ...datosVenta, cedula: pedidoSeleccionado.cedula, nombre: pedidoSeleccionado.nombre });
-        mostrarToast("Guardado localmente (Offline).", "warning");
-      }
-
-      const { id: _idVenta, ...datosParaHistorial } = datosVenta;
-      const itemHistorialActualizado = {
-        ...pedidoSeleccionado,
-        id: datosVenta.consulta_id,
-        paciente_id: datosVenta.paciente_id,
-        pedido_id: idPedido,
-        ...datosParaHistorial
-      };
-
-      setHistorial(prev => [itemHistorialActualizado, ...prev.filter(p => p.id !== itemHistorialActualizado.id)]);
-      const backupActual = await leerBoveda('backup_historial') || [];
-      await escribirBoveda('backup_historial', [itemHistorialActualizado, ...backupActual.filter(p => p.id !== itemHistorialActualizado.id)]);
-
+      // El guardado local ya quedo persistido: navegamos y refrescamos en segundo
+      // plano para que el boton no espere un snapshot completo de IndexedDB.
       setPedidoSeleccionado(null);
       setVistaActual('pedidos_lista');
-      if (guardadoOnline) await obtenerDatos();
-    } catch(e) { 
-      mostrarToast("Error al guardar pedido: " + e.message, "error"); 
+      mostrarToast('Venta guardada en este dispositivo.', 'success');
+      void obtenerDatos({ sync: false }).then(() => sincronizarAhora({ pull: false }));
+      return true;
+    } catch (e) {
+      mostrarToast('Error al guardar pedido: ' + e.message, 'error');
+      return false;
     }
   };
-
   const cancelarPedido = (item) => {
-    solicitarConfirmacion("¿Cancelar venta?", async () => {
-      try {
-        if (item.pedido_id) {
-          // 1. PRIMERO la purga
-          await purgarTareasDeRegistro('pedidos_ventas', item.pedido_id);
-          // 2. Luego el DELETE — con verificación real de conectividad, no navigator.onLine
-          let onlineReal = false;
-          try {
-            await fetch(`https://uaflmzuklixcpqspiyqi.supabase.co/rest/v1/pedidos_ventas?select=id&limit=1`, { 
-              method: 'HEAD', mode: 'no-cors', cache: 'no-store' 
-            });
-            onlineReal = true;
-          } catch (e) { onlineReal = false; }
+    if (!item.pedido_id) {
+      return mostrarToast('Este registro todavía no tiene una venta local.', 'warning');
+    }
 
-          if (onlineReal) {
-            const { error } = await supabase.from('pedidos_ventas').delete().eq('id', item.pedido_id);
-            if (error) throw new Error(error.message);
-          } else {
-            await encolarOperacion('pedidos_ventas', 'DELETE', { id: item.pedido_id });
-          }
+    const abono = Number(safeNum(item.abono).toFixed(2));
+    // El servidor prohibe anular una venta con dinero abonado. La salida
+    // correcta para la optica es devolver ese dinero de forma explicita y
+    // trazable, no anular en silencio.
+    const mensaje = abono > 0
+      ? `¿Anular la venta? Tiene $${abono.toFixed(2)} abonado: primero se le devolverá ese dinero y luego se devolverá el stock.`
+      : '¿Anular la venta y devolver el stock local?';
+
+    solicitarConfirmacion(mensaje, async () => {
+      try {
+        const resultado = abono > 0
+          ? await anularVentaConReembolso({ saleId: item.pedido_id, method: 'Efectivo' })
+          : await anularVentaLocal(item.pedido_id);
+        await obtenerDatos({ sync: false });
+        const estado = await sincronizarAhora({ pull: false });
+        const falloServidor = estado?.phase === 'error' ? estado.lastError : null;
+        if (falloServidor) {
+          mostrarToast('Hecho en este dispositivo, pero el servidor lo rechazó: ' + falloServidor, 'error');
+          return;
         }
-        // 3. Estado + respaldo local (incondicional)
-        setHistorial(prev => prev.map(p => p.id === item.id ? { ...p, pedido_id: null, venta: '', abono: '', estado: 'Ninguno' } : p));
-        try {
-          const backupActual = await leerBoveda('backup_historial') || [];
-          await escribirBoveda('backup_historial', backupActual.map(p => p.id === item.id ? { ...p, pedido_id: null, venta: '', abono: '', estado: 'Ninguno' } : p));
-        } catch (e) { console.warn(e); }
-        mostrarToast("Pedido cancelado.", "success");
+        if (resultado?.productosAusentes?.length) {
+          mostrarToast(
+            'Venta anulada. El stock de ' + resultado.productosAusentes.length +
+            ' producto(s) no se pudo devolver aquí porque no existen en este dispositivo; se devolverá al sincronizar.',
+            'warning'
+          );
+        } else {
+          mostrarToast('Venta anulada localmente.', 'success');
+        }
       } catch (err) {
-        mostrarToast("Error al cancelar: " + err.message, "error");
+        mostrarToast('Error al anular: ' + err.message, 'error');
       }
     });
   };
@@ -890,7 +755,7 @@ export function useGestor() {
         totalPacientes: cedulasUnicas.size,
         total: (historial || []).length 
       };
-    } catch(e) { 
+    } catch {
       return { ventasMes: 0, abonosPendientes: 0, gastosMes: 0, utilidadNeta: 0, totalPacientes: 0, total: 0 }; 
     }
   })();
@@ -905,7 +770,8 @@ export function useGestor() {
     guardando,
     obtenerDatos, solicitarConfirmacion,
     estaAutenticado, cargandoAuth, cerrarSesion,
-    toast, confirmDialog, setConfirmDialog, vistaActual, setVistaActual,
+    modoSinConexion, entrarSinConexion, dispositivo, configurarAccesoSinConexion, desactivarAccesoSinConexion,
+    toast, confirmDialog, setConfirmDialog, vistaActual, setVistaActual, syncEstado, sincronizarAhora,
     historial, inventario, listaPrecios, paciente, setPaciente, estadoInicial, editandoId, setEditandoId, 
     guardarPacienteClinico, manejarCambio, borrarHistoriaClinica, cargarParaEditarClinico, edadActual, claseInputRef,
     busqueda, setBusqueda, pedidosFiltrados, stats, enviarWhatsApp,

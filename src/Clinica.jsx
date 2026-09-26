@@ -1,5 +1,8 @@
 import { useState, useEffect, useRef, Fragment } from 'react'
 import { safeString, calcularCerca, buscarPacientesEnSupabase } from './utilidades'
+import { LIMITE_QUERATOMETRIA, esQueratometriaAlta } from './reglas'
+
+const claseQueratometria = alta => `w-14 p-1 border rounded outline-none text-center text-sm font-bold focus:ring-1 focus:ring-teal-500 ${alta ? 'border-red-500 bg-red-50 text-red-700' : 'border-gray-300'}`;
 
 const FilaRefraccion = ({ ojo, label, paciente, manejarCambio, claseInputRef }) => (
   <tr className={ojo === 'od' ? "border-b hover:bg-gray-50" : "hover:bg-gray-50"}>
@@ -53,6 +56,8 @@ const BloqueQueratometria = ({ ojo, label, paciente, manejarCambio }) => {
   const eje2 = parseFloat(paciente[`eje_k2_${ojo}`]);
   const k1Valido = !isNaN(k1) && k1 > 30 && k1 < 60;
   const k2Valido = !isNaN(k2) && k2 > 30 && k2 < 60;
+  const k1Alta = esQueratometriaAlta(paciente, `k1_d_${ojo}`);
+  const k2Alta = esQueratometriaAlta(paciente, `k2_d_${ojo}`);
 
   // mm = 337.5 / D (índice queratométrico estándar) — solo visual
   const k1mm = k1Valido ? (337.5 / k1).toFixed(2) : '';
@@ -81,7 +86,7 @@ const BloqueQueratometria = ({ ojo, label, paciente, manejarCambio }) => {
       <td className="border-r border-b p-2">
         <div className="flex justify-between items-center gap-1">
           <span className="text-xs font-bold text-gray-700">K1(pla)</span>
-          <input name={`k1_d_${ojo}`} value={safeString(paciente[`k1_d_${ojo}`])} onChange={manejarCambio} className="w-14 p-1 border border-gray-300 rounded outline-none text-center text-sm font-bold focus:ring-1 focus:ring-teal-500" />
+          <input name={`k1_d_${ojo}`} value={safeString(paciente[`k1_d_${ojo}`])} onChange={manejarCambio} className={claseQueratometria(k1Alta)} aria-invalid={k1Alta} title={k1Alta ? `Valor alto: supera ${LIMITE_QUERATOMETRIA.toFixed(2)} D` : ''} />{k1Alta && <span className="text-[9px] font-black text-red-600">ALTA</span>}
         </div>
       </td>
       <td className="border-r border-b p-2 bg-gray-50">
@@ -104,7 +109,7 @@ const BloqueQueratometria = ({ ojo, label, paciente, manejarCambio }) => {
       <td className="border-r border-b p-2">
         <div className="flex justify-between items-center gap-1">
           <span className="text-xs font-bold text-gray-700">K2(cur)</span>
-          <input name={`k2_d_${ojo}`} value={safeString(paciente[`k2_d_${ojo}`])} onChange={manejarCambio} className="w-14 p-1 border border-gray-300 rounded outline-none text-center text-sm font-bold focus:ring-1 focus:ring-teal-500" />
+          <input name={`k2_d_${ojo}`} value={safeString(paciente[`k2_d_${ojo}`])} onChange={manejarCambio} className={claseQueratometria(k2Alta)} aria-invalid={k2Alta} title={k2Alta ? `Valor alto: supera ${LIMITE_QUERATOMETRIA.toFixed(2)} D` : ''} />{k2Alta && <span className="text-[9px] font-black text-red-600">ALTA</span>}
         </div>
       </td>
       <td className="border-r border-b p-2 bg-gray-50">
@@ -162,7 +167,7 @@ export default function Clinica({
         try {
           const resultados = await buscarPacientesEnSupabase(val);
           setSugerenciasNube((resultados || []).filter(r => safeString(r?.nombre) !== 'CONSUMIDOR FINAL').slice(0, 5));
-        } catch (err) { /* silencioso: si falla, las sugerencias locales siguen */ }
+        } catch { /* silencioso: si falla, las sugerencias locales siguen */ }
       }, 400);
     } else {
       setSugerenciasNube([]);

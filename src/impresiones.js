@@ -1,4 +1,5 @@
 import { safeString, safeNum, calcularCerca, generarDiagnosticos } from './utilidades';
+import { calcularTotal, calcularSaldo, calcularMontoDescuento } from './reglas';
 
 export const imprimirInforme = (item) => {
   try {
@@ -235,9 +236,9 @@ export const imprimirRecibo = (item) => {
     const pVenta = safeNum(item?.venta);
     const pDesc = safeNum(item?.descuento);
     const pAbono = safeNum(item?.abono);
-    const descAmount = pVenta * (pDesc / 100);
-    const pFinal = pVenta - descAmount;
-    const pSaldo = pFinal - pAbono;
+    const descAmount = calcularMontoDescuento(pVenta, pDesc);
+    const pFinal = calcularTotal(pVenta, pDesc);
+    const pSaldo = calcularSaldo(pVenta, pDesc, pAbono);
 
     const win = window.open('', '_blank');
     if (!win) return;

@@ -1,28 +1,65 @@
 import { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
 
-export default function Login() {
+const CLAVE_RECUPERACION = 'vermas_cambio_clave';
+
+// El modo "crear nueva contraseña" se decide una sola vez al montar: o venimos
+// del enlace de recuperación en la URL, o hay un flag de una sesión anterior.
+// Es una lectura, no un estado reactivo, así que va en un inicializador perezoso.
+const detectarRecuperacion = () => {
+  if (typeof window === 'undefined') return false;
+  return window.location.hash.includes('type=recovery')
+    || sessionStorage.getItem(CLAVE_RECUPERACION) !== null;
+};
+
+export default function Login({ dispositivo, entrarSinConexion }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [cargando, setCargando] = useState(false);
-  const [mensaje, setMensaje] = useState({ texto: '', tipo: '' });
+  // Antes estos valores se asignaban dentro de un useEffect, lo que provocaba un
+  // render extra en cascada y dejaba el formulario vacío un instante antes de
+  // mostrar "Crear Nueva Contraseña".
+  const [modoNuevaClave] = useState(detectarRecuperacion);
+  const [mensaje, setMensaje] = useState(() => (modoNuevaClave
+    ? { texto: 'Crea tu nueva contraseña para volver a ingresar.', tipo: 'warning' }
+    : { texto: '', tipo: '' }));
   
   const [modoRecuperar, setModoRecuperar] = useState(false);
-  const [modoNuevaClave, setModoNuevaClave] = useState(false);
   const [nuevaClave, setNuevaClave] = useState('');
   const [confirmarClave, setConfirmarClave] = useState('');
 
-  // Detectar si venimos del enlace de recuperación (por la URL o por el flag)
+  // Desbloqueo local con PIN: abre los datos de ESTE dispositivo, sin token del
+  // servidor. La sincronizacion queda suspendida hasta entrar con credenciales.
+  const [pinLocal, setPinLocal] = useState('');
+  const [verPin, setVerPin] = useState(false);
+  const [desbloqueando, setDesbloqueando] = useState(false);
+
+  const manejarDesbloqueoLocal = async (e) => {
+    e.preventDefault();
+    if (!entrarSinConexion) return;
+    setDesbloqueando(true);
+    const resultado = await entrarSinConexion(pinLocal);
+    setDesbloqueando(false);
+    setPinLocal('');
+    if (resultado?.ok) return;
+    if (resultado?.bloqueado) {
+      setMensaje({ texto: 'Demasiados intentos. Por seguridad se borraron los datos de este dispositivo.', tipo: 'error' });
+      return;
+    }
+    if (resultado?.restantes !== undefined) {
+      setMensaje({ texto: `PIN incorrecto. Le quedan ${resultado.restantes} intento(s).`, tipo: 'error' });
+      return;
+    }
+    if (resultado?.error) setMensaje({ texto: resultado.error, tipo: 'error' });
+  };
+
+  // Solo queda el efecto sobre el sistema externo: persistir el flag y limpiar
+  // el token de recuperación de la barra del navegador. El estado de la vista ya
+  // quedó resuelto arriba, así que aquí no hay ningún setState.
   useEffect(() => {
     if (window.location.hash.includes('type=recovery')) {
-      sessionStorage.setItem('vermas_cambio_clave', '1');
-      // Limpiar la URL para no dejar tokens visibles en la barra del navegador
+      sessionStorage.setItem(CLAVE_RECUPERACION, '1');
       window.history.replaceState(null, '', window.location.pathname);
-    }
-    if (sessionStorage.getItem('vermas_cambio_clave')) {
-      setModoNuevaClave(true);
-      setModoRecuperar(false);
-      setMensaje({ texto: 'Crea tu nueva contraseña para volver a ingresar.', tipo: 'warning' });
     }
   }, []);
 
@@ -236,6 +273,45 @@ export default function Login() {
             >
               🔙 Volver al inicio de sesión
             </button>
+          </div>
+        )}
+
+        {dispositivo?.enrolado && !modoNuevaClave && (
+          <div className="mt-6 pt-6 border-t border-dashed border-gray-300">
+            <p className="text-center text-xs text-gray-500 mb-3">
+              ¿Sin internet? Entra con el PIN configurado en este dispositivo.
+            </p>
+            <form onSubmit={manejarDesbloqueoLocal} className="space-y-2">
+              <input
+                type={verPin ? 'text' : 'password'}
+                inputMode="numeric"
+                autoComplete="off"
+                maxLength={8}
+                value={pinLocal}
+                onChange={(e) => setPinLocal(e.target.value.replace(/\D/g, ''))}
+                placeholder="PIN de 4 a 8 dígitos"
+                className="w-full p-3 border rounded-lg outline-none focus:ring-2 focus:ring-teal-500 bg-gray-50 text-center tracking-[0.4em] font-bold"
+              />
+              <div className="flex gap-2">
+                <button
+                  type="submit"
+                  disabled={desbloqueando || pinLocal.length < 4}
+                  className="flex-1 py-2.5 rounded-lg font-bold text-white bg-teal-600 hover:bg-teal-700 disabled:opacity-50 transition-colors"
+                >
+                  {desbloqueando ? 'Abriendo…' : 'Entrar sin conexión'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setVerPin(v => !v)}
+                  className="px-3 rounded-lg bg-gray-100 text-gray-600 font-bold text-xs"
+                >
+                  {verPin ? 'Ocultar' : 'Ver'}
+                </button>
+              </div>
+            </form>
+            <p className="text-[10px] text-gray-400 text-center mt-2">
+              Solo abre los datos guardados en este equipo. No accede al servidor.
+            </p>
           </div>
         )}
 

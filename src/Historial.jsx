@@ -3,6 +3,8 @@ import { supabase } from './supabaseClient';
 import { safeString, safeNum, calcularEdad, calcularTiempoTranscurrido, generarDiagnosticos, buscarPacientesEnSupabase } from './utilidades';
 import { imprimirInforme, imprimirRecetaSimple } from './impresiones';
 import localforage from 'localforage';
+import { calcularTotal, calcularSaldo } from './reglas';
+import BotonComprobante from './BotonComprobante';
 
 // Conectamos a la misma bóveda local
 localforage.config({
@@ -15,8 +17,14 @@ export default function Historial({
   enviarWhatsApp, cargarParaEditarClinico, borrarHistoriaClinica, abrirPedido, crearNuevoPaciente
 }) {
   const [busquedaTexto, setBusquedaTexto] = useState('');
-  const [resultadosBusqueda, setResultadosBusqueda] = useState([]);
+  const [resultadosBusqueda, setResultadosBusqueda] = useState({ termino: '', datos: [] });
   const [buscando, setBuscando] = useState(false);
+  // La paginacion descarga miles de consultas, pero pintarlas todas de golpe
+  // saturaba el navegador y dejaba la app (y los guardados) sin respuesta.
+  // Se muestran de 50 en 50 bajo demanda.
+  const INCREMENTO = 50;
+  const [visibles, setVisibles] = useState(50);
+  const filasPorMostrar = visibles;
 
   const [expedienteActivo, setExpedienteActivo] = useState(null);
   const [registrosPaciente, setRegistrosPaciente] = useState([]);
@@ -26,34 +34,33 @@ export default function Historial({
   const [aliasVisibles, setAliasVisibles] = useState({});
 
   // --- BÚSQUEDA HÍBRIDA EXTREMA ---
+  // El estado guarda CON QUÉ TÉRMINO se buscó, para que la vista nunca muestre
+  // resultados de una búsqueda anterior mientras corre la nueva.
   useEffect(() => {
-    if (!busquedaTexto || busquedaTexto.trim().length < 2) {
-      setResultadosBusqueda([]);
-      setBuscando(false);
-      return;
-    }
-    setBuscando(true);
-    
+    const termino = busquedaTexto.trim();
+    if (termino.length < 2) return;
+
     const timer = setTimeout(async () => {
+      setBuscando(true);
       // 1. Mostrar resultados locales inmediatamente
       try {
         const histLocal = await localforage.getItem('backup_historial') || historialReciente || [];
-        const termino = busquedaTexto.toLowerCase();
+        const busqueda = termino.toLowerCase();
         const filtrados = histLocal.filter(item => 
-          safeString(item.nombre).toLowerCase().includes(termino) ||
-          safeString(item.cedula).includes(termino) ||
-          safeString(item.alias).toLowerCase().includes(termino)
+          safeString(item.nombre).toLowerCase().includes(busqueda) ||
+          safeString(item.cedula).includes(busqueda) ||
+          safeString(item.alias).toLowerCase().includes(busqueda)
         );
-        if (filtrados.length > 0) setResultadosBusqueda(filtrados);
-      } catch (e) {}
+        if (filtrados.length > 0) setResultadosBusqueda({ termino, datos: filtrados });
+      } catch { /* la bóveda local falló: se muestran los resultados de la nube */ }
 
       // 2. Buscar en la nube de fondo
       try {
         if (navigator.onLine) {
-          const datos = await buscarPacientesEnSupabase(busquedaTexto);
-          if (datos && datos.length > 0) setResultadosBusqueda(datos);
+          const datos = await buscarPacientesEnSupabase(termino);
+          if (datos && datos.length > 0) setResultadosBusqueda({ termino, datos });
         }
-      } catch (error) {
+      } catch {
         console.warn("Búsqueda en nube falló, usando local.");
       } finally {
         setBuscando(false);
@@ -63,7 +70,14 @@ export default function Historial({
     return () => clearTimeout(timer);
   }, [busquedaTexto, historialReciente]);
 
-  const listaBruta = (busquedaTexto.trim().length >= 2) ? resultadosBusqueda : (historialReciente || []);
+  // Sin término válido mostramos el historial completo. Con término, solo
+  // mostramos resultados que pertenezcan a esa misma búsqueda: así no hace
+  // falta un setState para "limpiar" y se evita el render en cascada.
+  const terminoActual = busquedaTexto.trim();
+  const hayTermino = terminoActual.length >= 2;
+  const listaBruta = hayTermino
+    ? (resultadosBusqueda.termino === terminoActual ? resultadosBusqueda.datos : [])
+    : (historialReciente || []);
 
   const pacientesAgrupados = [];
   const cedulasVistas = new Set();
@@ -75,6 +89,8 @@ export default function Historial({
       pacientesAgrupados.push(item);
     }
   });
+
+  const filasVisibles = pacientesAgrupados.slice(0, filasPorMostrar);
 
   // --- APERTURA DE EXPEDIENTE HÍBRIDA EXTREMA (SOLUCIÓN AL CONGELAMIENTO) ---
   const abrirExpedienteCompleto = async (paciente) => {
@@ -92,7 +108,7 @@ export default function Historial({
         setRegistrosPaciente(registrosLocales);
         setCargandoExpediente(false); // ¡Apagamos la pantalla de carga de inmediato!
       }
-    } catch(e) {
+    } catch {
       console.warn("Fallo al leer bóveda local.");
     }
 
@@ -306,18 +322,18 @@ export default function Historial({
           onChange={(e) => setBusquedaTexto(e.target.value)} 
           className="flex-1 p-3 border rounded-lg outline-none focus:ring-2 focus:ring-blue-500 shadow-sm text-sm font-medium bg-gray-50 focus:bg-white" 
         />
-        {buscando && <div className="flex items-center text-xs font-bold text-blue-600 px-3">Buscando... ☁️</div>}
+        {buscando && hayTermino && <div className="flex items-center text-xs font-bold text-blue-600 px-3">Buscando... ☁️</div>}
       </div>
 
       <div className="space-y-6">
-        {pacientesAgrupados.map(item => {
+        {filasVisibles.map(item => {
           try {
             const diagnosticos = generarDiagnosticos(item);
             const desc = safeNum(item.descuento);
             const vta = safeNum(item.venta);
             const abono = safeNum(item.abono);
-            const vFinal = vta - (vta * desc / 100);
-            const saldoPendiente = (typeof item.deuda_total === 'number') ? item.deuda_total : (vFinal - abono);
+            const vFinal = calcularTotal(vta, desc);
+            const saldoPendiente = (typeof item.deuda_total === 'number') ? item.deuda_total : calcularSaldo(vta, desc, abono);
             const tieneDeuda = saldoPendiente > 0;
             const tienePedido = String(item.estado || 'Ninguno') !== 'Ninguno' || Number(item.venta || 0) > 0 || String(item.codigo_armazon || '') !== '' || String(item.accesorio_id || '') !== '';
             
@@ -399,9 +415,11 @@ export default function Historial({
                           <div className="flex gap-2">
                             <span className={`px-3 py-1 rounded-full text-xs font-bold shadow-sm ${item.estado === 'Entregado' ? 'bg-green-100 text-green-800' : item.estado === 'Listo para Entrega' ? 'bg-blue-100 text-blue-800' : 'bg-yellow-100 text-yellow-800'}`}>{safeString(item.estado)}</span>
                             {item.comprobante_url && (
-                              <a href={item.comprobante_url} target="_blank" rel="noopener noreferrer" className="text-xs bg-indigo-50 text-indigo-700 font-bold px-2 py-1 rounded-full border border-indigo-200 hover:bg-indigo-100 flex items-center shadow-sm">
-                                👁️ Comprobante
-                              </a>
+                              <BotonComprobante
+                                ruta={item.comprobante_url}
+                                refId={item.pedido_id || item.id}
+                                className="text-xs bg-indigo-50 text-indigo-700 font-bold px-2 py-1 rounded-full border border-indigo-200 hover:bg-indigo-100 flex items-center shadow-sm"
+                              />
                             )}
                           </div>
                         </>
@@ -425,10 +443,24 @@ export default function Historial({
                 </div>
               </div>
             )
-          } catch(err) {
-            return <div key={Math.random()} className="bg-red-50 p-4 rounded-xl text-red-600 font-bold border border-red-200 mb-4">Error visual.</div>
+          } catch {
+            return <div key={item?.id || item?.cedula || 'paciente-error'} className="bg-red-50 p-4 rounded-xl text-red-600 font-bold border border-red-200 mb-4">Error visual.</div>
           }
         })}
+
+        {pacientesAgrupados.length > filasPorMostrar && (
+          <div className="text-center">
+            <button
+              onClick={() => setVisibles(v => v + INCREMENTO)}
+              className="px-6 py-3 rounded-lg font-bold text-white bg-blue-600 hover:bg-blue-700 shadow transition-colors"
+            >
+              Ver más ({pacientesAgrupados.length - visibles} restantes)
+            </button>
+            <p className="text-xs text-gray-400 mt-2">
+              Mostrando {visibles} de {pacientesAgrupados.length}. Usa el buscador para encontrar uno concreto.
+            </p>
+          </div>
+        )}
         
         {pacientesAgrupados.length === 0 && (
           <div className="text-center bg-white p-10 rounded-xl border border-dashed border-gray-300">

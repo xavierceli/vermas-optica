@@ -1,6 +1,10 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { safeString, safeNum, comprimirImagen } from './utilidades'
+import { calcularTotal, calcularSaldo, calcularMontoDescuento, normalizarDescuento } from './reglas'
 import { supabase } from './supabaseClient'
+import { guardarAdjuntoLocal } from './localRepository'
+import { createUuid as generarId } from './localDb'
+import BotonComprobante from './BotonComprobante'
 
 export default function PedidosForm({
   pedidoSeleccionado, setPedidoSeleccionado, setVistaActual, guardarPedido,
@@ -12,64 +16,96 @@ export default function PedidosForm({
   const [nuevoAbonoMonto, setNuevoAbonoMonto] = useState('');
   const [nuevoAbonoForma, setNuevoAbonoForma] = useState('Efectivo');
   const [nuevoAbonoNota, setNuevoAbonoNota] = useState('');
+  const [montoAbonoPendiente, setMontoAbonoPendiente] = useState(0);
   const [imagenComprobante, setImagenComprobante] = useState(null);
   const [subiendoComprobante, setSubiendoComprobante] = useState(false);
     const [procesando, setProcesando] = useState(false);
   const [abonoAlAbrir] = useState(() => safeNum(pedidoSeleccionado?.abono));
 
-  const registrarAbono = async () => {
-    const monto = safeNum(nuevoAbonoMonto);
-    if (monto <= 0) return alert("Por favor, ingrese un monto válido mayor a 0.");
-    
-    setSubiendoComprobante(true);
-    let urlComprobanteFinal = pedidoSeleccionado.comprobante_url || '';
-
-    // Si seleccionó una captura de transferencia, la comprimimos y subimos a Supabase Storage
-    if (imagenComprobante) {
-      try {
-        const archivoComprimido = await comprimirImagen(imagenComprobante);
-        const nombreArchivo = `comprobante_${Date.now()}_${imagenComprobante.name.replace(/[^a-zA-Z0-9.]/g, '')}`;
-        const { data, error } = await supabase.storage.from('comprobantes_pagos').upload(nombreArchivo, archivoComprimido);
-        if (error) throw error;
-        const { data: urlData } = supabase.storage.from('comprobantes_pagos').getPublicUrl(data.path);
-        urlComprobanteFinal = urlData.publicUrl;
-      } catch (err) {
-        console.error("Error subiendo comprobante:", err);
-        alert("Aviso: No se pudo subir la imagen del comprobante, pero el abono se registrará igual.");
-      }
-    }
-
-    const hoyStr = new Date().toLocaleDateString('es-EC', { day: '2-digit', month: '2-digit' });
-    const textoPago = `[${hoyStr}] +$${monto.toFixed(2)} ${nuevoAbonoForma} ${nuevoAbonoNota ? '('+nuevoAbonoNota+')' : ''}`;
-    
-    const abonoAcumulado = safeNum(pedidoSeleccionado.abono) + monto;
-    const notaActual = safeString(pedidoSeleccionado.pago_nota).trim();
-    const notaAcumulada = notaActual ? `${notaActual}\n${textoPago}` : textoPago;
-
-    setPedidoSeleccionado({
-      ...pedidoSeleccionado,
-      abono: abonoAcumulado,
-      pago_nota: notaAcumulada,
-      forma_pago: nuevoAbonoForma,
-      comprobante_url: urlComprobanteFinal
-    });
-
-    setNuevoAbonoMonto('');
-    setNuevoAbonoNota('');
-    setImagenComprobante(null);
-    setSubiendoComprobante(false);
+  // Aviso no bloqueante: el comprobante ya esta a salvo en el dispositivo,
+  // asi que no usamos alert (que detiene la interfaz) sino un mensaje en linea.
+  const [avisoComprobante, setAvisoComprobante] = useState('');
+  const avisarComprobantePendiente = texto => {
+    setAvisoComprobante(texto);
+    setTimeout(() => setAvisoComprobante(''), 6000);
   };
 
-  // Cálculos Venta UI 
+  const registrarAbono = async () => {
+    const monto = safeNum(nuevoAbonoMonto);
+    if (monto <= 0) return alert('Por favor, ingrese un monto válido mayor a 0.');
+
+    setSubiendoComprobante(true);
+    let urlComprobanteFinal = pedidoSeleccionado.comprobante_url || '';
+    let comprobantePendiente = false;
+    try {
+      if (imagenComprobante) {
+        const archivoComprimido = await comprimirImagen(imagenComprobante);
+        const nombreArchivo = `comprobante_${Date.now()}_${imagenComprobante.name.replace(/[^a-zA-Z0-9.]/g, '')}`;
+        // Primero se intenta subir. Si no hay red o el bucket falla, el binario
+        // NO se descarta: se guarda en IndexedDB y sube solo al recuperar conexion.
+        let subido = false;
+        if (navigator.onLine) {
+          try {
+            const { data, error } = await supabase.storage.from('comprobantes_pagos').upload(nombreArchivo, archivoComprimido, { upsert: true });
+            if (error) throw error;
+            // El bucket es privado: se guarda la RUTA, no una URL publica.
+            urlComprobanteFinal = data.path;
+            subido = true;
+          } catch (err) {
+            console.warn('No se pudo subir el comprobante ahora, se guardara localmente:', err);
+          }
+        }
+        if (!subido) {
+          const refId = pedidoSeleccionado.pedido_id || pedidoSeleccionado.id || generarId();
+          const adjunto = await guardarAdjuntoLocal({
+            blob: archivoComprimido,
+            nombre: nombreArchivo,
+            mime: 'image/jpeg',
+            bucket: 'comprobantes_pagos',
+            refType: 'pago',
+            refId
+          });
+          // Se registra la ruta final: el servidor la guardara aunque el archivo
+          // suba despues, y el enlace quedara funcionando en cuanto se suba.
+          urlComprobanteFinal = adjunto.ruta;
+          comprobantePendiente = true;
+        }
+      }
+
+      const abonoAcumulado = safeNum(pedidoSeleccionado.abono) + monto;
+      if (!pedidoSeleccionado._nueva_venta && pedidoSeleccionado.pedido_id) {
+        setMontoAbonoPendiente(prev => prev + monto);
+      }
+
+      setPedidoSeleccionado({
+        ...pedidoSeleccionado,
+        abono: abonoAcumulado,
+        forma_pago: nuevoAbonoForma,
+        comprobante_url: urlComprobanteFinal
+      });
+      setNuevoAbonoMonto('');
+      setNuevoAbonoNota('');
+      setImagenComprobante(null);
+      if (comprobantePendiente) {
+        avisarComprobantePendiente('Comprobante guardado en este dispositivo. Se subirá solo al recuperar conexión.');
+      }
+    } catch (err) {
+      alert('No se pudo registrar el abono localmente: ' + err.message);
+    } finally {
+      setSubiendoComprobante(false);
+    }
+  };
+  // Cálculos Venta UI — el descuento se recalcula de forma reactiva y en vivo
   const pVenta = safeNum(pedidoSeleccionado?.venta);
-  const pDesc = safeNum(pedidoSeleccionado?.descuento);
+  const pDesc = normalizarDescuento(pedidoSeleccionado?.descuento);
   const pAbono = safeNum(pedidoSeleccionado?.abono);
-  const pFinal = pVenta - (pVenta * pDesc / 100);
-  const pSaldo = pFinal - pAbono;
-  
+  const pFinal = useMemo(() => calcularTotal(pVenta, pDesc), [pVenta, pDesc]);
+  const pSaldo = useMemo(() => calcularSaldo(pVenta, pDesc, pAbono), [pVenta, pDesc, pAbono]);
+  const pMontoDescuento = useMemo(() => calcularMontoDescuento(pVenta, pDesc), [pVenta, pDesc]);
+
   const armazonUIInfo = (inventario || []).find(i => i && i.categoria === 'Armazon' && safeString(i.codigo).toUpperCase().trim() === safeString(pedidoSeleccionado?.codigo_armazon).toUpperCase().trim());
   const precioArmazonUI = armazonUIInfo ? safeNum(armazonUIInfo.precio) : 0;
-  
+
   const costoTotalInterno = safeNum(pedidoSeleccionado?.costo_armazon_int) + safeNum(pedidoSeleccionado?.costo_lunas_int) + safeNum(pedidoSeleccionado?.costo_accesorio_int) + safeNum(pedidoSeleccionado?.costo_tratamientos_int) + safeNum(pedidoSeleccionado?.costo_varios_int);
 
   return (
@@ -92,12 +128,12 @@ export default function PedidosForm({
               salir();
             }
           }} className="bg-gray-500 text-white px-4 py-2 rounded-lg font-medium">Volver</button>
-                    <button 
-            onClick={async () => { 
+                    <button
+            onClick={async () => {
               if (procesando) return;
-              setProcesando(true); 
-              try { await guardarPedido(); } finally { setProcesando(false); }
-            }} 
+              setProcesando(true);
+              try { const guardado = await guardarPedido({ montoAdicional: montoAbonoPendiente }); if (guardado) setMontoAbonoPendiente(0); } finally { setProcesando(false); }
+            }}
             disabled={procesando}
             className={`px-8 py-2 rounded-lg font-bold shadow-md text-white ${procesando ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700'}`}>
             {procesando ? 'Guardando...' : 'Guardar Pedido'}
@@ -114,7 +150,7 @@ export default function PedidosForm({
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         <div className="space-y-4">
-          
+
           {safeString(pedidoSeleccionado.nombre) !== 'CONSUMIDOR FINAL' && (
             <div className="bg-indigo-50/50 p-4 rounded-lg border border-indigo-100">
               <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 mb-4">
@@ -126,7 +162,7 @@ export default function PedidosForm({
                   ))}
                 </select>
               </div>
-              
+
               <h3 className="font-bold text-indigo-900 mb-2 border-b border-indigo-200 pb-1 text-sm">Medidas para la Orden (Edite DNP o Altura si es necesario)</h3>
               <div className="overflow-x-auto bg-white rounded border border-indigo-100 shadow-sm">
                 <table className="w-full text-center text-xs">
@@ -217,14 +253,14 @@ export default function PedidosForm({
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1">Código de Armazón <span className="text-xs text-gray-500 font-normal">(2905 = Del Paciente)</span></label>
             <div className="flex gap-2 items-center flex-wrap">
-              <input 
-                name="codigo_armazon" 
+              <input
+                name="codigo_armazon"
                 list="lista-armazones"
-                value={safeString(pedidoSeleccionado.codigo_armazon)} 
-                onChange={manejarCambioPedido} 
-                type="text" 
-                className="flex-1 p-2 bg-indigo-50 border border-indigo-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-bold uppercase" 
-                placeholder="Escriba código..." 
+                value={safeString(pedidoSeleccionado.codigo_armazon)}
+                onChange={manejarCambioPedido}
+                type="text"
+                className="flex-1 p-2 bg-indigo-50 border border-indigo-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-bold uppercase"
+                placeholder="Escriba código..."
               />
               <datalist id="lista-armazones">
                 {(inventario || []).filter(i => i && i.categoria === 'Armazon').map(i => (
@@ -283,7 +319,7 @@ export default function PedidosForm({
 
           {/* --- FINANZAS Y CONTROL DE ABONOS + COMPROBANTE --- */}
           <h3 className="font-bold text-indigo-800 border-b pb-1 mt-6">6. Finanzas y Control de Abonos</h3>
-          
+
           <div className="grid grid-cols-2 gap-4 mb-4">
             <div>
               <label className="block text-sm font-semibold text-gray-700 mb-1">Costo Base ($)</label>
@@ -293,16 +329,15 @@ export default function PedidosForm({
               </div>
             </div>
             <div><label className="block text-sm font-semibold text-gray-700 mb-1">Descuento</label>
-              <select name="descuento" value={safeString(pedidoSeleccionado.descuento)} onChange={manejarCambioPedido} className="w-full p-2.5 bg-gray-50 border rounded-lg outline-none font-bold text-indigo-700">
-                <option value="0">0% Descuento</option><option value="10">10% Descuento</option><option value="20">20% Descuento</option><option value="30">30% Descuento</option>
-              </select>
+              <input name="descuento" type="number" min="0" max="100" step="0.01" value={safeString(pedidoSeleccionado.descuento)} onChange={manejarCambioPedido} placeholder="%" className="w-full p-2.5 bg-gray-50 border rounded-lg outline-none font-bold text-indigo-700" />
+              <p className="text-[11px] text-gray-500 mt-1">Descuento: <span className="font-bold text-gray-700">-${pMontoDescuento.toFixed(2)}</span> &middot; Costo final: <span className="font-black text-emerald-600">${pFinal.toFixed(2)}</span></p>
             </div>
           </div>
 
           <div className="bg-green-50/50 border border-green-200 p-4 rounded-lg mb-4">
             <h4 className="font-bold text-green-800 mb-3 border-b border-green-200 pb-1">Gestión de Pagos</h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              
+
               <div className="space-y-3">
                  <div>
                    <label className="block text-xs font-semibold text-gray-700 mb-1">Monto a abonar hoy ($)</label>
@@ -326,25 +361,31 @@ export default function PedidosForm({
                  )}
 
                  <button onClick={registrarAbono} disabled={subiendoComprobante} className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 rounded-lg text-sm shadow transition-colors">
-                   {subiendoComprobante ? "Subiendo comprobante... ☁️" : "➕ Registrar Abono"}
+                   {subiendoComprobante ? "Guardando comprobante..." : "➕ Registrar Abono"}
                  </button>
+
+                  {avisoComprobante && (
+                    <div className="w-full bg-amber-50 border border-amber-300 text-amber-800 text-xs font-bold px-2.5 py-2 rounded-lg">
+                      ⏳ {avisoComprobante}
+                    </div>
+                  )}
               </div>
 
               <div className="bg-white p-3 rounded border border-green-100 shadow-sm flex flex-col h-full">
                  <div className="flex justify-between items-center mb-1">
                    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide">Total Abonado / Historial</label>
-                   {pedidoSeleccionado.comprobante_url && (
-                     <a href={pedidoSeleccionado.comprobante_url} target="_blank" rel="noopener noreferrer" className="text-xs bg-indigo-100 text-indigo-700 font-bold px-2 py-0.5 rounded hover:bg-indigo-200 flex items-center gap-1">
-                       👁️ Ver Comprobante
-                     </a>
-                   )}
+                    <BotonComprobante
+                      ruta={pedidoSeleccionado.comprobante_url}
+                      refId={pedidoSeleccionado.pedido_id || pedidoSeleccionado.id}
+                      className="text-xs font-bold px-2 py-0.5 rounded flex items-center gap-1 bg-indigo-100 text-indigo-700 hover:bg-indigo-200"
+                    >👁️ Ver Comprobante</BotonComprobante>
                  </div>
                  <div className="flex items-center gap-2 mb-2">
                     <span className="text-2xl font-black text-green-600">${safeNum(pedidoSeleccionado.abono).toFixed(2)}</span>
                     <span className="text-xs text-gray-400 font-medium">(Acumulado)</span>
                  </div>
                  <textarea name="pago_nota" value={safeString(pedidoSeleccionado.pago_nota)} onChange={manejarCambioPedido} className="w-full flex-1 p-2 bg-gray-50 border rounded outline-none resize-none text-xs font-mono text-gray-600" placeholder="Historial de pagos aparecerá aquí..."></textarea>
-                 
+
                  <div className="mt-2 flex items-center justify-between border-t pt-2">
                    <span className="text-[10px] text-gray-400">Corrección manual de abono:</span>
                    <input name="abono" value={safeString(pedidoSeleccionado.abono)} onChange={manejarCambioPedido} type="number" className="w-20 p-1 border rounded text-xs text-right outline-none bg-gray-50" />
@@ -380,12 +421,12 @@ export default function PedidosForm({
             <span className="text-xl font-black text-red-500">${Math.max(0, pSaldo).toFixed(2)}</span>
           </div>
         </div>
-        <button 
-          onClick={async () => { 
+        <button
+          onClick={async () => {
             if (procesando) return;
-            setProcesando(true); 
-            try { await guardarPedido(); } finally { setProcesando(false); } 
-          }} 
+            setProcesando(true);
+            try { const guardado = await guardarPedido({ montoAdicional: montoAbonoPendiente }); if (guardado) setMontoAbonoPendiente(0); } finally { setProcesando(false); }
+          }}
           disabled={procesando}
           className={`px-8 py-3 rounded-lg font-bold text-white shadow-lg transition-all ${procesando ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 active:scale-95'}`}>
           {procesando ? '⏳ Guardando...' : '💾 Guardar Pedido'}

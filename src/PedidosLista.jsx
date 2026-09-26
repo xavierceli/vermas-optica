@@ -1,6 +1,9 @@
 import { useState } from 'react'
 import { safeString, safeNum, comprimirImagen } from './utilidades'
 import { supabase } from './supabaseClient'
+import { createUuid as generarId } from './localDb'
+import { cambiarEstadoVentaLocal, registrarPagoLocal } from './localRepository'
+import { calcularTotal, calcularSaldo } from './reglas'
 
 export default function PedidosLista({
   crearVentaDirecta, busqueda, setBusqueda, pedidosFiltrados,
@@ -12,6 +15,8 @@ export default function PedidosLista({
   const [formasPagoRapidas, setFormasPagoRapidas] = useState({});
   const [comprobantesRapidos, setComprobantesRapidos] = useState({});
   const [subiendoId, setSubiendoId] = useState(null);
+  const [procesandoCobroId, setProcesandoCobroId] = useState(null);
+  const [clavesPago, setClavesPago] = useState({});
   
   // NUEVO: Estado para controlar qué pestaña estamos viendo
   const [filtroTab, setFiltroTab] = useState('Activos');
@@ -21,60 +26,77 @@ export default function PedidosLista({
   const manejarCambioArchivo = (id, archivo) => setComprobantesRapidos(prev => ({ ...prev, [id]: archivo }));
 
   const cambiarEstadoRapido = async (item, nuevoEstado) => {
-    if (!item.pedido_id || String(item.pedido_id).startsWith('temp-')) {
-      return alert("Este pedido aún no está sincronizado con la nube. Conéctate a internet, espera unos segundos e intenta de nuevo.");
-    }
+    if (!item.pedido_id) return alert('Este registro todavía no tiene una venta local.');
     try {
-      const { error } = await supabase.from('pedidos_ventas').update({ estado: nuevoEstado }).eq('id', item.pedido_id);
-      if (error) throw error;
-      await refrescarDatos();
-    } catch (err) { alert("Error actualizando estado: " + err.message); }
+      await cambiarEstadoVentaLocal({ saleId: item.pedido_id, estado: nuevoEstado });
+      await refrescarDatos({ sync: false });
+    } catch (err) {
+      alert('Error actualizando estado: ' + err.message);
+    }
   }
 
   const ejecutarCobro = async (item) => {
     const monto = safeNum(abonosRapidos[item.id]);
-    if (monto <= 0) return alert("Por favor, ingrese un monto válido mayor a 0.");
-        if (!item.pedido_id || String(item.pedido_id).startsWith('temp-')) {
-      return alert("Este pedido aún no está sincronizado con la nube. Conéctate a internet, espera unos segundos e intenta de nuevo.");
+    if (monto <= 0) return alert('Por favor, ingrese un monto válido mayor a 0.');
+    if (Math.abs(monto * 100 - Math.round(monto * 100)) > 0.000001) {
+      return alert('El monto debe tener como máximo dos decimales.');
     }
+    if (!item.pedido_id) return alert('Este registro todavía no tiene una venta local.');
+    if (procesandoCobroId === item.id) return;
 
     const formaPago = formasPagoRapidas[item.id] || 'Efectivo';
     let urlComprobanteFinal = item.comprobante_url || '';
-
-    const archivoFoto = comprobantesRapidos[item.id];
-    if (formaPago === 'Transferencia' && archivoFoto) {
-      try {
-        setSubiendoId(item.id);
-        const archivoComprimido = await comprimirImagen(archivoFoto);
-        const nombreArchivo = `comprobante_${Date.now()}_${archivoFoto.name.replace(/[^a-zA-Z0-9.]/g, '')}`;
-        const { data, error } = await supabase.storage.from('comprobantes_pagos').upload(nombreArchivo, archivoComprimido);
-        if (error) throw error;
-        const { data: urlData } = supabase.storage.from('comprobantes_pagos').getPublicUrl(data.path);
-        urlComprobanteFinal = urlData.publicUrl;
-      } catch (err) {
-        console.error("Error:", err);
-        alert("Aviso: No se pudo subir la imagen, pero el abono se registrará igual.");
-      } finally { setSubiendoId(null); }
-    }
-
-    const hoyStr = new Date().toLocaleDateString('es-EC', { day: '2-digit', month: '2-digit' });
-    const textoPago = `[${hoyStr}] +$${monto.toFixed(2)} ${formaPago} (Caja Rápida)`;
-    const notaAcumulada = safeString(item.pago_nota).trim() ? `${safeString(item.pago_nota).trim()}\n${textoPago}` : textoPago;
+    setProcesandoCobroId(item.id);
 
     try {
-      const abonoRedondeado = Number((safeNum(item.abono) + monto).toFixed(2));
-      const { error } = await supabase.from('pedidos_ventas').update({ 
-        abono: abonoRedondeado, 
-        pago_nota: notaAcumulada,
-        comprobante_url: urlComprobanteFinal
-      }).eq('id', item.pedido_id);
+      const archivoFoto = comprobantesRapidos[item.id];
+      if (formaPago === 'Transferencia' && archivoFoto && navigator.onLine) {
+        try {
+          setSubiendoId(item.id);
+          const archivoComprimido = await comprimirImagen(archivoFoto);
+          const nombreArchivo = `comprobante_${Date.now()}_${archivoFoto.name.replace(/[^a-zA-Z0-9.]/g, '')}`;
+          const { data, error } = await supabase.storage.from('comprobantes_pagos').upload(nombreArchivo, archivoComprimido);
+          if (error) throw error;
+          const { data: urlData } = supabase.storage.from('comprobantes_pagos').getPublicUrl(data.path);
+          urlComprobanteFinal = urlData.publicUrl;
+        } catch (err) {
+          console.error('Error subiendo comprobante:', err);
+        } finally {
+          setSubiendoId(null);
+        }
+      }
 
-      if (error) throw error;
-      
+      const firmaPago = `${monto.toFixed(2)}:${formaPago}`;
+      const intentoAnterior = clavesPago[item.pedido_id];
+      const idEm = intentoAnterior?.firma === firmaPago ? intentoAnterior.clave : generarId();
+      setClavesPago(prev => ({
+        ...prev,
+        [item.pedido_id]: { clave: idEm, firma: firmaPago }
+      }));
+
+      await registrarPagoLocal({
+        saleId: item.pedido_id,
+        amount: monto,
+        method: formaPago,
+        reference: null,
+        receiptPath: urlComprobanteFinal || null,
+        idempotencyKey: idEm
+      });
+
+      setClavesPago(prev => {
+        const siguiente = { ...prev };
+        delete siguiente[item.pedido_id];
+        return siguiente;
+      });
       setAbonosRapidos(prev => ({ ...prev, [item.id]: '' }));
       setComprobantesRapidos(prev => ({ ...prev, [item.id]: null }));
-            await refrescarDatos();
-    } catch (e) { alert("Error al registrar el cobro rápido: " + e.message); }
+      await refrescarDatos({ sync: false });
+    } catch (e) {
+      // Conservar la clave evita duplicar el cobro si se reintenta la misma intención.
+      alert('Error al registrar el cobro rápido: ' + e.message);
+    } finally {
+      setProcesandoCobroId(null);
+    }
   }
 
   // NUEVO: Lógica para filtrar qué pedidos mostrar según la pestaña elegida
@@ -82,12 +104,13 @@ export default function PedidosLista({
     if (!item) return false;
     
     const pVenta = safeNum(item.venta);
-    const pDesc = safeNum(item.descuento);
-    const pFinal = pVenta - (pVenta * pDesc / 100);
+    const pFinal = calcularTotal(pVenta, item.descuento);
     const pAbono = safeNum(item.abono);
-    const pSaldo = pFinal - pAbono;
+    const pSaldo = calcularSaldo(pVenta, item.descuento, pAbono);
     
     const estado = safeString(item.estado);
+    if (estado === 'Anulado') return false;
+
     const tienePedido = estado !== 'Ninguno' || pVenta > 0 || safeString(item.codigo_armazon) !== '' || safeString(item.accesorio_id) !== '';
     const estaPagado = pSaldo <= 0 && pFinal > 0;
 
@@ -140,10 +163,9 @@ export default function PedidosLista({
         {pedidosParaMostrar.map(item => {
           try {
             const pVenta = safeNum(item.venta);
-            const pDesc = safeNum(item.descuento);
-            const pFinal = pVenta - (pVenta * pDesc / 100);
+            const pFinal = calcularTotal(pVenta, item.descuento);
             const pAbono = safeNum(item.abono);
-            const pSaldo = pFinal - pAbono;
+            const pSaldo = calcularSaldo(pVenta, item.descuento, pAbono);
             
             const estaPagado = pSaldo <= 0 && pFinal > 0;
             const metodoActual = formasPagoRapidas[item.id] || 'Efectivo';
@@ -241,8 +263,14 @@ export default function PedidosLista({
                           />
                         )}
 
-                        <button onClick={() => ejecutarCobro(item)} disabled={subiendoId === item.id} className="bg-green-500 text-white px-4 py-1.5 rounded font-bold text-sm hover:bg-green-600 shadow-sm transition-colors whitespace-nowrap">
-                          {subiendoId === item.id ? "Subiendo..." : "Cobrar"}
+                        <button
+                          onClick={() => ejecutarCobro(item)}
+                          disabled={procesandoCobroId === item.id}
+                          className="bg-green-500 text-white px-4 py-1.5 rounded font-bold text-sm hover:bg-green-600 disabled:bg-gray-400 disabled:cursor-not-allowed shadow-sm transition-colors whitespace-nowrap"
+                        >
+                          {procesandoCobroId === item.id
+                            ? (subiendoId === item.id ? 'Subiendo...' : 'Procesando...')
+                            : 'Cobrar'}
                         </button>
                       </div>
                     )}
@@ -251,8 +279,8 @@ export default function PedidosLista({
 
               </div>
             )
-          } catch(error) {
-            return <div key={Math.random()} className="bg-red-50 p-4 rounded-xl text-red-600 font-bold border border-red-200">Error visual.</div>
+          } catch {
+            return <div key={`error-${item.id}`} className="bg-red-50 p-4 rounded-xl text-red-600 font-bold border border-red-200">Error visual.</div>
           }
         })}
         {pedidosParaMostrar.length === 0 && (

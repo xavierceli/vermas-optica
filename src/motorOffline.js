@@ -20,16 +20,8 @@ export const generarId = () => {
 // Alias de compatibilidad: el código viejo llama generarIdFantasma
 export const generarIdFantasma = () => generarId();
 
-// 3. CANDADO (mutex): las escrituras a la bandeja se forman en fila
-// Evita que dos operaciones simultáneas se pisen y borren tareas entre sí.
-let candado = Promise.resolve();
-const serializado = (fn) => {
-  const resultado = candado.then(fn, fn);
-  candado = resultado.catch(() => {});
-  return resultado;
-};
+// 3. HERRAMIENTAS DE LECTURA Y ESCRITURA BÁSICA
 
-// 4. HERRAMIENTAS DE LECTURA Y ESCRITURA BÁSICA
 export const leerBoveda = async (llave) => {
   try {
     return await localforage.getItem(llave);
@@ -46,59 +38,3 @@ export const escribirBoveda = async (llave, datos) => {
     console.warn(`Error escribiendo en la bóveda [${llave}]:`, e);
   }
 };
-
-// 5. BANDEJA DE SALIDA (cola de sincronización)
-export const encolarOperacion = (tabla, tipoOperacion, datos) => serializado(async () => {
-  const colaActual = await leerBoveda('bandeja_salida') || [];
-
-  const nuevaOperacion = {
-    id_tarea: generarId(),
-    tabla: tabla,
-    tipo: tipoOperacion, // 'INSERT', 'UPDATE' o 'DELETE'
-    datos: datos,
-    fecha_intento: new Date().toISOString(),
-    intentos: 0
-  };
-
-  await escribirBoveda('bandeja_salida', [...colaActual, nuevaOperacion]);
-  return nuevaOperacion;
-});
-
-export const obtenerBandejaSalida = () => serializado(async () => {
-  return await leerBoveda('bandeja_salida') || [];
-});
-
-export const eliminarTareaDeBandeja = (id_tarea) => serializado(async () => {
-  const colaActual = await leerBoveda('bandeja_salida') || [];
-  await escribirBoveda('bandeja_salida', colaActual.filter(tarea => tarea.id_tarea !== id_tarea));
-});
-
-// NUEVO: elimina TODAS las tareas pendientes de un registro específico.
-// Se usa al borrar un registro creado offline, para que no "resucite" en la nube.
-export const purgarTareasDeRegistro = (tabla, idRegistro) => serializado(async () => {
-  const colaActual = await leerBoveda('bandeja_salida') || [];
-  const colaLimpia = colaActual.filter(t =>
-    !(t.tabla === tabla && t.datos && t.datos.id === idRegistro)
-  );
-  await escribirBoveda('bandeja_salida', colaLimpia);
-});
-
-// NUEVO: cementerio de tareas envenenadas (fallaron demasiadas veces).
-// Así no se reintentan para siempre y puedes revisarlas con calma.
-export const moverABandejaMuerta = (tarea, motivo) => serializado(async () => {
-  const muertas = await leerBoveda('bandeja_muerta') || [];
-  await escribirBoveda('bandeja_muerta', [
-    ...muertas,
-    { ...tarea, motivo: motivo || 'Desconocido', fecha_muerte: new Date().toISOString() }
-  ]);
-  await eliminarTareaDeBandeja(tarea.id_tarea);
-});
-// NUEVO: registra un intento fallido de una tarea y devuelve el total acumulado
-export const marcarIntentoFallido = (tarea) => serializado(async () => {
-  const colaActual = await leerBoveda('bandeja_salida') || [];
-  const idx = colaActual.findIndex(t => t.id_tarea === tarea.id_tarea);
-  if (idx === -1) return 0; // la tarea ya no existe, nada que hacer
-  colaActual[idx].intentos = (colaActual[idx].intentos || 0) + 1;
-  await escribirBoveda('bandeja_salida', colaActual);
-  return colaActual[idx].intentos;
-});

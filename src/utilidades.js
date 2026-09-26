@@ -58,7 +58,7 @@ export const calcularEdad = (fechaNacimiento) => {
     const m = hoyDate.getMonth() - cumpleanos.getMonth();
     if (m < 0 || (m === 0 && hoyDate.getDate() < cumpleanos.getDate())) { edad--; }
     return edad;
-  } catch(e) { return ''; }
+  } catch { return ''; }
 };
 
 export const calcularTiempoTranscurrido = (fecha) => {
@@ -81,7 +81,7 @@ export const calcularTiempoTranscurrido = (fecha) => {
     if (meses > 0) partes.push(`${meses} mes${meses > 1 ? 'es' : ''}`);
     if (dias > 0) partes.push(`${dias} día${dias > 1 ? 's' : ''}`);
     return partes.length === 0 ? 'Hoy' : 'hace ' + partes.join(', ');
-  } catch(e) { return ''; }
+  } catch { return ''; }
 };
 
 export const generarDiagnosticos = (item) => {
@@ -94,7 +94,7 @@ export const generarDiagnosticos = (item) => {
     if (cilOd !== 0 || cilOi !== 0) diag.push("Astigmatismo (H52.2)");
     if (addOd > 0 || addOi > 0) diag.push("Presbicia (H52.4)");
     return [...new Set(diag)];
-  } catch(e) { return []; }
+  } catch { return []; }
 };
 
 export const descargarCSV = (datos, nombreArchivo) => {
