@@ -346,7 +346,11 @@ export default function Historial({
             const vta = safeNum(item.venta);
             const abono = safeNum(item.abono);
             const vFinal = calcularTotal(vta, desc);
-            const saldoPendiente = (typeof item.deuda_total === 'number') ? item.deuda_total : calcularSaldo(vta, desc, abono);
+            // El saldo se calcula SIEMPRE con los datos locales de la venta. Antes
+            // se preferia `deuda_total` (cache del servidor) y, al anular o borrar
+            // una venta, ese valor se quedaba pegado: el historial seguia
+            // mostrando "SALDO PENDIENTE" de algo ya cobrado o eliminado.
+            const saldoPendiente = calcularSaldo(vta, desc, abono);
             const tieneDeuda = saldoPendiente > 0;
             const tienePedido = String(item.estado || 'Ninguno') !== 'Ninguno' || Number(item.venta || 0) > 0 || String(item.codigo_armazon || '') !== '' || String(item.accesorio_id || '') !== '';
             

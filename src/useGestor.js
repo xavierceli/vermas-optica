@@ -443,9 +443,18 @@ if (sync) {
         consultation: { ...clinicaData, id: idConsulta }
       });
 
-      mostrarToast('Consulta guardada en este dispositivo.', 'success');
+      // El mensaje era "guardado en el dispositivo" y el usuario no sabia si
+      // habia llegado a la nube. Ahora se intenta subir ANTES de avisar, y el
+      // aviso dice con claridad que paso en cada caso.
       await terminarGuardado();
-      void sincronizarAhora({ pull: false });
+      const estadoSync = await sincronizarAhora({ pull: false });
+      const subio = estadoSync?.phase === 'synced' || (estadoSync?.pending || 0) === 0;
+      mostrarToast(
+        subio
+          ? 'Consulta guardada y sincronizada con la nube.'
+          : 'Consulta guardada en este dispositivo. Se subirá a la nube en unos segundos.',
+        subio ? 'success' : 'warning'
+      );
       return;
     } catch(e) { 
       mostrarToast("Error: " + e.message, "error"); 
@@ -467,10 +476,17 @@ if (sync) {
       return mostrarToast('Esta consulta tiene una venta ACTIVA. Anula la venta primero y luego podrás archivar la consulta.', 'warning');
     }
     try {
-      await archivarConsultaLocal(item.id);
+      const resultado = await archivarConsultaLocal(item.id);
+      // Si ya estaba archivada se dice con claridad en vez de mostrar un error
+      // rojo: para el usuario el resultado pedido (que desaparezca) ya ocurrio.
+      if (resultado?.yaArchivada) {
+        mostrarToast(resultado.motivo || 'La consulta ya estaba archivada.', 'warning');
+        await obtenerDatos({ sync: false });
+        return;
+      }
       await obtenerDatos({ sync: false });
       void sincronizarAhora({ pull: false });
-      mostrarToast('Consulta archivada localmente.', 'success');
+      mostrarToast('Consulta archivada.', 'success');
     } catch (err) {
       mostrarToast('No se pudo archivar la consulta: ' + err.message, 'error');
     }
@@ -674,7 +690,18 @@ if (sync) {
       setPedidoSeleccionado(null);
       setVistaActual('pedidos_lista');
       mostrarToast('Venta guardada en este dispositivo.', 'success');
+      // Se espera a la sincronizacion para poder decir con certeza si la venta
+      // llego a la nube. Antes solo decia "guardada en el dispositivo", que no
+      // aclaraba nada y hacia dudar de si la venta estaba a salvo.
       void obtenerDatos({ sync: true });
+      const estadoSync = await sincronizarAhora({ pull: false });
+      const subio = (estadoSync?.pending || 0) === 0;
+      mostrarToast(
+        subio
+          ? 'Venta guardada y sincronizada con la nube.'
+          : 'Venta guardada en este dispositivo. Se subirá a la nube en unos segundos.',
+        subio ? 'success' : 'warning'
+      );
       return true;
 } catch (e) {
       mostrarToast('Error al guardar pedido: ' + e.message, 'error');

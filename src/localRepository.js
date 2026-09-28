@@ -569,14 +569,19 @@ const eliminarPrecioLocalImpl = async priceId => {
 };
 
 const archivarConsultaLocalImpl = async consultationId => {
+  // Archivar es idempotente: pulsar "Eliminar" dos veces no puede fallar ni mostrar
+  // un error. Antes la segunda pulsacionintentaba actuar sobre una consulta ya
+  // archivada y devolvia un fallo, lo que hace pensar que la app se rompio.
+  const actual = await localDb.consultations.get(consultationId);
+  if (!actual) return { yaArchivada: true, motivo: 'La consulta ya no existe en este dispositivo.' };
+  if (actual.archivedAt) return { yaArchivada: true, motivo: 'La consulta ya estaba archivada.' };
+
   await localDb.transaction('rw', localDb.consultations, localDb.outbox, async () => {
     const consultation = await localDb.consultations.get(consultationId);
-    if (!consultation) throw new Error('La consulta no existe en este dispositivo.');
-
     await localDb.consultations.put({ ...consultation, archivedAt: nowIso(), syncStatus: 'pending' });
 
-    // Si la consulta NUNCA llego al servidor, no hay nada que archivar alla y
-    // el servidor rechazaria el comando para siempre ("La consulta X no existe"),
+    // Si la consulta NUNCA llego al servidor, no hay nada que archivar alla y el
+    // servidor rechazaria el comando para siempre ("La consulta X no existe"),
     // dejando una barra roja permanente. Solo se encola si ya vive alli.
     if (consultation.syncStatus === 'synced') {
       await localDb.outbox.put(createOutboxOperation({
@@ -585,6 +590,8 @@ const archivarConsultaLocalImpl = async consultationId => {
       }));
     }
   });
+
+  return { yaArchivada: false };
 };
 
 const cacheServerHistorialImpl = async rows => {

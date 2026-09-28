@@ -7,7 +7,7 @@ import {
   guardarVentaLocal,
   registrarPagoLocal,
   cacheServerCatalog,
-  obtenerContadorEscaneosInventario
+  obtenerContadorEscaneosInventario, archivarConsultaLocal
 } from './localRepository.js';
 import { calcularTotal } from './reglas.js';
 import { guardarAdjuntoLocal, leerAdjuntoLocal, obtenerAdjuntosDeRef, contarAdjuntosPendientes, anularVentaLocal, cacheServerHistorial, obtenerSnapshotLocal, anularVentaConReembolso, registrarReembolsoLocal, enColaEscritura } from './localRepository.js';
@@ -556,4 +556,65 @@ test('reintentar la misma venta con el mismo idempotencyKey no duplica el cobro'
 
   const pagos = await localDb.payments.toArray();
   assert.equal(pagos.length, 1, 'la misma clave de idempotencia no debe cobrar dos veces');
+});
+// ---------------------------------------------------------------------------
+// ARCHIVAR UNA CONSULTA (boton "Eliminar" del historial)
+// ---------------------------------------------------------------------------
+
+test('archivar una consulta la marca como archivada', async () => {
+  await reset();
+  const id = '60000000-0000-4000-8000-000000000001';
+  await guardarConsultaLocal({
+    patient: patient(),
+    consultation: { id, fecha: '2026-01-15' }
+  });
+
+  const resultado = await archivarConsultaLocal(id);
+  assert.equal(resultado.yaArchivada, false);
+
+  const fila = await localDb.consultations.get(id);
+  assert.ok(fila.archivedAt, 'debe quedar marcada como archivada');
+});
+
+test('archivar dos veces NO da error (debe ser idempotente)', async () => {
+  // Pulsar "Eliminar" dos veces no puede mostrar un error rojo: para el usuario
+  // el objetivo (que la consulta desaparezca) ya se cumplio.
+  await reset();
+  const id = '60000000-0000-4000-8000-000000000002';
+  await guardarConsultaLocal({
+    patient: patient(),
+    consultation: { id, fecha: '2026-01-15' }
+  });
+
+  const primera = await archivarConsultaLocal(id);
+  const segunda = await archivarConsultaLocal(id);
+
+  assert.equal(primera.yaArchivada, false, 'la primera vez si archiva');
+  assert.equal(segunda.yaArchivada, true, 'la segunda vez avisa que ya estaba');
+  assert.match(segunda.motivo, /ya estaba archivada/i);
+});
+
+test('archivar una consulta inexistente no lanza error', async () => {
+  await reset();
+  const resultado = await archivarConsultaLocal('60000000-0000-4000-8000-000000000999');
+  assert.equal(resultado.yaArchivada, true);
+  assert.match(resultado.motivo, /no existe/i);
+});
+
+test('archivar una consulta que nunca se sincronizo no encola operacion', async () => {
+  // Si nunca llego al servidor, encolar el archivo haria que el servidor lo
+  // rechazara para siempre ("La consulta X no existe"), dejando la barra roja.
+  await reset();
+  const id = '60000000-0000-4000-8000-000000000003';
+  await guardarConsultaLocal({
+    patient: patient(),
+    consultation: { id, fecha: '2026-01-15' }
+  });
+
+  await archivarConsultaLocal(id);
+
+  const ops = await localDb.outbox.toArray();
+  const archivar = ops.filter(o => o.type === 'ARCHIVAR_CONSULTA');
+  assert.equal(archivar.length, 0,
+    'una consulta local que nunca se subio no debe generar una operacion de archivo');
 });
