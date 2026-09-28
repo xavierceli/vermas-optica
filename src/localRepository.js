@@ -567,15 +567,21 @@ const eliminarPrecioLocalImpl = async priceId => {
 };
 
 const archivarConsultaLocalImpl = async consultationId => {
-  const operation = createOutboxOperation({
-    type: 'ARCHIVAR_CONSULTA', entityId: consultationId,
-    payload: { p_consulta_id: consultationId }
-  });
   await localDb.transaction('rw', localDb.consultations, localDb.outbox, async () => {
     const consultation = await localDb.consultations.get(consultationId);
     if (!consultation) throw new Error('La consulta no existe en este dispositivo.');
+
     await localDb.consultations.put({ ...consultation, archivedAt: nowIso(), syncStatus: 'pending' });
-    await localDb.outbox.put(operation);
+
+    // Si la consulta NUNCA llego al servidor, no hay nada que archivar alla y
+    // el servidor rechazaria el comando para siempre ("La consulta X no existe"),
+    // dejando una barra roja permanente. Solo se encola si ya vive alli.
+    if (consultation.syncStatus === 'synced') {
+      await localDb.outbox.put(createOutboxOperation({
+        type: 'ARCHIVAR_CONSULTA', entityId: consultationId,
+        payload: { p_consulta_id: consultationId }
+      }));
+    }
   });
 };
 

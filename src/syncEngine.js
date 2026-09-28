@@ -208,6 +208,25 @@ const applyResults = async results => {
       fallos.push({ tipo: operation.type, motivo: result.error || 'Conflicto de datos', estado: 'conflict' });
     } else {
       const motivo = result.error || 'La operación fue rechazada por el servidor';
+
+      // "La consulta X no existe" al archivar significa que la consulta NUNCA
+      // llego al servidor (se creo y archivo antes de que se sincronizara). El
+      // objetivo del archivo esta entonces cumplido de sobra: no hay nada que
+      // archivar alla. Reintentarlo no dara nunca un resultado distinto, asi que
+      // se descarta como resuelta en vez de marcarlo como fallo.
+      const esArchivoDeConsultaInexistente =
+        operation.type === 'ARCHIVAR_CONSULTA' &&
+        /no existe/i.test(motivo);
+
+      if (esArchivoDeConsultaInexistente) {
+        await finalizarOperacion(operation, 'descartada',
+          'La consulta nunca se sincronizó: no había nada que archivar en el servidor.');
+        await markLocalOperationSynced(operation).catch(() => {});
+        await localDb.outbox.delete(operation.id);
+        console.log('[sync] archivo de consulta no sincronizado: nada que hacer en el servidor');
+        continue;
+      }
+
       const intentos = (operation.attempts || 0) + 1;
       if (intentos >= MAX_INTENTOS) {
         await finalizarOperacion(operation, 'descartada',
