@@ -301,30 +301,32 @@ const guardarVentaLocalImpl = async ({ patient, consultationId, sale, initialPay
 
       const paymentAmount = Number(safeNum(initialPayment?.monto).toFixed(2));
       if (paymentAmount > 0) {
-        const yaRegistrado = await localDb.payments.where('idempotencyKey').equals(paymentKey).first();
-if (yaRegistrado) { /* el pago ya existe: no duplicar */ }
-else {
-  // ... todo el bloque actual del pago ...
-}
-        const paymentId = createUuid();
+        // El id de la venta se usa como clave de idempotencia cuando no viene una.
+        // ANTES: se consultaba payments por paymentKey ANTES de declararla (6 lineas mas
+        // abajo), lo que lanzaba ReferenceError y hacia IMPOSIBLE guardar cualquier
+        // venta con abono inicial. El pago tampoco se registraba nunca.
         const paymentKey = initialPayment.idempotencyKey || saleId;
-        const payment = pendingRecord({
-          id: paymentId, saleId, idempotencyKey: paymentKey, monto: paymentAmount,
-          metodo: initialPayment.metodo || 'Efectivo', referencia: initialPayment.referencia || null,
-          comprobantePath: initialPayment.comprobantePath || null, createdAt: nowIso()
-        });
-        const paymentOperation = createOutboxOperation({
-          type: 'REGISTRAR_PAGO', entityId: paymentId,
-          payload: {
-            p_pedido_id: saleId, p_idempotency_key: paymentKey, p_monto: paymentAmount,
-            p_metodo: payment.metodo, p_referencia: payment.referencia, p_comprobante_path: payment.comprobantePath
-          }
-        });
-        paymentOperation.createdAt = new Date(Date.parse(operation.createdAt) + 1).toISOString();
-        await localDb.payments.put(payment);
-        await localDb.outbox.put(paymentOperation);
-        const previousBalance = Number(safeNum(previousSale?.abono).toFixed(2));
-        await localDb.sales.put({ ...normalizedSale, abono: Number((previousBalance + paymentAmount).toFixed(2)), syncStatus: 'pending' });
+        const yaRegistrado = await localDb.payments.where('idempotencyKey').equals(paymentKey).first();
+        if (!yaRegistrado) {
+          const paymentId = createUuid();
+          const payment = pendingRecord({
+            id: paymentId, saleId, idempotencyKey: paymentKey, monto: paymentAmount,
+            metodo: initialPayment.metodo || 'Efectivo', referencia: initialPayment.referencia || null,
+            comprobantePath: initialPayment.comprobantePath || null, createdAt: nowIso()
+          });
+          const paymentOperation = createOutboxOperation({
+            type: 'REGISTRAR_PAGO', entityId: paymentId,
+            payload: {
+              p_pedido_id: saleId, p_idempotency_key: paymentKey, p_monto: paymentAmount,
+              p_metodo: payment.metodo, p_referencia: payment.referencia, p_comprobante_path: payment.comprobantePath
+            }
+          });
+          paymentOperation.createdAt = new Date(Date.parse(operation.createdAt) + 1).toISOString();
+          await localDb.payments.put(payment);
+          await localDb.outbox.put(paymentOperation);
+          const previousBalance = Number(safeNum(previousSale?.abono).toFixed(2));
+          await localDb.sales.put({ ...normalizedSale, abono: Number((previousBalance + paymentAmount).toFixed(2)), syncStatus: 'pending' });
+        }
       }
     }
   );
