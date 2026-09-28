@@ -16,13 +16,25 @@ import { registerSW } from 'virtual:pwa-register';
 export default function AvisoActualizacion({ hayTrabajoSinGuardar = false }) {
   const [hayNuevaVersion, setHayNuevaVersion] = useState(false);
   const [actualizando, setActualizando] = useState(false);
+  // Si tras activar el worker la pagina no llega a recargarse, se avisa y se
+  // ofrece recargar a mano. Antes el boton se quedaba en "Actualizando..."
+  // para siempre y el optometria se quedaba sin salida.
+  const [fallo, setFallo] = useState(false);
   // Guarda la funcion de actualizacion en una ref: mutarla no dispara render,
   // que es justo lo que se necesita aqui (no es estado de la vista).
   const actualizarRef = useRef(null);
+  const temporizadoresRef = useRef([]);
+
+  const programar = useCallback((fn, ms) => {
+    temporizadoresRef.current.push(setTimeout(fn, ms));
+  }, []);
 
   useEffect(() => {
-    // updateServiceWorker(true) es el equivalente a skipWaiting: activa el
-    // service worker en espera. Se llama SOLO desde el clic del usuario.
+    // OJO: updateServiceWorker() SOLO envia el mensaje SKIP_WAITING al worker
+    // en espera. Ignora su argumento y NO recarga la pagina. Se llama unica vez
+    // desde el clic del usuario.
+    // Sin cleanup a proposito: lo que devuelve registerSW no es un
+    // "desregistrar", y llamarlo al desmontar mandaba otro SKIP_WAITING.
     const actualizar = registerSW({
       immediate: true,
       onNeedRefresh() {
@@ -34,18 +46,44 @@ export default function AvisoActualizacion({ hayTrabajoSinGuardar = false }) {
       }
     });
     actualizarRef.current = actualizar;
-    return () => { if (typeof actualizar === 'function') actualizar({ immediate: false }); };
   }, []);
 
-  const aplicar = useCallback(() => {
+  useEffect(() => () => { temporizadoresRef.current.forEach(clearTimeout); }, []);
+
+  const aplicar = useCallback(async () => {
     if (hayTrabajoSinGuardar && !window.confirm(
       'Tienes cambios sin terminar de enviar. Si actualizas ahora se recargará la página y podrían perderse. '
       + '¿Guardar y continuar de todas formas?'
     )) return;
+
     setActualizando(true);
-    // Activa el worker en espera y recarga: el bundle nuevo entra en control.
-    if (typeof actualizarRef.current === 'function') actualizarRef.current(true);
-  }, [hayTrabajoSinGuardar]);
+    setFallo(false);
+
+    // 1) Avisar al worker en espera por las dos vias: la de la libreria y la
+    //    directa, que no depende de workbox.
+    try {
+      if (typeof actualizarRef.current === 'function') await actualizarRef.current(true);
+    } catch { /* se intenta igualmente por la via directa */ }
+    try {
+      const registro = await navigator.serviceWorker?.getRegistration();
+      if (registro?.waiting) registro.waiting.postMessage({ type: 'SKIP_WAITING' });
+    } catch { /* sin service worker no hay nada que activar */ }
+
+    // 2) El worker nuevo ya esta descargado: activarlo y recargar no necesita
+    //    red. Se recarga SIEMPRE, porque sin clientsClaim() el evento
+    //    'controlling' no llega nunca y la app se quedaba en "Actualizando...".
+    programar(() => window.location.reload(), 1500);
+    // 3) Si aun asi no se recarga, se avisa y se deja recargar a mano.
+    programar(() => setFallo(true), 8000);
+  }, [hayTrabajoSinGuardar, programar]);
+
+  // 4) Camino rapido: si el worker nuevo llega a tomar el control, se recarga ya.
+  useEffect(() => {
+    if (!actualizando) return undefined;
+    const alCambiarControlador = () => window.location.reload();
+    navigator.serviceWorker?.addEventListener('controllerchange', alCambiarControlador);
+    return () => navigator.serviceWorker?.removeEventListener('controllerchange', alCambiarControlador);
+  }, [actualizando]);
 
   if (!hayNuevaVersion) return null;
 
@@ -66,19 +104,36 @@ export default function AvisoActualizacion({ hayTrabajoSinGuardar = false }) {
         <button
           type="button"
           onClick={() => setHayNuevaVersion(false)}
-          className="flex-1 sm:flex-none px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-bold transition-colors"
+          disabled={actualizando}
+          className="flex-1 sm:flex-none px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 disabled:opacity-50 text-xs font-bold transition-colors"
         >
           Ahora no
         </button>
-        <button
-          type="button"
-          onClick={aplicar}
-          disabled={actualizando}
-          className="flex-1 sm:flex-none px-3 py-2 rounded-lg bg-teal-500 hover:bg-teal-600 disabled:opacity-50 text-xs font-bold transition-colors"
-        >
-          {actualizando ? 'Actualizando…' : 'Actualizar'}
-        </button>
+        {actualizando ? (
+          // Mientras actualiza, este boton SIEMPRE se puede pulsar: es la salida
+          // manual por si la recarga automatica no llega a ocurrir.
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="flex-1 sm:flex-none px-3 py-2 rounded-lg bg-teal-500 hover:bg-teal-600 text-xs font-bold transition-colors"
+          >
+            {fallo ? 'Recargar ahora' : 'Actualizando…'}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={aplicar}
+            className="flex-1 sm:flex-none px-3 py-2 rounded-lg bg-teal-500 hover:bg-teal-600 text-xs font-bold transition-colors"
+          >
+            Actualizar
+          </button>
+        )}
       </div>
+      {fallo && (
+        <p className="w-full sm:w-auto text-xs font-normal text-red-300">
+          No se pudo activar la versión nueva. Pulsa «Recargar ahora» o recarga la página con Ctrl+Shift+R.
+        </p>
+      )}
     </div>
   );
 }
