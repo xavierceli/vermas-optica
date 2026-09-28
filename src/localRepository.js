@@ -573,20 +573,30 @@ const archivarConsultaLocalImpl = async consultationId => {
   // mostrar un error. Antes la segunda pulsacion reintentaba sobre una consulta
   // ya archivada y devolvia un fallo, dando a pensar que la app se habia roto.
   const actual = await localDb.consultations.get(consultationId);
-  if (!actual) return { yaArchivada: true, motivo: 'La consulta ya no existe en este dispositivo.' };
-  if (actual.archivedAt) return { yaArchivada: true, motivo: 'La consulta ya estaba archivada.' };
+
+  // La consulta puede no tener fila propia y vivir SOLO en la cache del servidor
+  // (id "remote:<id>"): es exactamente lo que se dibuja en el historial. Antes se
+  // contestaba "no existe en este dispositivo" y NO se encolaba nada, de modo que
+  // el servidor nunca se enteraba del archivo y el paciente reaparecia en cada
+  // sincronizacion. Era un bucle sin salida: no se podia eliminar nunca.
+  const enCache = actual ? null : await localDb.cache.get(`remote:${consultationId}`);
+  const fila = actual || enCache;
+  if (!fila) return { yaArchivada: true, motivo: 'La consulta ya no existe en este dispositivo.' };
+  if (fila.archivedAt) return { yaArchivada: true, motivo: 'La consulta ya estaba archivada.' };
 
   // Registro de cedulas eliminadas en ESTE dispositivo. El servidor puede tardar
   // en aplicar el archivo y, mientras tanto, devolveria la consulta en el pull:
   // el paciente "eliminado" reaparecia al sincronizar o al actualizar la app.
   // Esta lista filtra siempre, por mucho que el servidor la mande de vuelta.
   const borrados = new Set(await getMeta('cedulasArchivadas', []));
-  if (normalizeCedula(actual.cedula)) borrados.add(normalizeCedula(actual.cedula));
+  if (normalizeCedula(fila.cedula)) borrados.add(normalizeCedula(fila.cedula));
   await setMeta('cedulasArchivadas', [...borrados]);
 
   await localDb.transaction('rw', localDb.consultations, localDb.outbox, localDb.cache, async () => {
     const consultation = await localDb.consultations.get(consultationId);
-    await localDb.consultations.put({ ...consultation, archivedAt: nowIso(), syncStatus: 'pending' });
+    if (consultation) {
+      await localDb.consultations.put({ ...consultation, archivedAt: nowIso(), syncStatus: 'pending' });
+    }
 
     // La copia de esta consulta en la tabla `cache` (id "remote:<id>") es la que
     // se dibuja en el historial. Si no se borra aqui, el paciente eliminado
@@ -596,8 +606,9 @@ const archivarConsultaLocalImpl = async consultationId => {
 
     // Si la consulta NUNCA llego al servidor, no hay nada que archivar alla y el
     // servidor rechazaria el comando para siempre ("La consulta X no existe"),
-    // dejando una barra roja permanente. Solo se encola si ya vive alli.
-    if (consultation.syncStatus === 'synced') {
+    // dejando una barra roja permanente. Solo se encola si ya vive alli: o lo
+    // confirma syncStatus 'synced', o vino del servidor y esta en la cache.
+    if (consultation?.syncStatus === 'synced' || enCache) {
       await localDb.outbox.put(createOutboxOperation({
         type: 'ARCHIVAR_CONSULTA', entityId: consultationId,
         payload: { p_consulta_id: consultationId }
@@ -807,7 +818,15 @@ export const obtenerSnapshotLocal = async () => {
     const patient = patientById.get(consultation.patientId) || {};
     const sale = saleByConsultation.get(consultation.id) || null;
     const salePayments = sale ? (paymentsBySale.get(sale.id) || []) : [];
-    const abono = sale ? safeNum(sale.abono || salePayments.reduce((sum, payment) => sum + safeNum(payment.monto), 0)) : 0;
+    // Una venta ANULADA no deja deuda: el abono se devuelve y el paciente no debe
+    // ver un "saldo pendiente" por algo que ya no existe. Antes la venta anulada
+    // conservaba el importe y perdia el abono, asi que el historial mostraba el
+    // total entero como pendiente.
+    const ventaAnulada = Boolean(sale) && safeString(sale.estado).trim() === 'Anulado';
+    const abonoReal = sale ? safeNum(sale.abono || salePayments.reduce((sum, payment) => sum + safeNum(payment.monto), 0)) : 0;
+    const abono = ventaAnulada
+      ? calcularSaldo(safeNum(sale.venta ?? consultation.venta), safeNum(sale.descuento ?? consultation.descuento), 0)
+      : abonoReal;
     return {
       ...patient, ...consultation, ...(sale || {}),
       id: consultation.id, patient_id: patient.id, paciente_id: patient.id,

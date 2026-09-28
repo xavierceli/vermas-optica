@@ -1,4 +1,4 @@
-import 'fake-indexeddb/auto';
+﻿import 'fake-indexeddb/auto';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { localDb } from './localDb.js';
@@ -37,7 +37,7 @@ const sale = (accessory = '1') => ({
   estado: 'En laboratorio', accesorio_id: accessory
 });
 
-test('guardar consulta crea dominio y outbox en la misma transacción', async () => {
+test('guardar consulta crea dominio y outbox en la misma transacciÃ³n', async () => {
   await reset();
   const consultationId = '30000000-0000-4000-8000-000000000001';
   await guardarConsultaLocal({
@@ -239,7 +239,7 @@ test('REPRO: anular una venta que llego del servidor', async () => {
   await reset();
   await localDb.inventory.put({ id: 1, categoria: 'Accesorio', codigo: 'ACC-1', precio: '10', stock: 5, syncStatus: 'synced' });
 
-  // Así se ve una venta en el servidor: llega por cacheServerHistorial.
+  // AsÃ­ se ve una venta en el servidor: llega por cacheServerHistorial.
   await cacheServerHistorial([{
     id: 'consulta-remota-1',
     paciente_id: '30000000-0000-4000-8000-000000000001',
@@ -594,6 +594,83 @@ test('archivar dos veces NO da error (debe ser idempotente)', async () => {
   assert.match(segunda.motivo, /ya estaba archivada/i);
 });
 
+test('archivar una consulta que solo vive en la cache del servidor SI funciona', async () => {
+  // BUG REAL: la consulta se ve en el historial pero no tiene fila propia, solo la
+  // copia "remote:<id>" de la cache. Antes se contestaba "no existe en este
+  // dispositivo" sin encolar nada, el servidor nunca se enteraba del archivo y el
+  // paciente reaparecia en cada sincronizacion: no se podia eliminar nunca.
+  await reset();
+  const id = '60000000-0000-4000-8000-000000000777';
+  await localDb.cache.put({
+    id: `remote:${id}`, kind: 'historial', cedula: '0750577042',
+    nombre: 'PRUEBA', fecha: '2026-09-28', venta: '79.20', descuento: '10',
+    pedido_id: 'vta-1', estado: 'Anulado', abono: '0'
+  });
+
+  const resultado = await archivarConsultaLocal(id);
+  assert.equal(resultado.yaArchivada, false, 'debe archivar, no rendirse');
+
+  assert.equal(await localDb.cache.get(`remote:${id}`), undefined, 'la copia del historial se borra');
+  const encolada = await localDb.outbox.where('type').equals('ARCHIVAR_CONSULTA').toArray();
+  assert.equal(encolada.length, 1, 'el servidor tiene que enterarse del archivo');
+  assert.equal(encolada[0].entityId, id);
+});
+
+test('tras archivar desde la cache, el paciente desaparece del historial', async () => {
+  // La cedula queda en la lista de eliminados de este dispositivo, que es lo que
+  // filtra el historial y el autocompletado aunque el servidor la mande de vuelta.
+  await reset();
+  const id = '60000000-0000-4000-8000-000000000778';
+  await localDb.cache.put({
+    id: `remote:${id}`, kind: 'historial', cedula: '0750577042',
+    nombre: 'PRUEBA', fecha: '2026-09-28', venta: '0', descuento: '0'
+  });
+
+  assert.equal((await obtenerSnapshotLocal()).historial.length, 1, 'antes de archivar se ve');
+  await archivarConsultaLocal(id);
+  assert.equal((await obtenerSnapshotLocal()).historial.length, 0, 'despues de archivar no');
+});
+
+test('una venta ANULADA no deja saldo pendiente en el historial', async () => {
+  // El caso del paciente PRUEBA: venta de 79.20 con dos abonos y luego anulada.
+  // Se mostraba "SALDO PENDIENTE: 79.20" por una venta que ya no existe, y eso
+  // hacia creer al optometria que el paciente debia.
+  await reset();
+  const id = '60000000-0000-4000-8000-000000000779';
+  await guardarConsultaLocal({
+    patient: { id: 'p-1', cedula: '0750577042', nombre: 'PRUEBA' },
+    consultation: { id, fecha: '2026-09-28', venta: '79.20', descuento: '10' }
+  });
+  await guardarVentaLocal({
+    patient: { id: 'p-1', cedula: '0750577042', nombre: 'PRUEBA' },
+    consultationId: id,
+    sale: { id: 'vta-1', fecha: '2026-09-28', estado: 'Anulado', venta: '79.20', descuento: '10', abono: '0' }
+  });
+
+  const fila = (await obtenerSnapshotLocal()).historial[0];
+  assert.equal(calcularTotal('79.20', '10') - Number(fila.abono), 0, 'una venta anulada no genera deuda');
+});
+
+test('una venta normal SI mantiene su saldo pendiente', async () => {
+  // El contrapunto: el arreglo no puede tapar una deuda real.
+  await reset();
+  const id = '60000000-0000-4000-8000-000000000780';
+  await guardarConsultaLocal({
+    patient: { id: 'p-2', cedula: '1712345678', nombre: 'ANA' },
+    consultation: { id, fecha: '2026-09-28', venta: '100', descuento: '0' }
+  });
+  await guardarVentaLocal({
+    patient: { id: 'p-2', cedula: '1712345678', nombre: 'ANA' },
+    consultationId: id,
+    sale: { id: 'vta-2', fecha: '2026-09-28', estado: 'En laboratorio', venta: '100', descuento: '0' }
+  });
+  // El abono se registra como cobro, no como campo de la venta.
+  await registrarPagoLocal({ saleId: 'vta-2', amount: 40 });
+
+  const fila = (await obtenerSnapshotLocal()).historial[0];
+  assert.equal(calcularTotal('100', '0') - Number(fila.abono), 60, 'una venta viva conserva su deuda');
+});
+
 test('archivar una consulta inexistente no lanza error', async () => {
   await reset();
   const resultado = await archivarConsultaLocal('60000000-0000-4000-8000-000000000999');
@@ -693,7 +770,7 @@ test('eliminar un paciente no lo hace reaparecer al sincronizar', async () => {
   const consultaId = 'a1000000-0000-4000-8000-000000000001';
   const cedula = '1712345678';
 
-  // 1) El servidor tiene al paciente en su caché de historial.
+  // 1) El servidor tiene al paciente en su cachÃ© de historial.
   await localDb.cache.put({
     id: `remote:${consultaId}`, kind: 'historial', idConsulta: consultaId,
     cedula, nombre: 'PRUEBA', fecha: '2026-09-28', estado: 'En laboratorio',
@@ -703,7 +780,7 @@ test('eliminar un paciente no lo hace reaparecer al sincronizar', async () => {
   assert.equal(antes.historial.filter(h => h.cedula === cedula).length, 1,
     'el paciente debe estar visible antes de eliminarlo');
 
-  // 2) El optometría lo elimina.
+  // 2) El optometrÃ­a lo elimina.
   await localDb.consultations.put({
     id: consultaId, patientId: 'p1', cedula, nombre: 'PRUEBA',
     fecha: '2026-09-28', syncStatus: 'pending'
