@@ -683,7 +683,14 @@ if (sync) {
   };
   const cancelarPedido = (item) => {
     if (!item.pedido_id) {
-      return mostrarToast('Este registro todavía no tiene una venta local.', 'warning');
+      // No es un aviso genérico: este registro viene del historial cacheado del
+      // servidor y nunca tuvo una venta creada en ESTE dispositivo, así que no
+      // hay nada que anular aquí. Se explica el porque para que el usuario sepa
+      // que no es un fallo temporal.
+      return mostrarToast(
+        'Este registro no tiene venta local, solo la consulta clínica. No hay nada que anular aquí.',
+        'warning'
+      );
     }
 
     const abono = Number(safeNum(item.abono).toFixed(2));

@@ -164,15 +164,46 @@ function App() {
       {/* id="contenido": destino del enlace de salto de index.html. Permite
           al usuario de teclado saltarse la barra de navegacion. */}
       <main id="contenido" className="max-w-[1400px] mx-auto space-y-6">
+        {/* VERSION DESPLEGADA
+            Este bloque era un texto de 9px casi invisible y era la unica forma
+            de saber si el navegador esta sirviendo el bundle nuevo o uno viejo
+            desde la cache del service worker. Sin eso, "no funciona" y "esta
+            cargando la version anterior" son indistinguibles.
+            Ahora es clicable, muestra la fecha de compilacion y, si el
+            identificador no llego (bundle viejo servido), lo avisa en rojo. */}
+        <div className="flex items-center justify-between gap-3 bg-gray-900 text-white rounded-xl px-4 py-2.5 shadow-lg">
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="text-xs font-black uppercase tracking-wider text-gray-400 shrink-0">
+              Version desplegada
+            </span>
+            <code
+              className={`text-sm font-mono font-black px-2.5 py-1 rounded ${
+                typeof __BUILD_ID__ === 'undefined'
+                  ? 'bg-red-600 text-white'
+                  : 'bg-teal-500 text-white'
+              }`}
+            >
+              {typeof __BUILD_ID__ === 'undefined' ? 'SIN IDENTIFICAR (bundle viejo)' : __BUILD_ID__}
+            </code>
+            <span className="text-xs text-gray-400 truncate">
+              {typeof __BUILD_ID__ === 'undefined'
+                ? 'El navegador esta sirviendo una copia antigua. Recarga con Ctrl+Shift+R.'
+                : `Compilada el ${new Date(Number.parseInt(__BUILD_ID__, 36)).toLocaleString('es-EC', { dateStyle: 'medium', timeStyle: 'short' })}`}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => navigator.clipboard?.writeText(String(__BUILD_ID__))}
+            title="Copiar el codigo de version"
+            className="text-xs font-bold text-gray-300 hover:text-white hover:bg-white/10 px-2 py-1 rounded transition-colors shrink-0"
+          >
+            Copiar
+          </button>
+        </div>
+
         <div className="bg-white p-4 rounded-xl shadow-sm flex flex-col md:flex-row justify-between items-center border gap-4">
           <div className="flex items-center gap-3">
             <h1 className="font-extrabold text-teal-800 text-2xl tracking-wider">VER+ ÓPTICA</h1>
-            <span
-              title="Version desplegada. Si un arreglo no funciona, comprueba este codigo."
-              className="text-[9px] font-mono text-gray-300 bg-gray-100 px-1.5 py-0.5 rounded"
-            >
-              v{typeof __BUILD_ID__ === 'undefined' ? '?' : __BUILD_ID__}
-            </span>
             <button
               type="button"
               onClick={() => g.sincronizarAhora()}
