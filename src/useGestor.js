@@ -8,6 +8,7 @@ import { enrolarDispositivo, leerEnrolamiento, intentarDesbloqueo, revocarEnrola
 import { aplicarAvisoQueratometria, calcularTotal } from './reglas'
 import { limpiarHtml } from './escape'
 import { validarFichaClinica, motivoDocumentoInvalido } from './validacion'
+import { aplicarCedula, crearEstadoPaciente, hoyISO, INV_INICIAL, PRECIO_INICIAL } from './fichaClinica'
 
 export function useGestor() {
   const [estaAutenticado, setEstaAutenticado] = useState(false);
@@ -30,32 +31,12 @@ export function useGestor() {
     setConfirmDialog({ visible: true, mensaje: mensaje, onConfirm: onConfirmCallback });
   };
 
-  const dateObj = new Date();
-  const hoy = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`;
-
-  const estadoInicial = {
-    id: '', paciente_id: '', pedido_id: '',
-    fecha: hoy, cedula: '', nombre: '', alias: '', telefono: '', correo: '', notas_clinicas: '', fecha_nacimiento: '', antecedentes: '',
-    avsl_od: '', avsc_od: '', esfera_od: '', cilindro_od: '', eje_od: '', adicion_od: '', dnp_od: '', altura_od: '', avcl_od: '', avcc_od: '',
-    avsl_oi: '', avsc_oi: '', esfera_oi: '', cilindro_oi: '', eje_oi: '', adicion_oi: '', dnp_oi: '', altura_oi: '', avcl_oi: '', avcc_oi: '',
-    k1_d_od: '', k2_d_od: '', k1_mm_od: '', k2_mm_od: '', eje_k1_od: '', eje_k2_od: '', astig_corneal_od: '', eje_astig_od: '', obs_k_od: '',
-    k1_d_oi: '', k2_d_oi: '', k1_mm_oi: '', k2_mm_oi: '', eje_k1_oi: '', eje_k2_oi: '', astig_corneal_oi: '', eje_astig_oi: '', obs_k_oi: '',
-    auto_esf_od: '', auto_cil_od: '', auto_eje_od: '', auto_esf_oi: '', auto_cil_oi: '', auto_eje_oi: '',
-    auto_esf_od_2: '', auto_cil_od_2: '', auto_eje_od_2: '', auto_esf_oi_2: '', auto_cil_oi_2: '', auto_eje_oi_2: '',
-    lenso_esf_od: '', lenso_cil_od: '', lenso_eje_od: '', lenso_add_od: '', lenso_avl_od: '', lenso_avc_od: '',
-    lenso_esf_oi: '', lenso_cil_oi: '', lenso_eje_oi: '', lenso_add_oi: '', lenso_avl_oi: '', lenso_avc_oi: '',
-    venta: '', abono: '', descuento: '0', forma_pago: 'Efectivo', pago_nota: '', estado: 'Ninguno', notas: '', comprobante_url: '',
-    codigo_armazon: '', tipo_armazon: '', param_horizontal: '', param_puente: '', param_vertical: '', param_diagonal: '',
-    tipo_lente: '', material_lente: '', material_nota: '', accesorio_id: '',
-    tratam_ninguno: 'NO', tratam_ar: 'NO', tratam_ar_azul: 'NO', tratam_azul: 'NO', 
-    tratam_tinturado: 'NO', tratam_tinturado_nota: '', 
-    tratam_foto: 'NO', tratam_foto_nota: '', 
-    tratam_trans: 'NO', tratam_trans_nota: '',
-    costo_armazon_int: '', costo_lunas_int: '', costo_accesorio_int: '', costo_tratamientos_int: '', costo_varios_int: ''
-  };
-  
-  const invInicial = { categoria: 'Armazon', codigo: '', tipo_armazon: '', material: '', descripcion: '', material_nota: '', param_horizontal: '', param_puente: '', param_vertical: '', param_diagonal: '', param_frontal: '', param_varillas: '', nombre_accesorio: '', caracteristica: '', costo_compra: '', precio: '', stock: '', imagen_url: '' };
-  const precioInicial = { tipo_lente: 'Monofocal', material: 'Plástico', tratamiento: 'Ninguno', rango_medida: '', costo_laboratorio: '', precio_sugerido: '', notas: '' };
+  // El formulario de consulta, el de inventario y el de tarifas viven ahora en
+  // fichaClinica.js: son puro dato, sin React, y se pueden probar de verdad.
+  const hoy = hoyISO();
+  const estadoInicial = crearEstadoPaciente(hoy);
+  const invInicial = INV_INICIAL;
+  const precioInicial = PRECIO_INICIAL;
 
   const [paciente, setPaciente] = useState(estadoInicial);
   const [historial, setHistorial] = useState([]);
@@ -260,19 +241,10 @@ if (sync) {
       nuevoPaciente = aplicarAvisoQueratometria(nuevoPaciente, campoQueratometria[2]);
     }
     if (name === 'cedula') {
-      const docCompleto = String(value).length >= 10; // cédula completa (o pasaporte largo)
-      const pacienteExistente = docCompleto
-        ? (historial || []).find(p => safeString(p?.cedula) === safeString(value) && safeString(p?.nombre) !== 'CONSUMIDOR FINAL')
-        : null;
-      if (pacienteExistente) {
-        nuevoPaciente = { ...pacienteExistente, fecha: hoy, cedula: value, id: '', pedido_id: '' };
-        ['venta', 'abono', 'notas', 'notas_clinicas', 'codigo_armazon', 'tipo_armazon', 'param_horizontal', 'param_puente', 'param_vertical', 'param_diagonal', 'tipo_lente', 'material_lente', 'material_nota', 'tratam_tinturado_nota', 'tratam_foto_nota', 'tratam_trans_nota', 'pago_nota', 'accesorio_id', 'costo_armazon_int', 'costo_lunas_int', 'costo_accesorio_int', 'costo_tratamientos_int', 'costo_varios_int', 'comprobante_url'].forEach(k => nuevoPaciente[k] = '');
-        ['tratam_ar', 'tratam_ar_azul', 'tratam_azul', 'tratam_tinturado', 'tratam_foto', 'tratam_trans', 'tratam_ninguno'].forEach(k => nuevoPaciente[k] = 'NO');
-        nuevoPaciente.descuento = '0'; nuevoPaciente.forma_pago = 'Efectivo'; nuevoPaciente.estado = 'Ninguno';
-      } else {
-        // Paciente NUEVO o cédula incompleta: SOLO actualizar la cédula, jamás borrar el formulario
-        nuevoPaciente = { ...paciente, cedula: value };
-      }
+      // La regla vive en fichaClinica.js porque es la que decide si se trae la
+      // ficha de un paciente que ya existe: una cedula a medias NUNCA puede
+      // borrar el formulario que el optometria lleva media hora llenando.
+      nuevoPaciente = aplicarCedula({ paciente, value, historial, hoy }).ficha;
     }
     setPaciente(nuevoPaciente);
     if (intentadoGuardar) setIntentadoGuardar(false);
