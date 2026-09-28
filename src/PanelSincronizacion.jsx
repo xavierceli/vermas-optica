@@ -10,6 +10,7 @@
 // para reintentar o descartar. Descartar solo quita el comando de la cola; NO
 // borra pacientes, ventas ni inventario.
 import { useState, useEffect, useCallback, useRef } from 'react';
+import RespaldoDatos from './RespaldoDatos.jsx';
 
 const TIPOS = {
   GUARDAR_CONSULTA: 'Consulta clinica', CREAR_VENTA: 'Venta', EDITAR_VENTA: 'Edicion de venta',
@@ -136,6 +137,11 @@ export default function PanelSincronizacion({ abierta, cerrar, gestor }) {
             </ul>
           )}
         </div>
+
+        {/* El respaldo va siempre, no solo cuando hay atascos: la cola puede
+            estar vacia y aun asi este dispositivo ser la unica copia de la
+            semana sin conexion. */}
+        <RespaldoDatos />
 
         {problemas.length > 0 && (
           <div className="p-4 border-t bg-gray-50 flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
