@@ -8,27 +8,15 @@
 // ---------------------------------------------------------------------------
 import { supabase } from './supabaseClient';
 import { localDb } from './localDb';
+import { extraerRutaArchivo } from './rutaImagen.js';
 
 const DURACION_FIRMA_MS = 60 * 60 * 1000;
 const cacheFirmas = new Map();
 
-const extraerRuta = valor => {
-  if (!valor) return null;
-  const texto = String(valor).trim();
-  if (!texto) return null;
-  if (texto.startsWith('http')) {
-    try {
-      const url = new URL(texto);
-      const partes = url.pathname.split('/').filter(Boolean);
-      const indice = partes.indexOf('comprobantes_pagos');
-      if (indice >= 0) return partes.slice(indice).join('/');
-      return partes.join('/');
-    } catch {
-      return null;
-    }
-  }
-  return texto.replace(/^\/+/, '');
-};
+// createSignedUrl() recibe el bucket por separado, asi que la ruta nunca puede
+// llevar delante "comprobantes_pagos". Este normalizador lo recorta siempre,
+// tanto si lo guardado es una ruta simple como una URL publica antigua.
+const extraerRuta = valor => extraerRutaArchivo(valor, 'comprobantes_pagos');
 
 const urlDeBlobLocal = refId => {
   if (!refId) return null;

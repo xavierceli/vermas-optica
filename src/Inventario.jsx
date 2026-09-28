@@ -13,6 +13,10 @@ export default function Inventario({
   // URLs firmadas: el bucket es privado, asi que la ruta guardada NO se puede
   // usar tal cual en un <img>. Se firma en el dispositivo y se cachea 1 hora.
   const [urlsImagenes, setUrlsImagenes] = useState({});
+  // Si una imagen firmada aun asi no carga (archivo que ya no esta en el bucket,
+  // red que se cae a mitad...), se marca como fallida: antes se dejaba el <img>
+  // con una URL muerta y el navegador pintaba su texto alternativo "Foto de ...".
+  const [imagenesFallidas, setImagenesFallidas] = useState({});
 
   useEffect(() => {
     const conFoto = (inventario || []).filter(item => item && item.imagen_url);
@@ -30,6 +34,14 @@ export default function Inventario({
     });
     return () => { vigente = false; };
   }, [inventario, urlsImagenes]);
+
+  // El <img> NUNCA debe usar el valor crudo de imagen_url: con el bucket privado
+  // una URL publica antigua responde 400, y una ruta suelta ni siquiera es una
+  // URL. Solo se muestra la URL firmada que se resolvio arriba.
+  const fotoDe = item => {
+    if (!item || !item.imagen_url || imagenesFallidas[item.id]) return null;
+    return urlsImagenes[item.id] || null;
+  };
 
   const itemsFiltrados = (inventario || []).filter(item => {
     if (!item) return false;
@@ -162,16 +174,20 @@ export default function Inventario({
             {itemsFiltrados.map(item => (
               <tr key={item.id} className="border-b hover:bg-gray-50">
                 <td className="p-3 w-16">
-                  {item.imagen_url ? (
+                  {fotoDe(item) ? (
                     <img 
-                      src={item.imagen_url} 
+                      src={fotoDe(item)} 
                       alt={`Foto de ${safeString(item.nombre_accesorio) || safeString(item.codigo) || 'producto'}`} 
                       className="w-10 h-10 object-cover rounded shadow-sm border cursor-pointer hover:opacity-80 transition-opacity" 
-                      onClick={() => setImagenAmpliada(item.imagen_url)}
+                      onClick={() => setImagenAmpliada(fotoDe(item))}
+                      onError={() => setImagenesFallidas(prev => (prev[item.id] ? prev : { ...prev, [item.id]: true }))}
                       title="Clic para agrandar"
                     />
                   ) : (
-                    <div className="w-10 h-10 bg-gray-100 rounded flex items-center justify-center text-gray-300 text-[10px] border text-center">Sin foto</div>
+                    <div className="w-10 h-10 bg-gray-100 rounded flex items-center justify-center text-gray-400 text-[10px] border text-center leading-tight px-0.5"
+                         title={item.imagen_url ? 'La foto no se pudo cargar' : 'Este producto no tiene foto'}>
+                      {item.imagen_url ? '⚠ No carga' : 'Sin foto'}
+                    </div>
                   )}
                 </td>
                 <td className="p-3 font-bold text-gray-600">
@@ -224,7 +240,8 @@ export default function Inventario({
               <span aria-hidden="true">✖</span>
             </button>
             <img 
-              src={imagenAmpliada} 
+              src={imagenAmpliada}
+              onError={() => setImagenAmpliada(null)} 
               alt="Imagen ampliada del producto" 
               className="max-w-full max-h-[85vh] object-contain rounded-xl shadow-2xl border-4 border-white/20 bg-white" 
             />

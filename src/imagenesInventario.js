@@ -26,8 +26,15 @@ const cacheFirmas = new Map();
  * Firma una vez por hora y reutiliza la firma mientras siga vigente.
  */
 export const resolverUrlImagenInventario = async (valor) => {
-  const ruta = extraerRutaImagen(valor);
+  // Se normaliza DOS veces a proposito: createSignedUrl() ya recibe el bucket
+  // por separado (.from(BUCKET)), asi que la ruta jamas puede llevar delante el
+  // nombre del bucket. Antes pasaba "inventario_imagenes/foto.jpg" y Storage
+  // buscaba "inventario_imagenes/inventario_imagenes/foto.jpg" -> HTTP 400.
+  const ruta = extraerRutaImagen(extraerRutaImagen(valor));
   if (!ruta) return null;
+  if (!/^https?:/i.test(String(valor).trim()) && String(valor).includes(BUCKET)) {
+    console.warn('[inventario] imagen_url guardada con el bucket dentro; se recorta al firmar:', valor);
+  }
 
   const enCache = cacheFirmas.get(ruta);
   if (enCache && enCache.expira > Date.now()) return enCache.url;
@@ -53,7 +60,9 @@ export const resolverUrlImagenInventario = async (valor) => {
  * para que el usuario vea su foto, pero en la base se sigue guardando SOLO la
  * ruta: una URL firmada caduca y dejaria el inventario con fotos rotas.
  */
-export const urlInmediataParaVista = async ruta => {
+export const urlInmediataParaVista = async valor => {
+  const ruta = extraerRutaImagen(valor);
+  if (!ruta) return null;
   const { data } = await supabase.storage.from(BUCKET).createSignedUrl(ruta, DURACION_FIRMA_MS);
   return data?.signedUrl || null;
 };

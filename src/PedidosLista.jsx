@@ -57,8 +57,10 @@ export default function PedidosLista({
           const nombreArchivo = `comprobante_${Date.now()}_${archivoFoto.name.replace(/[^a-zA-Z0-9.]/g, '')}`;
           const { data, error } = await supabase.storage.from('comprobantes_pagos').upload(nombreArchivo, archivoComprimido);
           if (error) throw error;
-          const { data: urlData } = supabase.storage.from('comprobantes_pagos').getPublicUrl(data.path);
-          urlComprobanteFinal = urlData.publicUrl;
+          // El bucket es PRIVADO: se guarda la RUTA, no una URL publica. Con
+          // getPublicUrl el comprobante se guardaba con una URL que responde 400
+          // y luego no se podia ver (ver comprobantes.js).
+          urlComprobanteFinal = data.path;
         } catch (err) {
           console.error('Error subiendo comprobante:', err);
         } finally {
