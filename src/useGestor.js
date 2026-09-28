@@ -7,6 +7,7 @@ import { iniciarMotorSync, suscribirSync, sincronizarAhora, fijarSesionAusente }
 import { enrolarDispositivo, leerEnrolamiento, intentarDesbloqueo, revocarEnrolamiento, pinValido } from './seguridad'
 import { aplicarAvisoQueratometria, calcularTotal } from './reglas'
 import { limpiarHtml } from './escape'
+import { validarFichaClinica, motivoDocumentoInvalido } from './validacion'
 
 export function useGestor() {
   const [estaAutenticado, setEstaAutenticado] = useState(false);
@@ -16,10 +17,12 @@ export function useGestor() {
   const [toast, setToast] = useState(null);
   const toastTimer = useRef(null);
 
-  const mostrarToast = (mensaje, tipo = 'success') => {
+  // `duracion` permite que los mensajes de validacion, que son largos y listan
+  // varios campos, permanezcan mas tiempo en pantalla que un ok simple.
+  const mostrarToast = (mensaje, tipo = 'success', duracion = 3500) => {
     setToast({ mensaje, tipo });
     if (toastTimer.current) clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(null), 3500); 
+    toastTimer.current = setTimeout(() => setToast(null), duracion);
   };
 
   const [confirmDialog, setConfirmDialog] = useState({ visible: false, mensaje: '', onConfirm: null });
@@ -400,37 +403,26 @@ if (sync) {
     });
   };
 
-  const validarDocumento = (doc) => {
-    const str = String(doc).trim().toUpperCase();
-    if (!str) return false;
-    if (str === '9999999999') return true;
-    if (/^\d{10}$/.test(str)) return true;
-    if (/^\d{13}$/.test(str)) return true;
-    if (/^[A-Z0-9]{5,20}$/.test(str) && /[A-Z]/.test(str)) return true;
-    return false;
-  };
-
   const guardarPacienteClinico = async () => {
     if (guardando) return;
 
     try {
-      if (!validarDocumento(paciente.cedula)) return mostrarToast("DOCUMENTO INVÁLIDO.", "error");
+      // Una sola validacion que reporta TODO lo que falta, no solo el primer
+      // problema. Antes decia "FALTAN DATOS" sin decir que campo, y el nombre
+      // no se validaba: se podia guardar una ficha sin nombre que despues
+      // rompia la venta ("El nombre del paciente es obligatorio").
+      const validacion = validarFichaClinica(paciente);
+      if (!validacion.ok) {
+        setIntentadoGuardar(true);
+        return mostrarToast(validacion.mensaje, 'warning', 9000);
+      }
+
       if (editandoId) {
         const original = (historial || []).find(h => String(h?.id) === String(editandoId));
         if (original && safeString(original.cedula).trim().toUpperCase() !== safeString(paciente.cedula).trim().toUpperCase()) {
-          return mostrarToast('No se puede cambiar la cédula de una evaluación guardada. Si es otro paciente, regístralo desde Historial.', 'warning');
+          return mostrarToast('No se puede cambiar la cédula de una evaluación guardada. Si es otro paciente, registralo desde Historial.', 'warning');
         }
       }
-
-      const camposRefraccionObligatorios = ['avsl_od', 'avsc_od', 'esfera_od', 'cilindro_od', 'eje_od', 'adicion_od', 'dnp_od', 'avcl_od', 'avcc_od', 'avsl_oi', 'avsc_oi', 'esfera_oi', 'cilindro_oi', 'eje_oi', 'adicion_oi', 'dnp_oi', 'avcl_oi', 'avcc_oi'];
-      const faltantes = camposRefraccionObligatorios.filter(campo => safeString(paciente[campo]).trim() === '');
-      
-      if (faltantes.length > 0) {
-        setIntentadoGuardar(true);
-        return mostrarToast("FALTAN DATOS de Refracción obligatorios.", "warning");
-      }
-
-      setGuardando(true);
 
       const perfilData = { cedula: safeString(paciente.cedula), nombre: safeString(paciente.nombre), alias: safeString(paciente.alias), telefono: safeString(paciente.telefono), correo: safeString(paciente.correo), fecha_nacimiento: safeString(paciente.fecha_nacimiento), antecedentes: safeString(paciente.antecedentes) };
       Object.keys(perfilData).forEach(k => { if (perfilData[k] === '') perfilData[k] = null; });
@@ -612,15 +604,25 @@ if (sync) {
     guardandoPedidoRef.current = true;
 
     try {
-      if (!validarDocumento(pedidoSeleccionado.cedula)) {
-        throw new Error('El documento del paciente no es válido.');
+      const problemaDocumento = motivoDocumentoInvalido(pedidoSeleccionado.cedula);
+      if (problemaDocumento) {
+        mostrarToast('No se puede guardar el pedido: ' + problemaDocumento.toLowerCase() + '.', 'warning', 7000);
+        return false;
+      }
+
+      // El nombre se valida ANTES que nada se escriba en la base. Antes se
+      // comprobaba mas abajo y el error salia como excepcion interna.
+      const cedulaPedido = safeString(pedidoSeleccionado.cedula).trim().toUpperCase();
+      const nombrePedido = safeString(pedidoSeleccionado.nombre).trim() || (cedulaPedido === '9999999999' ? 'CONSUMIDOR FINAL' : '');
+      if (!nombrePedido) {
+        mostrarToast('Falta el nombre del paciente. Sin nombre no se puede emitir el recibo ni identificar la venta.', 'warning', 7000);
+        return false;
       }
 
       const idPedido = pedidoSeleccionado.pedido_id || pedidoSeleccionado.id || generarId();
       const consultationId = pedidoSeleccionado.id || generarId();
-      const cedulaPaciente = safeString(pedidoSeleccionado.cedula).trim().toUpperCase();
-      const nombrePaciente = safeString(pedidoSeleccionado.nombre).trim() || (cedulaPaciente === '9999999999' ? 'CONSUMIDOR FINAL' : '');
-      if (!nombrePaciente) throw new Error('El nombre del paciente es obligatorio.');
+      const cedulaPaciente = cedulaPedido;
+      const nombrePaciente = nombrePedido;
 
       const patientId = pedidoSeleccionado.patient_id || pedidoSeleccionado.paciente_id || generarId();
       const camposPedido = ['venta', 'abono', 'descuento', 'forma_pago', 'pago_nota', 'estado', 'notas', 'comprobante_url', 'codigo_armazon', 'tipo_armazon', 'param_horizontal', 'param_puente', 'param_vertical', 'param_diagonal', 'tipo_lente', 'material_lente', 'material_nota', 'accesorio_id', 'tratam_ninguno', 'tratam_ar', 'tratam_ar_azul', 'tratam_azul', 'tratam_tinturado', 'tratam_tinturado_nota', 'tratam_foto', 'tratam_foto_nota', 'tratam_trans', 'tratam_trans_nota', 'costo_armazon_int', 'costo_lunas_int', 'costo_accesorio_int', 'costo_tratamientos_int', 'costo_varios_int'];

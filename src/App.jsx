@@ -132,7 +132,7 @@ function App() {
         }`}
         >
           <span className="text-2xl" aria-hidden="true">{g.toast.tipo === 'success' ? '✅' : g.toast.tipo === 'error' ? '❌' : '⚠️'}</span>
-          <p className="font-bold text-sm">{g.toast.mensaje}</p>
+          <p className="font-bold text-sm whitespace-pre-line leading-snug">{g.toast.mensaje}</p>
         </div>
       )}
 
