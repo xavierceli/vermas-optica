@@ -115,7 +115,7 @@ commit;
 select
   c.relname as tabla,
   c.relrowsecurity as rls,
-  coalesce((select string_agg(p.policyname, ' | ') from pg_policy p where p.polrelid = c.oid), 'SIN POLITICAS') as politicas,
+  coalesce((select string_agg(p.polname, ' | ') from pg_policy p where p.polrelid = c.oid), 'SIN POLITICAS') as politicas,
   coalesce((select string_agg(g.grantee || ':' || g.privilege_type, '  ')
               from information_schema.role_table_grants g
               where g.table_schema = 'public' and g.table_name = c.relname
