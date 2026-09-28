@@ -352,7 +352,13 @@ export default function Historial({
             // mostrando "SALDO PENDIENTE" de algo ya cobrado o eliminado.
             const saldoPendiente = calcularSaldo(vta, desc, abono);
             const tieneDeuda = saldoPendiente > 0;
-            const tienePedido = String(item.estado || 'Ninguno') !== 'Ninguno' || Number(item.venta || 0) > 0 || String(item.codigo_armazon || '') !== '' || String(item.accesorio_id || '') !== '';
+            // Solo hay pedido si existe una venta. Sin esta comprobacion, una
+            // consulta clinica sin venta aparecia como pedido porque el servidor
+            // le asigna el estado 'En laboratorio' por defecto.
+            const tienePedido = Boolean(safeString(item.pedido_id).trim())
+              || Number(item.venta || 0) > 0
+              || String(item.codigo_armazon || '').trim() !== ''
+              || String(item.accesorio_id || '').trim() !== '';
             
             return (
               <div key={item.id} className="border border-gray-200 bg-white p-6 rounded-2xl shadow-sm hover:shadow-md transition-all">

@@ -111,7 +111,16 @@ export default function PedidosLista({
     const estado = safeString(item.estado);
     if (estado === 'Anulado') return false;
 
-    const tienePedido = estado !== 'Ninguno' || pVenta > 0 || safeString(item.codigo_armazon) !== '' || safeString(item.accesorio_id) !== '';
+    // Una fila SOLO es un pedido si tiene una venta real asociada. Antes se
+    // aceptaba cualquier estado distinto de 'Ninguno', y el historial del
+    // servidor asigna 'En laboratorio' por defecto a una consulta que nunca
+    // teve venta: por eso guardar una clinica sola aparecia sola en Pedidos
+    // con venta $0. Una consulta sin pedido_id no es un pedido.
+    const tieneVenta = Boolean(safeString(item.pedido_id).trim())
+      || pVenta > 0
+      || safeString(item.codigo_armazon).trim() !== ''
+      || safeString(item.accesorio_id).trim() !== '';
+    const tienePedido = tieneVenta && estado !== 'Anulado';
     const estaPagado = pSaldo <= 0 && pFinal > 0;
 
     if (!tienePedido) return false;

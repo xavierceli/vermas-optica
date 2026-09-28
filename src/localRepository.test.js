@@ -618,3 +618,65 @@ test('archivar una consulta que nunca se sincronizo no encola operacion', async 
   assert.equal(archivar.length, 0,
     'una consulta local que nunca se subio no debe generar una operacion de archivo');
 });
+// ---------------------------------------------------------------------------
+// BUG: guardar una clinica sola hacia aparecer una VENTA de $0 en Pedidos
+// ---------------------------------------------------------------------------
+// La vista del servidor entrega `estado` = 'En laboratorio' por defecto, tomandolo
+// de la venta. Una consulta clinica que nunca tuvo venta llegaba igual con ese
+// estado inventado y pasaba el filtro de Pedidos, que solo miraba el estado.
+
+test('una consulta clinica sin venta no genera un pedido', async () => {
+  await reset();
+  const id = '70000000-0000-4000-8000-000000000001';
+  await guardarConsultaLocal({
+    patient: { id: '70000000-0000-4000-8000-000000000002', cedula: '1712345678', nombre: 'PRUEBA' },
+    consultation: { id, fecha: '2026-09-28', estado: 'Ninguno' }
+  });
+
+  const snapshot = await obtenerSnapshotLocal();
+  const fila = snapshot.historial.find(h => h.id === id);
+  assert.ok(fila, 'la consulta debe estar en el historial');
+
+  // Este es el criterio que usan PedidosLista y useGestor.
+  const tienePedido = Boolean(String(fila.pedido_id || '').trim())
+    || Number(fila.venta || 0) > 0
+    || String(fila.codigo_armazon || '').trim() !== ''
+    || String(fila.accesorio_id || '').trim() !== '';
+  assert.equal(tienePedido, false, 'una consulta sin venta no es un pedido');
+});
+
+test('el historial remoto sin pedido no inventa un estado de venta', async () => {
+  // Reproduce lo que llega del servidor: estado 'En laboratorio' sin pedido_id.
+  await reset();
+  await localDb.cache.put({
+    id: 'remote:90000000-0000-4000-8000-000000000001',
+    kind: 'historial',
+    idConsulta: '90000000-0000-4000-8000-000000000001',
+    cedula: '1712345678', nombre: 'PRUEBA',
+    fecha: '2026-09-27', estado: 'En laboratorio', venta: '0', pedido_id: ''
+  });
+
+  const snapshot = await obtenerSnapshotLocal();
+  const fila = snapshot.historial.find(h => h.cedula === '1712345678');
+  assert.ok(fila, 'debe aparecer en el historial');
+  assert.equal(fila.estado, 'Ninguno',
+    'sin pedido_id el estado debe ser Ninguno, no el inventado por el servidor');
+});
+
+test('una venta real si se mantiene en Pedidos', async () => {
+  await reset();
+  await localDb.sales.put({
+    id: '80000000-0000-4000-8000-000000000001', pedido_id: '80000000-0000-4000-8000-000000000001',
+    consultationId: '80000000-0000-4000-8000-000000000002', cedula: '1712345679', nombre: 'REAL',
+    fecha: '2026-09-26', venta: '100', descuento: '0', abono: '0', estado: 'En laboratorio'
+  });
+  await localDb.consultations.put({
+    id: '80000000-0000-4000-8000-000000000002', patientId: 'x', cedula: '1712345679',
+    nombre: 'REAL', fecha: '2026-09-26', syncStatus: 'synced'
+  });
+
+  const snapshot = await obtenerSnapshotLocal();
+  const fila = snapshot.historial.find(h => h.cedula === '1712345679');
+  const tienePedido = Boolean(String(fila.pedido_id || '').trim()) || Number(fila.venta || 0) > 0;
+  assert.equal(tienePedido, true, 'una venta real SI debe aparecer en Pedidos');
+});

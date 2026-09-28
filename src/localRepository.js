@@ -791,11 +791,19 @@ export const obtenerSnapshotLocal = async () => {
       abono: String(abono || 0), syncStatus: sale?.syncStatus || consultation.syncStatus || 'synced'
     };
   });
+  // El historial del servidor llega con `estado` = 'En laboratorio' por defecto
+  // (es el valor que la vista toma de la venta). Para una consulta que NUNCA
+  // tuvo venta, ese estado es inventado y hacia que apareciera sola en Pedidos
+  // con monto $0. Se corrige en el origen: si la fila no trae pedido, no hay
+  // estado de venta.
   const remoteHistorial = cache.filter(row => row.kind === 'historial' && !row.archivedAt).map(row => {
     const data = { ...row };
     delete data.kind;
     delete data.updatedAt;
     data.syncStatus = 'synced';
+    if (!safeString(data.pedido_id).trim() && safeNum(data.venta) <= 0) {
+      data.estado = 'Ninguno';
+    }
     return data;
   });
   const combined = [...localHistorial, ...remoteHistorial].sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')));

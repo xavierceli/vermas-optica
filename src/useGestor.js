@@ -774,7 +774,13 @@ if (sync) {
   const pedidosFiltrados = useMemo(() => (historial || []).filter(item => {
     if (!item) return false;
     const matchSearch = safeString(item.nombre).toLowerCase().includes(queryGlobal) || safeString(item.cedula).includes(queryGlobal);
-    const tienePedido = safeString(item.estado) !== 'Ninguno' || safeNum(item.venta) > 0;
+    // Mismo criterio que PedidosLista: sin venta real (pedido_id) no hay pedido.
+    // El historial del servidor marca 'En laboratorio' en consultas que nunca
+    // tuvieron venta, y eso las hacia aparecer en Pedidos con monto $0.
+    const tienePedido = Boolean(safeString(item.pedido_id).trim())
+      || safeNum(item.venta) > 0
+      || safeString(item.codigo_armazon).trim() !== ''
+      || safeString(item.accesorio_id).trim() !== '';
     return queryGlobal ? matchSearch : tienePedido;
   }), [historial, queryGlobal]);
 
