@@ -7,7 +7,7 @@ import {
   guardarVentaLocal,
   registrarPagoLocal,
   cacheServerCatalog,
-  obtenerContadorEscaneosInventario, archivarConsultaLocal
+  obtenerContadorEscaneosInventario, archivarConsultaLocal, guardarInventarioLocal
 } from './localRepository.js';
 import { calcularTotal } from './reglas.js';
 import { guardarAdjuntoLocal, leerAdjuntoLocal, obtenerAdjuntosDeRef, contarAdjuntosPendientes, anularVentaLocal, cacheServerHistorial, obtenerSnapshotLocal, anularVentaConReembolso, registrarReembolsoLocal, enColaEscritura } from './localRepository.js';
@@ -754,4 +754,59 @@ test('un paciente NO eliminado sigue apareciendo con normalidad', async () => {
   const snapshot = await obtenerSnapshotLocal();
   assert.equal(snapshot.historial.filter(h => h.cedula === '1712345680').length, 1,
     'el filtro no debe afectar a pacientes que nunca se eliminaron');
+});
+// ---------------------------------------------------------------------------
+// BUG: editar un producto del inventario borraba datos
+// ---------------------------------------------------------------------------
+// El formulario de Inventario muestra unos campos segun la categoria y oculta
+// otros. El cliente mandaba el objeto COMPLETO con los campos vacios en null y
+// el servidor hacia UPDATE de todas las columnas con `p_datos ->> 'columna'`, que
+// devuelve NULL cuando la clave no existe. Resultado: al editar un armazon se
+// perdian sus notas de material; al editar un accesorio, su codigo y medidas.
+
+test('el payload de un armazon NO lleva campos de accesorio', async () => {
+  await reset();
+  await localDb.inventory.put({
+    id: 5, categoria: 'Armazon', codigo: 'MIR-4017', tipo_armazon: 'Completo',
+    material: 'TR90', descripcion: 'Negro con dorado', stock: 3, precio: '80',
+    syncStatus: 'synced'
+  });
+
+  await guardarInventarioLocal({
+    id: 5, categoria: 'Armazon', codigo: 'MIR-4017', tipo_armazon: 'Completo',
+    material: 'TR90', descripcion: 'Negro con dorado', stock: 5, precio: '80',
+    // El formulario de armazon NO tiene estos campos; llegan vacios.
+    nombre_accesorio: '', caracteristica: ''
+  });
+
+  const ops = await localDb.outbox.toArray();
+  const upsert = ops.find(o => o.type === 'UPSERT_INVENTARIO');
+  assert.ok(upsert, 'debe encolarse la actualizacion');
+  const datos = upsert.payload.p_datos;
+
+  assert.equal(datos.codigo, 'MIR-4017');
+  assert.equal(datos.descripcion, 'Negro con dorado');
+  // these campos must NOT arrive as null: that is what erased the data
+  assert.notEqual(datos.nombre_accesorio, null,
+    'un campo de la otra categoria no debe viajar como null: el servidor lo borraria');
+  assert.notEqual(datos.caracteristica, null);
+});
+
+test('el payload de un accesorio NO lleva campos de armazon', async () => {
+  await reset();
+  await localDb.inventory.put({ id: 6, categoria: 'Accesorio', nombre_accesorio: 'ESTUCHE', stock: 20, syncStatus: 'synced' });
+
+  await guardarInventarioLocal({
+    id: 6, categoria: 'Accesorio', nombre_accesorio: 'ESTUCHE RIGIDO',
+    caracteristica: 'Azul', stock: 20, precio: '5',
+    codigo: '', tipo_armazon: '', material: ''
+  });
+
+  const ops = await localDb.outbox.toArray();
+  const datos = ops.find(o => o.type === 'UPSERT_INVENTARIO').payload.p_datos;
+
+  assert.equal(datos.nombre_accesorio, 'ESTUCHE RIGIDO');
+  assert.notEqual(datos.codigo, null, 'codigo no debe viajar como null');
+  assert.notEqual(datos.material, null, 'material no debe viajar como null');
+  assert.notEqual(datos.param_horizontal, null);
 });

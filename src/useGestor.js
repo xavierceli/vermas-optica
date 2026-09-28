@@ -341,8 +341,11 @@ if (sync) {
               .from('inventario_imagenes')
               .upload(nombreArchivo, archivoComprimido, { contentType: 'image/jpeg', upsert: true });
             if (errSubida) throw new Error(errSubida.message);
-            const { data } = supabase.storage.from('inventario_imagenes').getPublicUrl(nombreArchivo);
-            urlImagen = data.publicUrl;
+            // BUG: antes se guardaba getPublicUrl, pero el bucket es PRIVADO
+            // (migraciones 006 y 008), asi que esa URL responde 400 y la foto salia
+            // rota. En la base se guarda solo la RUTA del archivo; la URL firmada
+            // se genera en el momento de mostrarla (ver imagenesInventario.js).
+            urlImagen = nombreArchivo;
             subido = true;
           } catch (errImg) {
             console.warn('No se pudo subir la foto ahora, se guardara localmente:', errImg);
@@ -362,13 +365,39 @@ if (sync) {
         }
       }
 
+      // BUG: se enviaba el objeto completo con TODOS los campos y los vacios se
+      // convertian en null. Como el formulario oculta campos segun la categoria,
+      // al editar un armazon se mandaban vacios nombre_accesorio, caracteristica y
+      // material_nota, y al editar un accesorio se mandaban vacios codigo, tipo,
+      // material y medidas: el servidor los guardaba como NULL y se perdian.
+      // Aqui se arma SOLO con los campos que apply de la categoria actual.
+      const esArmazon = nuevoItemInv.categoria === 'Armazon';
       const datosAGuardar = {
-        ...nuevoItemInv,
-        imagen_url: urlImagen,
+        categoria: nuevoItemInv.categoria,
         precio: Number(safeNum(nuevoItemInv.precio).toFixed(2)),
         costo_compra: Number(safeNum(nuevoItemInv.costo_compra).toFixed(2)),
-        stock: nuevoItemInv.stock === '' || nuevoItemInv.stock === null ? 1 : Math.max(0, Math.round(safeNum(nuevoItemInv.stock)))
+        stock: nuevoItemInv.stock === '' || nuevoItemInv.stock === null ? 1 : Math.max(0, Math.round(safeNum(nuevoItemInv.stock))),
+        ...(esArmazon
+          ? {
+              codigo: nuevoItemInv.codigo,
+              tipo_armazon: nuevoItemInv.tipo_armazon,
+              material: nuevoItemInv.material,
+              descripcion: nuevoItemInv.descripcion,
+              param_horizontal: nuevoItemInv.param_horizontal,
+              param_puente: nuevoItemInv.param_puente,
+              param_vertical: nuevoItemInv.param_vertical,
+              param_diagonal: nuevoItemInv.param_diagonal,
+              param_frontal: nuevoItemInv.param_frontal,
+              param_varillas: nuevoItemInv.param_varillas
+            }
+          : {
+              nombre_accesorio: nuevoItemInv.nombre_accesorio,
+              caracteristica: nuevoItemInv.caracteristica
+            })
       };
+      // La foto solo se manda si hay una nueva: si no, se omite la clave para no
+      // borrar la que ya tiene en el servidor.
+      if (urlImagen !== null) datosAGuardar.imagen_url = urlImagen;
       Object.keys(datosAGuardar).forEach(key => { if (datosAGuardar[key] === '') datosAGuardar[key] = null; });
       await guardarInventarioLocal({ id: editandoInvId || undefined, ...datosAGuardar });
       setNuevoItemInv(invInicial);

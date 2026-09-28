@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { safeString, safeNum } from './utilidades';
+import { resolverUrlImagenInventario } from './imagenesInventario';
 import { imprimirEtiqueta } from './impresiones';
 
 export default function Inventario({
@@ -9,6 +10,26 @@ export default function Inventario({
 }) {
   const [busqueda, setBusqueda] = useState('');
   const [imagenAmpliada, setImagenAmpliada] = useState(null);
+  // URLs firmadas: el bucket es privado, asi que la ruta guardada NO se puede
+  // usar tal cual en un <img>. Se firma en el dispositivo y se cachea 1 hora.
+  const [urlsImagenes, setUrlsImagenes] = useState({});
+
+  useEffect(() => {
+    const conFoto = (inventario || []).filter(item => item && item.imagen_url);
+    if (conFoto.length === 0) return;
+    let vigente = true;
+    void Promise.all(conFoto.map(async item => {
+      if (urlsImagenes[item.id]) return null;
+      const url = await resolverUrlImagenInventario(item.imagen_url);
+      return url ? [item.id, url] : null;
+    })).then(resultados => {
+      if (!vigente) return;
+      const nuevos = {};
+      for (const par of resultados) if (par) nuevos[par[0]] = par[1];
+      if (Object.keys(nuevos).length > 0) setUrlsImagenes(prev => ({ ...prev, ...nuevos }));
+    });
+    return () => { vigente = false; };
+  }, [inventario, urlsImagenes]);
 
   const itemsFiltrados = (inventario || []).filter(item => {
     if (!item) return false;
