@@ -3,6 +3,7 @@ import { useGestor } from './useGestor'
 import { imprimirOrdenTrabajo, imprimirRecibo } from './impresiones'
 import AvisoActualizacion from './AvisoActualizacion'
 import PanelSincronizacion from './PanelSincronizacion'
+import ErrorBoundary from './ErrorBoundary.jsx'
 
 // Las vistas se cargan bajo demanda. Antes todas viajaban en el bundle inicial
 // (mas de 700 kB) aunque el usuario solo mirara el historial: el telefono
@@ -15,6 +16,19 @@ const Tarifario = lazy(() => import('./Tarifario'));
 const Dashboard = lazy(() => import('./Dashboard'));
 const PedidosLista = lazy(() => import('./PedidosLista'));
 const PedidosForm = lazy(() => import('./PedidosForm'));
+
+// Nombre legible de cada seccion: es lo que muestra el panel de error, para que
+// el usuario sepa QUE le fallo y pueda cambiar de seccion con los botones de
+// arriba en vez de quedarse mirando una pantalla en blanco.
+const ETIQUETAS = {
+  dashboard: 'Estadísticas',
+  precios: 'Tarifario',
+  inventario: 'Inventario',
+  historial: 'Historial',
+  nueva_medicion: 'Clínica',
+  pedidos_lista: 'Pedidos',
+  pedidos_form: 'Datos del pedido'
+};
 
 const Cargando = () => (
   <div className="flex items-center justify-center gap-3 py-20 text-gray-500">
@@ -258,6 +272,11 @@ function App() {
           </div>
         </div>
 
+        {/* El borde va FUERA del Suspense: si una vista falla al dibujarse, la
+            barra de navegacion, el aviso de sincronizacion y el boton de salir
+            siguen vivos, y el usuario puede cambiar de seccion. La prop `clave`
+            hace que al cambiar de vista se monte de nuevo y se olvide el error. */}
+        <ErrorBoundary etiqueta={ETIQUETAS[g.vistaActual] || g.vistaActual} clave={g.vistaActual}>
         <Suspense fallback={<Cargando />}>
 
         {g.vistaActual === 'dashboard' && <Dashboard stats={g.stats} historial={g.historial} inventario={g.inventario} />}
@@ -268,6 +287,7 @@ function App() {
         {g.vistaActual === 'pedidos_lista' && <PedidosLista crearVentaDirecta={g.crearVentaDirecta} busqueda={g.busqueda} setBusqueda={g.setBusqueda} pedidosFiltrados={g.pedidosFiltrados} imprimirRecibo={imprimirRecibo} imprimirOrdenTrabajo={imprimirOrdenTrabajo} cancelarPedido={g.cancelarPedido} abrirPedido={g.abrirPedido} refrescarDatos={g.obtenerDatos} />}
         {g.vistaActual === 'pedidos_form' && g.pedidoSeleccionado && <PedidosForm pedidoSeleccionado={g.pedidoSeleccionado} setPedidoSeleccionado={g.setPedidoSeleccionado} setVistaActual={g.setVistaActual} guardarPedido={g.guardarPedido} manejarCambioPedido={g.manejarCambioPedido} cambiarMedicionPedido={g.cambiarMedicionPedido} medidasPaciente={g.medidasPaciente} inventario={g.inventario} accesorioOriginalId={g.accesorioOriginalId} forzarRecalculo={g.forzarRecalculo} confirmarAccion={g.solicitarConfirmacion} />}
         </Suspense>
+        </ErrorBoundary>
 
       </main>
     </div>
