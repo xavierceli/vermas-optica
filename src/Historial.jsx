@@ -1,16 +1,10 @@
-import { useState, useEffect, Fragment } from 'react';
+import { useState, useEffect, useMemo, Fragment } from 'react';
 import { supabase } from './supabaseClient'; 
 import { safeString, safeNum, calcularEdad, calcularTiempoTranscurrido, generarDiagnosticos, buscarPacientesEnSupabase } from './utilidades';
 import { imprimirInforme, imprimirRecetaSimple } from './impresiones';
-import localforage from 'localforage';
 import { calcularTotal, calcularSaldo } from './reglas';
+import { obtenerSnapshotLocal } from './localRepository';
 import BotonComprobante from './BotonComprobante';
-
-// Conectamos a la misma bóveda local
-localforage.config({
-  name: 'VerMasOpticaDB',
-  storeName: 'datos_offline'
-});
 
 export default function Historial({
   historialReciente,
@@ -44,7 +38,13 @@ export default function Historial({
       setBuscando(true);
       // 1. Mostrar resultados locales inmediatamente
       try {
-        const histLocal = await localforage.getItem('backup_historial') || historialReciente || [];
+        // Se lee el snapshot de Dexie, la MISMA fuente que usa useGestor. Antes
+        // se consultaba el store legacy de localforage ('backup_historial'), que
+        // importLegacyCache ya migra y vacia: ademas de no servir, introducia una
+        // carrera con la migracion y hacia que la tabla cambiase sola mientras
+        // el optometra la miraba.
+        const snapshot = await obtenerSnapshotLocal();
+        const histLocal = snapshot?.historial || historialReciente || [];
         const busqueda = termino.toLowerCase();
         const filtrados = histLocal.filter(item => 
           safeString(item.nombre).toLowerCase().includes(busqueda) ||
@@ -73,22 +73,30 @@ export default function Historial({
   // Sin término válido mostramos el historial completo. Con término, solo
   // mostramos resultados que pertenezcan a esa misma búsqueda: así no hace
   // falta un setState para "limpiar" y se evita el render en cascada.
-  const terminoActual = busquedaTexto.trim();
-  const hayTermino = terminoActual.length >= 2;
-  const listaBruta = hayTermino
-    ? (resultadosBusqueda.termino === terminoActual ? resultadosBusqueda.datos : [])
-    : (historialReciente || []);
+  //
+  // Elegir la lista Y agrupar por cédula van en el MISMO useMemo a propósito.
+  // Si se separaran, la rama `[]` (cuando el término no coincide) crearía un
+  // array nuevo en cada render y el memo de agrupación se invalidaría siempre,
+  // dejando el cálculo igual de caro que antes pero con la ilusión de estar optimizado.
+  // Se declara aquí porque el JSX lo usa para mostrar el aviso "Buscando...".
+  const hayTermino = busquedaTexto.trim().length >= 2;
 
-  const pacientesAgrupados = [];
-  const cedulasVistas = new Set();
-  
-  listaBruta.forEach(item => {
-    if (!item || safeString(item.nombre) === 'CONSUMIDOR FINAL') return;
-    if (!cedulasVistas.has(item.cedula)) {
+  const pacientesAgrupados = useMemo(() => {
+    const terminoActual = busquedaTexto.trim();
+    const listaBruta = hayTermino
+      ? (resultadosBusqueda.termino === terminoActual ? resultadosBusqueda.datos : [])
+      : (historialReciente || []);
+
+    const agrupados = [];
+    const cedulasVistas = new Set();
+    for (const item of listaBruta) {
+      if (!item || safeString(item.nombre) === 'CONSUMIDOR FINAL') continue;
+      if (cedulasVistas.has(item.cedula)) continue;
       cedulasVistas.add(item.cedula);
-      pacientesAgrupados.push(item);
+      agrupados.push(item);
     }
-  });
+    return agrupados;
+  }, [busquedaTexto, resultadosBusqueda, historialReciente, hayTermino]);
 
   const filasVisibles = pacientesAgrupados.slice(0, filasPorMostrar);
 
@@ -100,7 +108,8 @@ export default function Historial({
     
     // FASE 1: Mostrar datos locales en 0.1 segundos (Evita que se congele)
     try {
-      const histLocal = await localforage.getItem('backup_historial') || historialReciente || [];
+      const snapshot = await obtenerSnapshotLocal();
+      const histLocal = snapshot?.historial || historialReciente || [];
       const registrosLocales = histLocal.filter(r => safeString(r.cedula) === safeString(paciente.cedula));
       registrosLocales.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
       
@@ -276,8 +285,12 @@ export default function Historial({
                   <tbody>
                     {registrosPaciente.filter(r => String(r.estado) !== 'Ninguno' || safeNum(r.venta) > 0 || safeString(r.codigo_armazon)).length > 0 ? (
                       registrosPaciente.filter(r => String(r.estado) !== 'Ninguno' || safeNum(r.venta) > 0 || safeString(r.codigo_armazon)).map(reg => {
-                        const vFinal = safeNum(reg.venta) - (safeNum(reg.venta) * safeNum(reg.descuento) / 100);
-                        const saldo = vFinal - safeNum(reg.abono);
+                        {/* El total sale de calcularTotal() (reglas.js) y no de una
+                            resta con float: con float, 250.50 @ 13% daba 217.93 y
+                            el servidor 217.94. Este es el mismo centavo que
+                            imprime el recibo, por eso ambos coinciden. */}
+                        const vFinal = calcularTotal(reg.venta, reg.descuento);
+                        const saldo = calcularSaldo(reg.venta, reg.descuento, reg.abono);
                         return (
                           <tr key={'venta-'+reg.id} className="border-b hover:bg-gray-50">
                             <td className="p-2 border-r font-bold text-gray-600">{safeString(reg.fecha)}</td>

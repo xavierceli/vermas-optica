@@ -14,6 +14,9 @@ const initialStatus = {
   online: typeof navigator === 'undefined' ? true : navigator.onLine,
   pending: 0,
   conflicts: 0,
+  // Operaciones que el servidor rechazo y que ya no se reintentan. No son
+  // "pendientes": se muestran aparte para que el usuario sepa que se perdieron.
+  descartadas: 0,
   lastSync: null,
   lastError: null
 };
@@ -26,14 +29,34 @@ let sesionAusente = false;
 // `anon`: el servidor responde 403 a las tablas y "Bucket not found" a Storage,
 // sin avisar. Antes eso solo se veia en la consola; aqui lo detectamos para
 // poder decirlo en la interfaz.
+//
+// Solo se aceptan los codigos REALES de sesion/permisos. Antes bastaba con que
+// el mensaje contuviera la palabra "token" y cualquier error de red con esa
+// palabra (un timeout, un 502 de la CDN) se leia como "tu sesion expiro", que
+// es una orientacion falsa para el usuario.
 const esFalloDeSesion = error => {
   if (!error) return false;
   const codigo = String(error.code || '');
-  const mensaje = String(error.message || '').toLowerCase();
-  return error.status === 401 || error.status === 403 || codigo === '42501'
-    || codigo.startsWith('PGRST30') || mensaje.includes('jwt')
-    || mensaje.includes('token') || mensaje.includes('permission denied');
+  return error.status === 401
+    || error.status === 403
+    || codigo === '42501'            // insufficient_privilege
+    || codigo.startsWith('PGRST301'); // JWT ausente, caducado o invalido
 };
+
+// supabase-js NO aplica timeout por defecto: en una red movil degenerada (el caso
+// real de uso de esta app) la peticion se queda colgada, el candado `running`
+// nunca se libera y la app deja de sincronizar en silencio para siempre.
+// Este tope convierte un cuelgue invisible en un reintento honesto.
+const TIEMPO_LIMITE_MS = 10000;
+
+const conTimeout = (promesa, ms, etiqueta) => Promise.race([
+  promesa,
+  new Promise((_, rechazar) => {
+    const id = setTimeout(() => rechazar(new Error(`Tiempo agotado (${ms / 1000}s) en ${etiqueta}`)), ms);
+    // No dejar el temporizador vivo si la peticion responde antes.
+    promesa.then(() => clearTimeout(id), () => clearTimeout(id));
+  })
+]);
 
 /**
  * Marca que no hay sesion del servidor. Mientras sea true, el motor se
@@ -56,13 +79,36 @@ const emit = () => {
   listeners.forEach(listener => listener(status));
 };
 
+// Una operacion 'descartada' ya no esta pendiente de nada: no se reintentara y no
+// debe contar como tal. Antes seguia dentro del conteo para siempre, que es
+// justo lo que hacia que la app mostrara "21 pendientes" sin poder reducirlos.
+// La outbox solo guarda operaciones vivas: lo que el servidor ya aplico se
+// borra en applyResults. Las 'descartada' si se acumulan, y una tabla que crece
+// sin limite hace que cada ciclo se lea entera de mas. Se conservan 7 dias para
+// poder diagnosticar, y luego se purgan.
+const DIAS_RETENcion_DESCARTADAS = 7;
+
+const purgarDescartadas = async () => {
+  const limite = Date.now() - DIAS_RETENcion_DESCARTADAS * 24 * 60 * 60 * 1000;
+  const viejas = await localDb.outbox.where('status').equals('descartada').toArray();
+  const aBorrar = viejas.filter(op => new Date(op.updatedAt || op.createdAt).getTime() < limite);
+  if (aBorrar.length === 0) return 0;
+  await localDb.outbox.bulkDelete(aBorrar.map(op => op.id));
+  return aBorrar.length;
+};
+
 const refreshCounts = async () => {
   const operations = await localDb.outbox.toArray();
   status.pending = operations.filter(row => row.status === 'pending' || row.status === 'failed').length;
   status.conflicts = operations.filter(row => row.status === 'conflict').length;
+  // Los fallos se reconstruyen desde la cola en cada conteo: asi sobreviven a un
+  // reinicio de la app y el usuario ve el motivo real de cada rechazo, no solo el
+  // del ultimo ciclo.
   status.fallos = operations
     .filter(row => row.status === 'failed' || row.status === 'conflict')
     .map(row => ({ tipo: row.type, motivo: row.lastError || 'Sin detalle del servidor', estado: row.status }));
+  // Las descartadas ya no son pendientes: se cuentan aparte para poder avisar.
+  status.descartadas = operations.filter(row => row.status === 'descartada').length;
 };
 
 const subscribe = listener => {
@@ -95,7 +141,37 @@ const reconciliarStockVenta = async serverResult => {
     if (local) await localDb.inventory.put({ ...local, stock: Number(row.stock), syncStatus: 'synced', updatedAt: nowIso() });
   }
 };
+const MAX_INTENTOS = 5;
+const TIEMPO_ESPERA_BASE_MS = 15000;
+
+// Una operacion rechazada NO se puede reintentar para siempre: si la causa es
+// permanente (datos invalidos, un producto que ya no existe, un estado que el
+// servidor no acepta), cada 30 s se volveria a enviar la misma fila y a fallar
+// igual, indefinidamente. Eso es lo que hacia que la cuenta de "pendientes"
+// subiera y no bajara nunca. Tras MAX_INTENTOS la operacion pasa a 'descartada':
+// sale del conteo, se conserva para diagnostico y se le dice al usuario.
+const finalizarOperacion = async (operation, estadoFinal, motivo) => {
+  await markOperation(operation, estadoFinal, motivo);
+  console.warn(`[sync] "${operation.type}" (${operation.entityId}) queda en "${estadoFinal}": ${motivo}`);
+};
+
+const aplicarBackoff = async operation => {
+  const intentos = operation.attempts || 0;
+  if (intentos <= 0) return true;
+  // Backoff exponencial con tope: 15 s, 30 s, 60 s, 120 s, 240 s.
+  const espera = Math.min(TIEMPO_ESPERA_BASE_MS * (2 ** (intentos - 1)), 5 * 60 * 1000);
+  const transcurrido = Date.now() - new Date(operation.updatedAt || operation.createdAt).getTime();
+  if (transcurrido < espera) {
+    return false; // todavia no toca reintentarla
+  }
+  return true;
+};
+
 const applyResults = async results => {
+  // El servidor puede rechazar una operacion concreta sin fallar el lote. Antes
+  // eso se guardaba en la fila del outbox y no se mostraba nunca: la app se
+  // quedaba con "Pendientes: 5" reintentando en silencio, sin decir por que.
+  const fallos = [];
   for (const result of results || []) {
     const operation = await localDb.outbox.get(result.id);
     if (!operation) continue;
@@ -125,11 +201,33 @@ const applyResults = async results => {
       }
       await localDb.outbox.delete(operation.id);
     } else if (result.status === 'conflict') {
-      await markOperation(operation, 'conflict', result.error || 'Conflicto de datos');
+      // Un conflicto no se resuelve solo reintentando: el servidor tiene una
+      // version distinta y mandarla otra vez dara el mismo conflicto. Se marca
+      // para revision humana y NO se reintenta nunca mas por su cuenta.
+      await finalizarOperacion(operation, 'conflict', result.error || 'Conflicto de datos');
+      fallos.push({ tipo: operation.type, motivo: result.error || 'Conflicto de datos', estado: 'conflict' });
     } else {
-      await markOperation(operation, 'failed', result.error || 'La operación fue rechazada por el servidor');
+      const motivo = result.error || 'La operación fue rechazada por el servidor';
+      const intentos = (operation.attempts || 0) + 1;
+      if (intentos >= MAX_INTENTOS) {
+        await finalizarOperacion(operation, 'descartada',
+          `${motivo} (se descartó tras ${intentos} intentos)`);
+        fallos.push({
+          tipo: operation.type,
+          motivo: `${motivo}. Descartada tras ${intentos} intentos.`,
+          estado: 'descartada'
+        });
+      } else {
+        await markOperation(operation, 'failed', motivo);
+        fallos.push({ tipo: operation.type, motivo, estado: 'failed', intentos });
+      }
     }
   }
+  status.fallos = fallos;
+  if (fallos.length > 0) {
+    console.warn('[sync] el servidor rechazo operaciones:', fallos);
+  }
+  return fallos;
 };
 
 // Los adjuntos NO viajan por aplicar_operaciones: ese RPC solo entiende
@@ -149,9 +247,13 @@ const subirAdjuntosPendientes = async () => {
       continue;
     }
     try {
-      const { error } = await supabase.storage
-        .from(adjunto.bucket)
-        .upload(adjunto.ruta, adjunto.blob, { contentType: adjunto.mime, upsert: true });
+      const { error } = await conTimeout(
+        supabase.storage
+          .from(adjunto.bucket)
+          .upload(adjunto.ruta, adjunto.blob, { contentType: adjunto.mime, upsert: true }),
+        TIEMPO_LIMITE_MS,
+        'subir adjunto'
+      );
       if (error) throw new Error(error.message);
       await localDb.attachments.put({ ...adjunto, status: 'uploaded', lastError: null, updatedAt: nowIso() });
       await localDb.outbox.delete(operacion.id);
@@ -192,13 +294,15 @@ const pullServerCache = async () => {
   if (!sessionData.session) return null;
 
   // Catalogo, metricas y deudas van en paralelo; el historial va aparte porque
-  // son varias peticiones encadenadas y no debe bloquear al resto.
-  const results = await Promise.allSettled([
+  // son varias peticiones encadenadas y no debe bloquear al resto. El tope cubre
+  // el conjunto: si el servidor no responde, se abandona el pull y se conserva lo
+  // que ya habia en el dispositivo, en vez de dejar la app colgada.
+  const results = await conTimeout(Promise.allSettled([
     supabase.from('inventario').select('*').order('id', { ascending: false }),
     supabase.from('lista_precios').select('*').order('id', { ascending: false }),
     supabase.rpc('deudas_pacientes'),
     supabase.rpc('stats_negocio')
-  ]);
+  ]), TIEMPO_LIMITE_MS, 'pull de catalogo');
   const [inventoryResult, pricesResult, debtsResult, statsResult] = results.map(result =>
     result.status === 'fulfilled' ? result.value : { data: null, error: result.reason }
   );
@@ -232,11 +336,19 @@ export const sincronizarAhora = async ({ pull = true } = {}) => {
 running = true;
   status.phase = 'syncing';
   status.lastError = null;
+  // Cada ciclo arranca limpio: sin esto, un rechazo ya resuelto dejaba la barra
+  // roja de App.jsx pegada para siempre, porque status.fallos solo se reescribia
+  // dentro de applyResults y, con la cola vacia, esa funcion ni se llamaba.
+  status.fallos = [];
   status.sesionInvalida = false;
   emit();
 
   try {
     await requestPersistentStorage();
+    // La purga va primero: si no, la cola se lee entera incluyendo filas que
+    // van a desaparecer de todas formas.
+    const purgadas = await purgarDescartadas();
+    if (purgadas > 0) console.log(`[sync] purgadas ${purgadas} operaciones descartadas antiguas`);
     await refreshCounts();
     if (status.online === false) {
       status.phase = 'offline';
@@ -249,15 +361,26 @@ running = true;
     await refreshCounts();
 
 
-    const operations = (await localDb.outbox.orderBy('createdAt').toArray())
+    // Solo se reenvian las que siguen siendo viables:
+    //  - 'pending'  : nunca se intentó, o esperando su turno.
+    //  - 'failed'   : reintentables, respetando el backoff.
+    //  - NO 'conflict'   : el servidor tiene otra versión; reenviarlo da igual.
+    //  - NO 'descartada' : ya se rindió tras MAX_INTENTOS.
+    const candidatas = (await localDb.outbox.orderBy('createdAt').toArray())
       .filter(row => (row.status === 'pending' || row.status === 'failed') && row.type !== 'SUBIR_ADJUNTO');
+    const operations = [];
+    for (const row of candidatas) {
+      if (await aplicarBackoff(row)) operations.push(row);
+    }
 
     for (let index = 0; index < operations.length; index += 20) {
       const batch = operations.slice(index, index + 20);
       if (batch.length === 0) continue;
-      const { data, error } = await supabase.rpc('aplicar_operaciones', {
-        p_operaciones: batch
-      });
+      const { data, error } = await conTimeout(
+        supabase.rpc('aplicar_operaciones', { p_operaciones: batch }),
+        TIEMPO_LIMITE_MS,
+        'aplicar_operaciones'
+      );
       if (error) throw error;
       await applyResults(data?.results || []);
       await refreshCounts();

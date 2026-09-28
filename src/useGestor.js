@@ -1,11 +1,12 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { supabase } from './supabaseClient'
 import { safeString, safeNum, comprimirImagen, calcularEdad } from './utilidades'
-import { localDb, createUuid as generarId, resetLocalDatabase } from './localDb'
+import { localDb, createUuid as generarId } from './localDb'
 import { archivarConsultaLocal, guardarConsultaLocal, guardarInventarioLocal, guardarPrecioLocal, guardarVentaLocal, obtenerSnapshotLocal, importLegacyCache, anularVentaLocal, eliminarInventarioLocal, eliminarPrecioLocal, guardarAdjuntoLocal, anularVentaConReembolso } from './localRepository'
 import { iniciarMotorSync, suscribirSync, sincronizarAhora, fijarSesionAusente } from './syncEngine'
 import { enrolarDispositivo, leerEnrolamiento, intentarDesbloqueo, revocarEnrolamiento, pinValido } from './seguridad'
 import { aplicarAvisoQueratometria, calcularTotal } from './reglas'
+import { limpiarHtml } from './escape'
 
 export function useGestor() {
   const [estaAutenticado, setEstaAutenticado] = useState(false);
@@ -125,7 +126,16 @@ export function useGestor() {
   };
 
   const obtenerDatos = async ({ sync = true } = {}) => {
-    await importLegacyCache();
+    // La migracion del cache legacy es una tarea OPCIONAL: sirve para no perder
+    // datos de una version vieja de la app, pero si falla no puede impedir que
+    // la app cargue. Antes su error se propagaba, abortaba obtenerSnapshotLocal
+    // y dejaba la pantalla vacia, y ademas se reintentaba en bucle porque la
+    // bandera de "ya migre" solo se escribia al final del exito.
+    try {
+      await importLegacyCache();
+    } catch (error) {
+      console.warn('[datos] no se pudo migrar el cache antiguo; se sigue con los datos locales:', error);
+    }
     const snapshot = await obtenerSnapshotLocal();
     aplicarSnapshotLocal(snapshot);
     const remoteStats = (await localDb.meta.get('remoteStats'))?.value || null;
@@ -158,8 +168,11 @@ if (sync) {
       pin,
       meta: localDb.meta,
       alBloquear: async () => {
-        await resetLocalDatabase();
-        mostrarToast('Demasiados intentos. Los datos de este dispositivo se borraron por seguridad.', 'error');
+        // Antes aqui se llamaba a resetLocalDatabase(), y el quinto PIN
+        // equivocado destruia TODA la informacion pendiente de subir. Bloquear
+        // el acceso ya frena la fuerza bruta; perder la semana de trabajo del
+        // optometra no anadeia nada a la seguridad.
+        mostrarToast('Demasiados intentos. Espera 15 minutos antes de volver a intentar.', 'error');
       }
     });
     if (resultado.ok) {
@@ -234,7 +247,7 @@ if (sync) {
   const manejarCambio = (e) => {
     let { name, value, type, tagName } = e.target;
     if (name === 'correo') value = safeString(value).toLowerCase();
-    else if (type === 'text' || tagName === 'TEXTAREA') value = safeString(value).toUpperCase();
+    else if (type === 'text' || tagName === 'TEXTAREA') value = limpiarHtml(value).toUpperCase();
     
     let nuevoPaciente = { ...paciente, [name]: value };
 
@@ -264,7 +277,7 @@ if (sync) {
 
   const manejarCambioPrecio = (e) => {
     let { name, value, type, tagName } = e.target;
-    if (type === 'text' || tagName === 'TEXTAREA') value = safeString(value).toUpperCase();
+    if (type === 'text' || tagName === 'TEXTAREA') value = limpiarHtml(value).toUpperCase();
     setNuevoPrecio({ ...nuevoPrecio, [name]: value });
   };
 
@@ -303,7 +316,7 @@ if (sync) {
 
   const manejarCambioInv = (e) => {
     let { name, value, type, tagName } = e.target;
-    if (type === 'text' || tagName === 'TEXTAREA') value = safeString(value).toUpperCase();
+    if (type === 'text' || tagName === 'TEXTAREA') value = limpiarHtml(value).toUpperCase();
     setNuevoItemInv({ ...nuevoItemInv, [name]: value });
   };
   
@@ -534,14 +547,16 @@ if (sync) {
     }
 
     // MATERIALES Y TRATAMIENTOS: leídos de TU TARIFARIO (tipo_lente='CALCULO', rango='BASE')
-    // Si no existe la fila, usa el precio histórico de respaldo para no quedarte en $0
+    // Si no existe la fila, NO se inventa un precio en el cliente: se cobra 0 y se
+    // avisa. Antes habia una tabla de respaldo fija en este archivo, que se
+    // desincronizaba en silencio del tarifario real cada vez que alguien cambiaba
+    // un precio, y nadie se enteraba hasta que la caja no cuadraba.
     const bases = (listaPrecios || []).filter(p => safeString(p.tipo_lente) === 'CALCULO' && safeString(p.rango_medida) === 'BASE');
     const precioDe = (material) => {
       const fila = bases.find(b => safeString(b.material).trim().toUpperCase() === String(material).trim().toUpperCase());
       if (fila) return safeNum(fila.precio_sugerido);
-      const respaldo = { 'PLÁSTICO': 20, 'POLICARBONATO': 30, 'REDUCIDO': 50, 'HIPERREDUCIDO': 70, 'OTROS': 0,
-        'AR VERDE': 20, 'AR AZUL': 20, 'FILTRO AZUL': 35, 'TINTURADO': 20, 'FOTOCROMÁTICO': 55, 'TRANSITION': 100 };
-      return respaldo[String(material).trim().toUpperCase()] || 0;
+      console.warn(`[precio] "${material}" no tiene fila BASE en el tarifario; se cobrara $0. Agregala en la pantalla Tarifario.`);
+      return 0;
     };
 
     if (pedidoActual.material_lente && pedidoActual.material_lente !== 'Otros') {
@@ -567,7 +582,7 @@ if (sync) {
   const manejarCambioPedido = (e) => {
     let { name, value, type, checked, tagName } = e.target;
     let val = type === 'checkbox' ? (checked ? 'SI' : 'NO') : value;
-    if (type === 'text' || tagName === 'TEXTAREA') val = safeString(val).toUpperCase();
+    if (type === 'text' || tagName === 'TEXTAREA') val = limpiarHtml(val).toUpperCase();
     
     if (name === 'venta') { 
       setPedidoSeleccionado(prev => ({ ...prev, venta: val })); 
@@ -685,7 +700,9 @@ if (sync) {
           ? await anularVentaConReembolso({ saleId: item.pedido_id, method: 'Efectivo' })
           : await anularVentaLocal(item.pedido_id);
         await obtenerDatos({ sync: false });
-        ({ pull: true })
+        // Sin esta llamada la anulacion se queda solo en este dispositivo: el
+        // servidor nunca se entera y la venta sigue viva alli.
+        const estado = await sincronizarAhora({ pull: true });
         const falloServidor = estado?.phase === 'error' ? estado.lastError : null;
         if (falloServidor) {
           mostrarToast('Hecho en este dispositivo, pero el servidor lo rechazó: ' + falloServidor, 'error');
@@ -714,22 +731,35 @@ if (sync) {
     window.open(`https://wa.me/${telf}?text=${encodeURIComponent(msj)}`, '_blank');
   };
 
+  // Los dos filtros siguientes recorren listas enteras en cada render del hook.
+  // useGestor se vuelve a renderizar con cualquier pulsación de tecla de la
+  // clínica, así que aquí se filtraba miles de filas para un resultado idéntico.
   const queryGlobal = safeString(busqueda).toLowerCase();
-  const pedidosFiltrados = (historial || []).filter(item => {
+  const pedidosFiltrados = useMemo(() => (historial || []).filter(item => {
     if (!item) return false;
     const matchSearch = safeString(item.nombre).toLowerCase().includes(queryGlobal) || safeString(item.cedula).includes(queryGlobal);
     const tienePedido = safeString(item.estado) !== 'Ninguno' || safeNum(item.venta) > 0;
     return queryGlobal ? matchSearch : tienePedido;
-  });
+  }), [historial, queryGlobal]);
 
-  const listaPreciosFiltrada = (listaPrecios || []).filter(item => {
-    if (!item) return false;
+  const listaPreciosFiltrada = useMemo(() => {
     const q = safeString(busquedaPrecio).toLowerCase();
-    return safeString(item.tipo_lente).toLowerCase().includes(q) || safeString(item.material).toLowerCase().includes(q) || safeString(item.rango_medida).toLowerCase().includes(q);
-  });
+    return (listaPrecios || []).filter(item => {
+      if (!item) return false;
+      return safeString(item.tipo_lente).toLowerCase().includes(q)
+        || safeString(item.material).toLowerCase().includes(q)
+        || safeString(item.rango_medida).toLowerCase().includes(q);
+    });
+  }, [listaPrecios, busquedaPrecio]);
 
   // LOTE 6: stats con doble fuente — servidor (exacto sobre TODA la base) o local (plan B sin internet)
-  const stats = (() => {
+  // Envuelto en useMemo: antes era una IIFE que recorria el historial entero en
+  // CADA render, con miles de filas y escribiendose cualquier tecla de la
+  // clinica. Ahora solo recalcula si cambian los datos.
+  // Los totales salen de calcularTotal(), NO de una resta con float: reglas.js
+  // documenta que 250.50 @ 13% da 217.93 con float y 217.94 en PostgreSQL, y
+  // ese centavo de diferencia hacia que el dashboard contradijera al recibo.
+  const stats = useMemo(() => {
     if (statsRemotos && !modoSinConexion) {
       return {
         ventasMes: Number(statsRemotos.ventas_mes || 0),
@@ -746,6 +776,7 @@ if (sync) {
       const cedulasUnicas = new Set();
       (historial || []).forEach(p => {
         if (!p) return;
+        // Una venta anulada no cuenta en las estadisticas: el dinero se devolvio.
         if (safeString(p.estado) === 'Anulado') return;
         const vFinal = calcularTotal(p.venta, p.descuento);
         const fechaVentas = (safeNum(p.venta) > 0 && p.fecha_venta) ? p.fecha_venta : p.fecha;
@@ -755,7 +786,7 @@ if (sync) {
                        safeNum(p.costo_accesorio_int) + safeNum(p.costo_tratamientos_int) + 
                        safeNum(p.costo_varios_int));
         }
-        const abonoRedondeado = Number(safeNum(p.abono).toFixed(2));
+        const abonoRedondeado = safeNum(p.abono);
         if (vFinal - abonoRedondeado > 0) abonosPendientes += (vFinal - abonoRedondeado);
         if (safeString(p.nombre) !== 'CONSUMIDOR FINAL' && safeString(p.cedula) !== '' && safeString(p.cedula) !== '9999999999') {
           cedulasUnicas.add(safeString(p.cedula));
@@ -772,7 +803,7 @@ if (sync) {
     } catch {
       return { ventasMes: 0, abonosPendientes: 0, gastosMes: 0, utilidadNeta: 0, totalPacientes: 0, total: 0 }; 
     }
-  })();
+  }, [historial, statsRemotos, modoSinConexion]);
 
   const edadActual = calcularEdad(paciente?.fecha_nacimiento);
   const claseInputRef = (campo, clasesExtra) => {

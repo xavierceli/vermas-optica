@@ -43,7 +43,13 @@ export default function Login({ dispositivo, entrarSinConexion }) {
     setPinLocal('');
     if (resultado?.ok) return;
     if (resultado?.bloqueado) {
-      setMensaje({ texto: 'Demasiados intentos. Por seguridad se borraron los datos de este dispositivo.', tipo: 'error' });
+      const minutos = resultado?.minutos;
+      setMensaje({
+        texto: minutos
+          ? `Demasiados intentos. Podras volver a intentarlo en ${minutos} minuto(s). Tus datos siguen guardados.`
+          : 'Demasiados intentos. Espera unos minutos antes de volver a intentar.',
+        tipo: 'error'
+      });
       return;
     }
     if (resultado?.restantes !== undefined) {
@@ -185,8 +191,9 @@ export default function Login({ dispositivo, entrarSinConexion }) {
         {modoNuevaClave ? (
           <form onSubmit={guardarNuevaClave} className="space-y-5">
             <div>
-              <label className="block text-sm font-bold text-gray-700 mb-1">Nueva Contraseña</label>
+              <label htmlFor="nueva-clave" className="block text-sm font-bold text-gray-700 mb-1">Nueva Contraseña</label>
               <input 
+                id="nueva-clave"
                 type="password" 
                 value={nuevaClave}
                 onChange={(e) => setNuevaClave(e.target.value)}
@@ -196,8 +203,9 @@ export default function Login({ dispositivo, entrarSinConexion }) {
               />
             </div>
             <div>
-              <label className="block text-sm font-bold text-gray-700 mb-1">Confirmar Contraseña</label>
+              <label htmlFor="confirmar-clave" className="block text-sm font-bold text-gray-700 mb-1">Confirmar Contraseña</label>
               <input 
+                id="confirmar-clave"
                 type="password" 
                 value={confirmarClave}
                 onChange={(e) => setConfirmarClave(e.target.value)}
@@ -217,8 +225,9 @@ export default function Login({ dispositivo, entrarSinConexion }) {
         ) : (
           <form onSubmit={modoRecuperar ? recuperarContrasena : manejarLogin} className="space-y-5">
             <div>
-              <label className="block text-sm font-bold text-gray-700 mb-1">Correo Electrónico</label>
+              <label htmlFor="login-email" className="block text-sm font-bold text-gray-700 mb-1">Correo Electrónico</label>
               <input 
+                id="login-email"
                 type="email" 
                 value={email}
                 onChange={(e) => setEmail(e.target.value.toLowerCase())}
@@ -231,7 +240,7 @@ export default function Login({ dispositivo, entrarSinConexion }) {
             {!modoRecuperar && (
               <div>
                 <div className="flex justify-between items-center mb-1">
-                  <label className="block text-sm font-bold text-gray-700">Contraseña</label>
+                  <label htmlFor="login-password" className="block text-sm font-bold text-gray-700">Contraseña</label>
                   <button 
                     type="button" 
                     onClick={() => { setModoRecuperar(true); setMensaje({texto:'', tipo:''}); }}
@@ -241,6 +250,7 @@ export default function Login({ dispositivo, entrarSinConexion }) {
                   </button>
                 </div>
                 <input 
+                  id="login-password"
                   type="password" 
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
@@ -283,6 +293,8 @@ export default function Login({ dispositivo, entrarSinConexion }) {
             </p>
             <form onSubmit={manejarDesbloqueoLocal} className="space-y-2">
               <input
+                id="pin-local"
+                aria-label="PIN de acceso sin conexion, de 4 a 8 digitos"
                 type={verPin ? 'text' : 'password'}
                 inputMode="numeric"
                 autoComplete="off"

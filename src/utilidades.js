@@ -1,4 +1,5 @@
 import { supabase } from './supabaseClient';
+import { neutralizarFormula } from './escape';
 
 export const safeString = (val) => (val === null || val === undefined) ? '' : String(val);
 
@@ -97,31 +98,51 @@ export const generarDiagnosticos = (item) => {
   } catch { return []; }
 };
 
+// neutralizarFormula vive en escape.js: este archivo importa supabaseClient y por
+// tanto no se puede probar con `node --test`. La sanitizacion de salidas dangerousas
+// (HTML, CSV, JavaScript) esta reunida alli, que si es un modulo puro.
+
 export const descargarCSV = (datos, nombreArchivo) => {
   if (!datos || datos.length === 0) return alert("No hay datos para exportar.");
   const cabeceras = Object.keys(datos[0]);
   const filas = datos.map(fila => {
     return cabeceras.map(cab => {
-      let valor = fila[cab] === null || fila[cab] === undefined ? '' : String(fila[cab]);
-      valor = valor.replace(/"/g, '""'); 
+      const valor = neutralizarFormula(fila[cab]).replace(/"/g, '""');
       return `"${valor}"`;
     }).join(';');
   });
-  const contenido = [cabeceras.join(';'), ...filas].join('\n');
+  // CRLF: Excel en Windows necesita \r\n para cortar linea correctamente.
+  const contenido = [cabeceras.join(';'), ...filas].join('\r\n');
   const blob = new Blob(['\uFEFF' + contenido], { type: 'text/csv;charset=utf-8;' });
   const link = document.createElement("a");
-  link.href = URL.createObjectURL(blob);
+  const url = URL.createObjectURL(blob);
+  link.href = url;
   link.download = `${nombreArchivo}.csv`;
   link.style.display = 'none';
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
+  // Sin esto, cada exportacion dejaba su blob retenido en memoria.
+  URL.revokeObjectURL(url);
 };
 
 export const buscarPacientesEnSupabase = async (textoBusqueda) => {
   try {
-    if (!textoBusqueda || textoBusqueda.trim().length < 2) return [];
-      const query = textoBusqueda.trim().toUpperCase().replace(/[(),]/g, ' ').replace(/\s+/g, ' ');
+    const crudo = String(textoBusqueda || '').trim();
+    if (crudo.length < 2) return [];
+
+    // El filtro se construye por concatenacion porque PostgREST no acepta
+    // parametros en .or(). Se neutralizan los delimitadores de su DSL (parentesis
+    // y coma) para que nadie anada condiciones, y ahora tambien los comodines
+    // % y *: antes, escribir solo "%" devolvia los primeros 20 pacientes de
+    // cualquier cedula, es decir, el buscador se esquivaba a si mismo.
+    const query = crudo
+      .toUpperCase()
+      .replace(/[(),%*\\]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (query.length < 2) return [];
+
     const esNumero = /^\d+$/.test(query);
     const filtro = esNumero 
       ? `cedula.ilike.${query}%,nombre.ilike.%${query}%` 

@@ -63,7 +63,7 @@ export default function Inventario({
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
           <div>
             <label className="block text-xs font-bold text-gray-700 mb-1">Categoría</label>
-            <select name="categoria" value={safeString(nuevoItemInv.categoria)} onChange={manejarCambioInv} className="w-full p-2 border rounded outline-none text-sm font-bold text-purple-800">
+            <select name="categoria" aria-label="Categoria del producto" value={safeString(nuevoItemInv.categoria)} onChange={manejarCambioInv} className="w-full p-2 border rounded outline-none text-sm font-bold text-purple-800">
               <option value="Armazon">Armazón</option>
               <option value="Accesorio">Accesorio / Varios</option>
             </select>
@@ -71,47 +71,47 @@ export default function Inventario({
           
           {nuevoItemInv.categoria === 'Armazon' ? (
             <>
-              <div><label className="block text-xs font-bold text-gray-700 mb-1">Código / Referencia</label><input name="codigo" value={safeString(nuevoItemInv.codigo)} onChange={manejarCambioInv} className="w-full p-2 border rounded outline-none text-sm uppercase font-bold" placeholder="Ej: MIRAFLEX 4017" /></div>
+              <div><label className="block text-xs font-bold text-gray-700 mb-1">Código / Referencia</label><input name="codigo" aria-label="Codigo del producto" value={safeString(nuevoItemInv.codigo)} onChange={manejarCambioInv} className="w-full p-2 border rounded outline-none text-sm uppercase font-bold" placeholder="Ej: MIRAFLEX 4017" /></div>
               <div>
                 <label className="block text-xs font-bold text-gray-700 mb-1">Tipo de Armazón</label>
-                <select name="tipo_armazon" value={safeString(nuevoItemInv.tipo_armazon)} onChange={manejarCambioInv} className="w-full p-2 border rounded outline-none text-sm">
+                <select name="tipo_armazon" aria-label="Tipo de armazon" value={safeString(nuevoItemInv.tipo_armazon)} onChange={manejarCambioInv} className="w-full p-2 border rounded outline-none text-sm">
                   <option value="">Seleccionar...</option><option value="Completo">Completo</option><option value="Semi al Aire">Semi al Aire</option><option value="Al Aire">Al Aire</option>
                 </select>
               </div>
-              <div><label className="block text-xs font-bold text-gray-700 mb-1">Material</label><input name="material" value={safeString(nuevoItemInv.material)} onChange={manejarCambioInv} className="w-full p-2 border rounded outline-none text-sm" placeholder="Ej: TR90, Acetato..." /></div>
+              <div><label className="block text-xs font-bold text-gray-700 mb-1">Material</label><input name="material" aria-label="Material del armazon" value={safeString(nuevoItemInv.material)} onChange={manejarCambioInv} className="w-full p-2 border rounded outline-none text-sm" placeholder="Ej: TR90, Acetato..." /></div>
               
               <div className="md:col-span-2 bg-white p-3 rounded border flex flex-col mt-2">
                 <span className="text-xs font-bold text-gray-500 mb-2">Parámetros y Medidas (mm):</span>
                 <div className="flex flex-wrap gap-2">
-                  <input name="param_horizontal" value={safeString(nuevoItemInv.param_horizontal)} onChange={manejarCambioInv} className="flex-1 min-w-[50px] p-1.5 border rounded text-xs text-center" placeholder="Horiz." title="Lente Horizontal"/>
-                  <input name="param_puente" value={safeString(nuevoItemInv.param_puente)} onChange={manejarCambioInv} className="flex-1 min-w-[50px] p-1.5 border rounded text-xs text-center" placeholder="Puente" title="Puente"/>
-                  <input name="param_vertical" value={safeString(nuevoItemInv.param_vertical)} onChange={manejarCambioInv} className="flex-1 min-w-[50px] p-1.5 border rounded text-xs text-center" placeholder="Verti." title="Lente Vertical"/>
-                  <input name="param_diagonal" value={safeString(nuevoItemInv.param_diagonal)} onChange={manejarCambioInv} className="flex-1 min-w-[50px] p-1.5 border rounded text-xs text-center" placeholder="D.May" title="Diámetro Mayor"/>
-                  <input name="param_frontal" value={safeString(nuevoItemInv.param_frontal)} onChange={manejarCambioInv} className="flex-1 min-w-[60px] p-1.5 border rounded text-xs text-center bg-blue-50 focus:bg-blue-100" placeholder="Frente" title="Ancho Total Frontal"/>
-                  <input name="param_varillas" value={safeString(nuevoItemInv.param_varillas)} onChange={manejarCambioInv} className="flex-1 min-w-[60px] p-1.5 border rounded text-xs text-center bg-blue-50 focus:bg-blue-100" placeholder="Varillas" title="Largo de Varillas (Patitas)"/>
+                  <input name="param_horizontal" aria-label="Parametro horizontal" value={safeString(nuevoItemInv.param_horizontal)} onChange={manejarCambioInv} className="flex-1 min-w-[50px] p-1.5 border rounded text-xs text-center" placeholder="Horiz." title="Lente Horizontal"/>
+                  <input name="param_puente" aria-label="Puente" value={safeString(nuevoItemInv.param_puente)} onChange={manejarCambioInv} className="flex-1 min-w-[50px] p-1.5 border rounded text-xs text-center" placeholder="Puente" title="Puente"/>
+                  <input name="param_vertical" aria-label="Parametro vertical" value={safeString(nuevoItemInv.param_vertical)} onChange={manejarCambioInv} className="flex-1 min-w-[50px] p-1.5 border rounded text-xs text-center" placeholder="Verti." title="Lente Vertical"/>
+                  <input name="param_diagonal" aria-label="Diametro diagonal" value={safeString(nuevoItemInv.param_diagonal)} onChange={manejarCambioInv} className="flex-1 min-w-[50px] p-1.5 border rounded text-xs text-center" placeholder="D.May" title="Diámetro Mayor"/>
+                  <input name="param_frontal" aria-label="Frente" value={safeString(nuevoItemInv.param_frontal)} onChange={manejarCambioInv} className="flex-1 min-w-[60px] p-1.5 border rounded text-xs text-center bg-blue-50 focus:bg-blue-100" placeholder="Frente" title="Ancho Total Frontal"/>
+                  <input name="param_varillas" aria-label="Varillas" value={safeString(nuevoItemInv.param_varillas)} onChange={manejarCambioInv} className="flex-1 min-w-[60px] p-1.5 border rounded text-xs text-center bg-blue-50 focus:bg-blue-100" placeholder="Varillas" title="Largo de Varillas (Patitas)"/>
                 </div>
               </div>
               
               <div className="md:col-span-2 mt-2">
                 <label className="block text-xs font-bold text-gray-700 mb-1">Descripción / Detalles</label>
-                <input name="descripcion" value={safeString(nuevoItemInv.descripcion)} onChange={manejarCambioInv} className="w-full p-2 border rounded outline-none text-sm bg-white h-[42px]" placeholder="Ej: Negro con dorado, plaquetas silicona..." />
+                <input name="descripcion" aria-label="Descripcion del armazon" value={safeString(nuevoItemInv.descripcion)} onChange={manejarCambioInv} className="w-full p-2 border rounded outline-none text-sm bg-white h-[42px]" placeholder="Ej: Negro con dorado, plaquetas silicona..." />
               </div>
             </>
           ) : (
             <>
-              <div className="md:col-span-2"><label className="block text-xs font-bold text-gray-700 mb-1">Nombre del Accesorio</label><input name="nombre_accesorio" value={safeString(nuevoItemInv.nombre_accesorio)} onChange={manejarCambioInv} className="w-full p-2 border rounded outline-none text-sm font-bold uppercase" placeholder="Ej: Estuche Rígido, Gotas..." /></div>
-              <div><label className="block text-xs font-bold text-gray-700 mb-1">Característica</label><input name="caracteristica" value={safeString(nuevoItemInv.caracteristica)} onChange={manejarCambioInv} className="w-full p-2 border rounded outline-none text-sm" placeholder="Ej: Color azul, 15ml..." /></div>
+              <div className="md:col-span-2"><label className="block text-xs font-bold text-gray-700 mb-1">Nombre del Accesorio</label><input name="nombre_accesorio" aria-label="Nombre del accesorio" value={safeString(nuevoItemInv.nombre_accesorio)} onChange={manejarCambioInv} className="w-full p-2 border rounded outline-none text-sm font-bold uppercase" placeholder="Ej: Estuche Rígido, Gotas..." /></div>
+              <div><label className="block text-xs font-bold text-gray-700 mb-1">Característica</label><input name="caracteristica" aria-label="Caracteristica del accesorio" value={safeString(nuevoItemInv.caracteristica)} onChange={manejarCambioInv} className="w-full p-2 border rounded outline-none text-sm" placeholder="Ej: Color azul, 15ml..." /></div>
             </>
           )}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 border-t border-purple-200 pt-4 mt-2">
-          <div><label className="block text-xs font-bold text-gray-700 mb-1">Costo Compra ($)</label><input type="number" name="costo_compra" value={safeString(nuevoItemInv.costo_compra)} onChange={manejarCambioInv} className="w-full p-2 border rounded outline-none text-sm text-red-600 font-bold" /></div>
-          <div><label className="block text-xs font-bold text-gray-700 mb-1">PVP Sugerido ($)</label><input type="number" name="precio" value={safeString(nuevoItemInv.precio)} onChange={manejarCambioInv} className="w-full p-2 border rounded outline-none text-sm text-green-600 font-bold" /></div>
-          <div><label className="block text-xs font-bold text-gray-700 mb-1">Unidades en Stock</label><input type="number" name="stock" value={safeString(nuevoItemInv.stock)} onChange={manejarCambioInv} className="w-full p-2 border rounded outline-none text-sm font-bold" /></div>
+          <div><label className="block text-xs font-bold text-gray-700 mb-1">Costo Compra ($)</label><input type="number" name="costo_compra" aria-label="Costo de compra" value={safeString(nuevoItemInv.costo_compra)} onChange={manejarCambioInv} className="w-full p-2 border rounded outline-none text-sm text-red-600 font-bold" /></div>
+          <div><label className="block text-xs font-bold text-gray-700 mb-1">PVP Sugerido ($)</label><input type="number" name="precio" aria-label="Precio de venta" value={safeString(nuevoItemInv.precio)} onChange={manejarCambioInv} className="w-full p-2 border rounded outline-none text-sm text-green-600 font-bold" /></div>
+          <div><label className="block text-xs font-bold text-gray-700 mb-1">Unidades en Stock</label><input type="number" name="stock" aria-label="Cantidad en stock" value={safeString(nuevoItemInv.stock)} onChange={manejarCambioInv} className="w-full p-2 border rounded outline-none text-sm font-bold" /></div>
           <div>
             <label className="block text-xs font-bold text-gray-700 mb-1">Fotografía (Opcional)</label>
-            <input type="file" accept="image/*" onChange={(e) => setImagenSeleccionada(e.target.files[0])} className="w-full text-xs text-gray-500 file:mr-2 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-purple-100 file:text-purple-700 hover:file:bg-purple-200" />
+            <input type="file" accept="image/*" aria-label="Seleccionar foto del producto" onChange={(e) => setImagenSeleccionada(e.target.files[0])} className="w-full text-xs text-gray-500 file:mr-2 file:py-1.5 file:px-3 file:rounded file:border-0 file:text-xs file:font-semibold file:bg-purple-100 file:text-purple-700 hover:file:bg-purple-200" />
           </div>
         </div>
 
@@ -123,7 +123,7 @@ export default function Inventario({
         </div>
       </div>
 
-      <input type="text" placeholder="🔍 Buscar por código, tipo, detalle o nombre..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} className="w-full p-3 mb-4 border rounded-lg outline-none focus:ring-2 focus:ring-purple-500 shadow-sm" />
+      <input type="text" aria-label="Buscar producto por codigo, tipo, detalle o nombre" placeholder="🔍 Buscar por código, tipo, detalle o nombre..." value={busqueda} onChange={(e) => setBusqueda(e.target.value)} className="w-full p-3 mb-4 border rounded-lg outline-none focus:ring-2 focus:ring-purple-500 shadow-sm" />
       
       <div className="overflow-x-auto border rounded-lg shadow-sm">
         <table className="w-full text-left text-sm bg-white">
@@ -144,7 +144,7 @@ export default function Inventario({
                   {item.imagen_url ? (
                     <img 
                       src={item.imagen_url} 
-                      alt="Prod" 
+                      alt={`Foto de ${safeString(item.nombre_accesorio) || safeString(item.codigo) || 'producto'}`} 
                       className="w-10 h-10 object-cover rounded shadow-sm border cursor-pointer hover:opacity-80 transition-opacity" 
                       onClick={() => setImagenAmpliada(item.imagen_url)}
                       title="Clic para agrandar"
@@ -198,12 +198,13 @@ export default function Inventario({
             <button
               className="absolute -top-12 right-0 text-white font-bold text-xl hover:text-red-400 bg-black/50 w-10 h-10 rounded-full flex items-center justify-center transition-colors"
               onClick={() => setImagenAmpliada(null)}
+              aria-label="Cerrar imagen ampliada"
             >
-              ✖
+              <span aria-hidden="true">✖</span>
             </button>
             <img 
               src={imagenAmpliada} 
-              alt="Ampliada" 
+              alt="Imagen ampliada del producto" 
               className="max-w-full max-h-[85vh] object-contain rounded-xl shadow-2xl border-4 border-white/20 bg-white" 
             />
           </div>

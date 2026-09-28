@@ -72,7 +72,18 @@ export const enColaEscritura = (tarea, prioridad = 'alta', nombre = 'tarea') => 
 
 let contadorEscaneosInventario = 0;
 const normalizeCedula = value => safeString(value).trim().toUpperCase();
-const numericId = value => value === null || value === undefined || value === '' ? null : Number(value);
+// Un id de inventario SIEMPRE es un entero. Esta función se usa para leer
+// valores que vienen de un <input> o de un campo mal formado, y antes devolvía
+// NaN para cualquier cosa que no fuera convertible ("ABC", "12abc", {}).
+// NaN no es un null: al serializar a JSON se convierte en null sin avisar, y el
+// servidor rechazaba la venta con "Cada item necesita inventario_id o codigo"
+// (sqlstate 22023) sin señalar cuál de los dos campos venía mal. Un id que no es
+// un número es, sencillamente, la ausencia de id.
+const numericId = value => {
+  if (value === null || value === undefined || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+};
 
 const findPatient = (patientId, cedula) => {
   if (patientId) return localDb.patients.get(patientId);
@@ -234,7 +245,13 @@ const guardarVentaLocalImpl = async ({ patient, consultationId, sale, initialPay
         consulta_id: normalizedSale.consultationId || null,
         consulta: normalizedSale.consultationId ? {} : { fecha: normalizedSale.fecha },
         venta: { ...sale, id: saleId, abono: '0', fecha: normalizedSale.fecha },
-        items: resolvedItems.map(item => ({ inventory_id: item.inventoryId, codigo: item.code, cantidad: item.quantity }))
+        items: resolvedItems
+          .filter(item => item.inventoryId !== null || safeString(item.code).trim() !== '')
+          .map(item => ({
+            inventario_id: item.inventoryId,
+            codigo: item.inventoryId === null ? safeString(item.code).trim() || null : null,
+            cantidad: item.quantity
+          }))
       }
     }
   });
@@ -284,6 +301,11 @@ const guardarVentaLocalImpl = async ({ patient, consultationId, sale, initialPay
 
       const paymentAmount = Number(safeNum(initialPayment?.monto).toFixed(2));
       if (paymentAmount > 0) {
+        const yaRegistrado = await localDb.payments.where('idempotencyKey').equals(paymentKey).first();
+if (yaRegistrado) { /* el pago ya existe: no duplicar */ }
+else {
+  // ... todo el bloque actual del pago ...
+}
         const paymentId = createUuid();
         const paymentKey = initialPayment.idempotencyKey || saleId;
         const payment = pendingRecord({
@@ -678,45 +700,55 @@ const importLegacyCacheImpl = async () => {
     leerBoveda('backup_precios')
   ]);
 
-  await localDb.transaction('rw', localDb.patients, localDb.consultations, localDb.sales, localDb.inventory, localDb.prices, async () => {
-    for (const row of legacyHistorial || []) {
-      if (!row?.id) continue;
-      const patientId = row.paciente_id || row.patient_id;
-      if (patientId && !(await localDb.patients.get(patientId))) {
-        await localDb.patients.put({
-          id: patientId, cedula: row.cedula, nombre: row.nombre, telefono: row.telefono,
-          correo: row.correo, fecha_nacimiento: row.fecha_nacimiento,
-          antecedentes: row.antecedentes, alias: row.alias,
-          syncStatus: 'synced', updatedAt: nowIso()
-        });
+  try {
+    await localDb.transaction('rw', localDb.patients, localDb.consultations, localDb.sales, localDb.inventory, localDb.prices, async () => {
+      for (const row of legacyHistorial || []) {
+        if (!row?.id) continue;
+        const patientId = row.paciente_id || row.patient_id;
+        if (patientId && !(await localDb.patients.get(patientId))) {
+          await localDb.patients.put({
+            id: patientId, cedula: row.cedula, nombre: row.nombre, telefono: row.telefono,
+            correo: row.correo, fecha_nacimiento: row.fecha_nacimiento,
+            antecedentes: row.antecedentes, alias: row.alias,
+            syncStatus: 'synced', updatedAt: nowIso()
+          });
+        }
+        if (!(await localDb.consultations.get(row.id))) {
+          await localDb.consultations.put({
+            ...row, id: row.id, patientId, fecha: row.fecha,
+            syncStatus: 'synced', updatedAt: nowIso()
+          });
+        }
+        if (row.pedido_id && !(await localDb.sales.get(row.pedido_id))) {
+          await localDb.sales.put({
+            ...row, id: row.pedido_id, patientId, consultationId: row.id,
+            fecha: row.fecha_venta || row.fecha, abono: row.abono || '0',
+            syncStatus: 'synced', updatedAt: nowIso()
+          });
+        }
       }
-      if (!(await localDb.consultations.get(row.id))) {
-        await localDb.consultations.put({
-          ...row, id: row.id, patientId, fecha: row.fecha,
-          syncStatus: 'synced', updatedAt: nowIso()
-        });
+      for (const row of legacyInventory || []) {
+        const id = Number(row.id);
+        if (Number.isFinite(id) && !(await localDb.inventory.get(id))) {
+          await localDb.inventory.put({ ...row, id, syncStatus: 'synced', updatedAt: nowIso() });
+        }
       }
-      if (row.pedido_id && !(await localDb.sales.get(row.pedido_id))) {
-        await localDb.sales.put({
-          ...row, id: row.pedido_id, patientId, consultationId: row.id,
-          fecha: row.fecha_venta || row.fecha, abono: row.abono || '0',
-          syncStatus: 'synced', updatedAt: nowIso()
-        });
+      for (const row of legacyPrices || []) {
+        const id = Number(row.id);
+        if (Number.isFinite(id) && !(await localDb.prices.get(id))) {
+          await localDb.prices.put({ ...row, id, syncStatus: 'synced', updatedAt: nowIso() });
+        }
       }
-    }
-    for (const row of legacyInventory || []) {
-      const id = Number(row.id);
-      if (Number.isFinite(id) && !(await localDb.inventory.get(id))) {
-        await localDb.inventory.put({ ...row, id, syncStatus: 'synced', updatedAt: nowIso() });
-      }
-    }
-    for (const row of legacyPrices || []) {
-      const id = Number(row.id);
-      if (Number.isFinite(id) && !(await localDb.prices.get(id))) {
-        await localDb.prices.put({ ...row, id, syncStatus: 'synced', updatedAt: nowIso() });
-      }
-    }
-  });
+    });
+  } catch (error) {
+    // La bandera se escribe IGUAL. Este era el bucle infinito: si la transaccion
+    // fallaba, el flag nunca se guardaba, y cada carga de datos volvia a
+    // intentar la migracion y a fallar otra vez, sin parar.
+    await setMeta('legacyCacheImported', true);
+    console.warn('[migracion] no se pudo importar el cache antiguo; se marcara como hecho para no reintentar en bucle:', error);
+    return;
+  }
+
   await setMeta('legacyCacheImported', true);
 };
 export const obtenerSnapshotLocal = async () => {

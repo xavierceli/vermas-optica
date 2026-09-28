@@ -1,20 +1,27 @@
+import { useMemo } from 'react';
 import { safeNum, safeString } from './utilidades';
 
 export default function Dashboard({ stats, historial, inventario }) {
   
   // --- 1. PROCESAMIENTO DE DATOS ANALÍTICOS ---
-  const armazonesVendidos = {};
-  const lentesVendidos = {};
-  const tratamientos = {
-    'AR Verde': 0, 'AR Azul': 0, 'Filtro Azul': 0, 
-    'Fotocromático': 0, 'Transition': 0, 'Tinturado': 0
-  };
+  // Todo este cálculo (recorrer el historial, contar y tres sort()) estaba en el
+  // cuerpo del componente, así que se repetía en CADA render: con miles de ventas,
+  // cualquier estado local que cambiara obligaba a recontarlo todo. useMemo lo
+  // ejecuta solo cuando el historial o el inventario cambian de verdad.
+  const { topArmazones, topLentes, topTratamientos, alertasStock } = useMemo(() => {
+    const armazonesVendidos = {};
+    const lentesVendidos = {};
+    const tratamientos = {
+      'AR Verde': 0, 'AR Azul': 0, 'Filtro Azul': 0, 
+      'Fotocromático': 0, 'Transition': 0, 'Tinturado': 0
+    };
 
-  // Recorremos el historial para contar qué es lo que más se ha vendido
-  (historial || []).forEach(item => {
-    const tieneVenta = safeString(item.estado) !== 'Ninguno' || safeNum(item.venta) > 0;
-    
-    if (tieneVenta) {
+    // Recorremos el historial para contar qué es lo que más se ha vendido
+    for (const item of (historial || [])) {
+      if (!item) continue;
+      const tieneVenta = safeString(item.estado) !== 'Ninguno' || safeNum(item.venta) > 0;
+      if (!tieneVenta) continue;
+
       // Conteo de Armazones (Ignoramos el 2905 que es armazón del paciente)
       const codArmazon = safeString(item.codigo_armazon).toUpperCase().trim();
       if (codArmazon && codArmazon !== '2905') {
@@ -35,15 +42,15 @@ export default function Dashboard({ stats, historial, inventario }) {
       if (item.tratam_trans === 'SI') tratamientos['Transition']++;
       if (item.tratam_tinturado === 'SI') tratamientos['Tinturado']++;
     }
-  });
 
-  // Ordenamos los resultados de mayor a menor
-  const topArmazones = Object.entries(armazonesVendidos).sort((a, b) => b[1] - a[1]).slice(0, 5);
-  const topLentes = Object.entries(lentesVendidos).sort((a, b) => b[1] - a[1]);
-  const topTratamientos = Object.entries(tratamientos).sort((a, b) => b[1] - a[1]).filter(t => t[1] > 0);
-
-  // --- SOLUCIÓN: Inventario con Stock Bajo AHORA SOLO VIGILA ACCESORIOS ---
-  const alertasStock = (inventario || []).filter(i => safeNum(i.stock) <= 2 && safeString(i.categoria) === 'Accesorio');
+    return {
+      topArmazones: Object.entries(armazonesVendidos).sort((a, b) => b[1] - a[1]).slice(0, 5),
+      topLentes: Object.entries(lentesVendidos).sort((a, b) => b[1] - a[1]),
+      topTratamientos: Object.entries(tratamientos).sort((a, b) => b[1] - a[1]).filter(t => t[1] > 0),
+      // Stock bajo: por decisión del negocio solo vigila accesorios.
+      alertasStock: (inventario || []).filter(i => safeNum(i.stock) <= 2 && safeString(i.categoria) === 'Accesorio')
+    };
+  }, [historial, inventario]);
 
   return (
     <div className="bg-white rounded-xl shadow-lg p-6 border-t-4 border-amber-500">

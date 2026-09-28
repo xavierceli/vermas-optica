@@ -8,21 +8,22 @@ import { resolverUrlComprobante } from './comprobantes';
 export default function BotonComprobante({ ruta, refId, className = '', children = '👁️ Comprobante' }) {
   if (!ruta) return null;
 
-  const abrir = async event => {
-    event.preventDefault();
+  const abrir = async () => {
     const url = await resolverUrlComprobante(ruta, refId);
     if (url) window.open(url, '_blank', 'noopener,noreferrer');
     else alert('El comprobante no se pudo abrir. Puede que siga pendiente de subir o que no haya conexion.');
   };
 
+  // <button> y no <a href="#">: un enlace sin destino no es un boton para la
+  // tecnologia asistiva, y con href="#" el foco se perdia al pulsarlo.
   return (
-    <a
-      href="#"
+    <button
+      type="button"
       onClick={abrir}
       title="Abrir comprobante"
       className={className}
     >
       {children}
-    </a>
+    </button>
   );
 }

@@ -73,32 +73,51 @@ test('tras un acierto se reinicia el contador de intentos', async () => {
   assert.equal(siguiente.restantes, MAX_INTENTOS - 1, 'el contador debe volver a cero tras acertar');
 });
 
-test('al agotar los intentos se bloquea, se borra el enrolamiento y se limpia el dispositivo', async () => {
+test('al agotar los intentos se bloquea SIN borrar el enrolamiento ni los datos', async () => {
   const meta = crearMeta();
   await enrolarDispositivo({ pin: '7391', meta });
-  let limpio = 0;
-  const alBloquear = async () => { limpio += 1; };
+  let avisos = 0;
+  const alBloquear = async () => { avisos += 1; };
 
   let ultimo;
   for (let i = 0; i < MAX_INTENTOS; i += 1) ultimo = await intentarDesbloqueo({ pin: '0000', meta, alBloquear });
 
   assert.equal(ultimo.ok, false);
   assert.equal(ultimo.bloqueado, true);
-  assert.equal(await estaEnrolado(meta), false, 'el enrolamiento debe desaparecer tras el bloqueo');
-  assert.ok(limpio >= 1, 'debe ejecutarse la limpieza del dispositivo');
+  assert.ok(avisos >= 1, 'debe avisar al usuario');
+  // Este es el punto del cambio: bloquear el acceso frena la fuerza bruta, pero
+  // NO puede costarle el trabajo al optometra. Borrar el enrolamiento (y con el
+  // la base local) solo destruia datos a cambio de nada.
+  assert.equal(await estaEnrolado(meta), true, 'el enrolamiento debe sobrevivir al bloqueo');
 });
 
-test('tras el bloqueo el dispositivo queda sin acceso sin conexion', async () => {
+test('durante la espera el PIN correcto tambien es rechazado', async () => {
   const meta = crearMeta();
   await enrolarDispositivo({ pin: '7391', meta });
   for (let i = 0; i < MAX_INTENTOS; i += 1) await intentarDesbloqueo({ pin: '0000', meta });
 
-  // El bloqueo borra el enrolamiento: el dispositivo queda como recien salido
-  // de fabrica y ni el PIN correcto puede reabrirlo.
-  assert.equal(await estaEnrolado(meta), false, 'el enrolamiento debe eliminarse');
-  const tras = await intentarDesbloqueo({ pin: '7391', meta, alBloquear: async () => {} });
-  assert.equal(tras.ok, false, 'ni con el PIN correcto se regain acceso');
-  assert.match(tras.error, /no tiene acceso/i);
+  const duranteEspera = await intentarDesbloqueo({ pin: '7391', meta, alBloquear: async () => {} });
+  assert.equal(duranteEspera.ok, false, 'aun con el PIN correcto no se entra durante la espera');
+  assert.equal(duranteEspera.bloqueado, true);
+  assert.ok(duranteEspera.minutos > 0, 'debe informar de los minutos restantes');
+});
+
+test('vencida la espera se concede una oportunidad nueva y el PIN correcto funciona', async () => {
+  const meta = crearMeta();
+  await enrolarDispositivo({ pin: '7391', meta });
+  for (let i = 0; i < MAX_INTENTOS; i += 1) await intentarDesbloqueo({ pin: '0000', meta });
+
+  // Se simula el paso del tiempo sin esperar 15 minutos reales.
+  const fila = (await meta.get('dispositivoEnrolado')).value;
+  await meta.put({
+    key: 'dispositivoEnrolado',
+    value: { ...fila, bloqueadoHasta: Date.now() - 1000 },
+    updatedAt: new Date().toISOString()
+  });
+
+  const trasEspera = await intentarDesbloqueo({ pin: '7391', meta, alBloquear: async () => {} });
+  assert.equal(trasEspera.ok, true, 'el PIN correcto debe funcionar una vez vencida la espera');
+  assert.equal(trasEspera.identidad ?? null, null);
 });
 
 test('un dispositivo no enrolado no se puede desbloquear', async () => {

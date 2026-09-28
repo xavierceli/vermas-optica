@@ -422,3 +422,69 @@ test('el vigilante libera el hueco si la tarea no termina', async () => {
   });
   assert.equal(await localDb.consultations.count(), 1, 'la escritura no quedo bloqueada para siempre');
 });
+// ---------------------------------------------------------------------------
+// BUG REAL: "Cada item necesita inventario_id o codigo." (sqlstate 22023)
+// ---------------------------------------------------------------------------
+// El servidor rechaza la venta cuando un item llega sin id de inventario y sin
+// codigo. numericId devolvia NaN para cualquier valor no numerico ("ABC"), y al
+// serializar el payload NaN se convierte en null sin avisar: el item pasaba al
+// servidor con los dos campos a null y tumbaba la venta. Como el pago y los
+// cambios de estado apuntan a esa venta, arrastraba 6 rechazos mas por venta.
+
+test('una venta sin armazon ni accesorio no genera items invalidos', async () => {
+  await reset();
+  const sale = {
+    id: '30000000-0000-4000-8000-000000000001',
+    cedula: '17123456789', nombre: 'Paciente Prueba', venta: '50', descuento: '0', abono: '0'
+  };
+  // Sin codigo_armazon ni accesorio_id: es una venta legitima de solo lentes.
+  await guardarVentaLocal({
+    patient: patient(),
+    consultationId: '20000000-0000-4000-8000-000000000001',
+    sale
+  });
+
+  const ops = await localDb.outbox.toArray();
+  const crear = ops.find(o => o.type === 'CREAR_VENTA');
+  assert.ok(crear, 'debe encolarse la operacion de venta');
+
+  const items = crear.payload.p_payload.items;
+  assert.ok(Array.isArray(items), 'items debe ser un array');
+  for (const item of items) {
+    // Esta es exactamente la condicion que el servidor valida.
+    const tieneId = item.inventario_id !== null && item.inventario_id !== undefined;
+    const tieneCodigo = typeof item.codigo === 'string' && item.codigo.trim() !== '';
+    assert.ok(tieneId || tieneCodigo,
+      `item sin inventario_id ni codigo: ${JSON.stringify(item)}`);
+    assert.equal(typeof item.cantidad, 'number');
+    assert.ok(item.cantidad > 0);
+  }
+});
+
+test('un accesorio con id no numerico no produce NaN en el payload', async () => {
+  await reset();
+  const sale = {
+    id: '30000000-0000-4000-8000-000000000002',
+    cedula: '17123456789', nombre: 'Paciente Prueba', venta: '50',
+    descuento: '0', abono: '0',
+    // Valor corrupto: antes numericId devolvia NaN y el JSON lo mandaba como null.
+    accesorio_id: 'ABC'
+  };
+  await guardarVentaLocal({
+    patient: patient(),
+    consultationId: '20000000-0000-4000-8000-000000000002',
+    sale
+  });
+
+  const ops = await localDb.outbox.toArray();
+  const crear = ops.find(o => o.type === 'CREAR_VENTA');
+  assert.ok(crear, 'debe encolarse la operacion de venta');
+
+  const serializado = JSON.stringify(crear.payload.p_payload.items);
+  assert.doesNotMatch(serializado, /null,\s*"cantidad"/,
+    'ningun item puede llevar inventario_id null con cantidad: el servidor lo rechaza');
+
+  for (const item of crear.payload.p_payload.items) {
+    assert.notEqual(item.inventario_id, null, 'un id no numerico debe omitirse, no enviarse como null');
+  }
+});

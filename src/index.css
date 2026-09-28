@@ -1,3 +1,42 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Los datos medidos de la clinica (esfera, cilindro, eje) no se deben
+   capitalizar: "+1.25" no es una palabra. Antes esto se intentaba con
+   translate="no" en un <div>, que no es un prop de React y por tanto no
+   llegaba a los campos. */
+input,
+textarea {
+  translate: none;
+}
+
+/* En la consulta optometrica hay personas con sensibilidad al movimiento:
+   un spinner girando sin parar provoca mareo y nausea. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Enlace de salto: es la primera tabulacion de la pagina y permite llegar al
+   contenido sin recorrer la barra de navegacion. (WCAG 2.4.1) */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  z-index: 999;
+  background: #0f766e;
+  color: #fff;
+  padding: 12px 20px;
+  font-weight: 700;
+  border-radius: 0 0 8px 0;
+}
+.skip-link:focus {
+  left: 0;
+}
