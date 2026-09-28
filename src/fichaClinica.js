@@ -77,6 +77,11 @@ export const TRATAMIENTOS = [
 
 const LONGITUD_CEDULA = 10;
 
+// Nombres que esta funcion entiende. El test los compara con los que realmente
+// le pasa useGestor: si los dos lados no coinciden, la peticion se pierde en
+// silencio y el optometria no puede escribir la cedula. Pasó una vez.
+export const CLAVES_ACEPTADAS = ['paciente', 'value', 'historial', 'hoy'];
+
 /**
  * Que pasa al teclear una cedula.
  *   - Cedula incompleta o de un paciente que no existe: NO se toca nada mas.
@@ -86,10 +91,13 @@ const LONGITUD_CEDULA = 10;
  *   - Paciente que ya existe: se trae su ultima ficha clinica y se vacia la
  *     parte economica, porque la venta nueva empieza en cero.
  *
+ * El parametro se llama `value` (no `valor`) a proposito: es el nombre que usan
+ * los manejadores de cambio de toda la app, el que viene de `e.target`.
+ *
  * @returns {{ ficha: object, encontro: boolean }}
  */
-export const aplicarCedula = ({ paciente, valor, historial = [], hoy = hoyISO() } = {}) => {
-  const documento = aTexto(valor).trim();
+export const aplicarCedula = ({ paciente, value, historial = [], hoy = hoyISO() } = {}) => {
+  const documento = aTexto(value).trim();
   const completa = documento.length >= LONGITUD_CEDULA;
   const existente = completa
     ? (historial || []).find(p =>
@@ -97,7 +105,7 @@ export const aplicarCedula = ({ paciente, valor, historial = [], hoy = hoyISO() 
     : null;
 
   if (!existente) {
-    return { ficha: { ...paciente, cedula: valor }, encontro: false };
+    return { ficha: { ...paciente, cedula: value }, encontro: false };
   }
 
   // Se parte del formulario COMPLETO y se encima lo guardado: asi ningun campo
@@ -109,7 +117,7 @@ export const aplicarCedula = ({ paciente, valor, historial = [], hoy = hoyISO() 
   }
 
   ficha.fecha = hoy;
-  ficha.cedula = valor;
+  ficha.cedula = value;
   ficha.id = '';            // es una consulta NUEVA, no una edicion de la anterior
   ficha.pedido_id = '';
 

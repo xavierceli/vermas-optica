@@ -1,9 +1,15 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import {
-  CAMPOS_DE_VENTA, INV_INICIAL, PRECIO_INICIAL, TRATAMIENTOS,
+  CAMPOS_DE_VENTA, CLAVES_ACEPTADAS, INV_INICIAL, PRECIO_INICIAL, TRATAMIENTOS,
   aplicarCedula, crearEstadoPaciente, hoyISO
 } from './fichaClinica.js';
+
+const SRC = join(dirname(fileURLToPath(import.meta.url)));
+const leer = nombre => readFileSync(join(SRC, nombre), 'utf8');
 
 // Al teclear la cedula de un paciente que ya existe, la ficha se reemplaza por
 // la guardada. Si aqui se equivoca un campo, se pierde una consulta entera.
@@ -57,7 +63,7 @@ const PACIENTE_TECLEANDO = { ...crearEstadoPaciente(HOY), esfera_od: '-1.25', no
 
 test('una cedula incompleta NO borra lo que ya se tecleo', () => {
   const { ficha, encontro } = aplicarCedula({
-    paciente: PACIENTE_TECLEANDO, valor: '1712', historial: [{ cedula: '1712345678', nombre: 'ANA' }], hoy: HOY
+    paciente: PACIENTE_TECLEANDO, value: '1712', historial: [{ cedula: '1712345678', nombre: 'ANA' }], hoy: HOY
   });
   assert.equal(encontro, false);
   assert.equal(ficha.esfera_od, '-1.25');
@@ -67,7 +73,7 @@ test('una cedula incompleta NO borra lo que ya se tecleo', () => {
 
 test('una cedula que no existe en el historial NO borra el formulario', () => {
   const { ficha, encontro } = aplicarCedula({
-    paciente: PACIENTE_TECLEANDO, valor: '0999999999', historial: [{ cedula: '1712345678', nombre: 'ANA' }], hoy: HOY
+    paciente: PACIENTE_TECLEANDO, value: '0999999999', historial: [{ cedula: '1712345678', nombre: 'ANA' }], hoy: HOY
   });
   assert.equal(encontro, false);
   assert.equal(ficha.esfera_od, '-1.25');
@@ -82,7 +88,7 @@ test('el paciente que ya existe trae su ultima ficha, pero con la venta en cero'
     codigo_armazon: 'AR-1', costo_armazon_int: '30', tratam_foto: 'SI', tratam_foto_nota: 'Gris'
   }];
   const { ficha, encontro } = aplicarCedula({
-    paciente: fichaVacia(), valor: '1712345678', historial, hoy: HOY
+    paciente: fichaVacia(), value: '1712345678', historial, hoy: HOY
   });
 
   assert.equal(encontro, true);
@@ -110,7 +116,7 @@ test('el paciente que ya existe trae su ultima ficha, pero con la venta en cero'
 test('nunca se trae la ficha de CONSUMIDOR FINAL', () => {
   const { ficha, encontro } = aplicarCedula({
     paciente: PACIENTE_TECLEANDO,
-    valor: '9999999999',
+    value: '9999999999',
     historial: [{ cedula: '9999999999', nombre: 'CONSUMIDOR FINAL', esfera_od: -9 }],
     hoy: HOY
   });
@@ -123,7 +129,7 @@ test('traer la ficha de un paciente NO deja campos en null ni sin valor', () => 
   // El fallo que motivo este modulo: la base devuelve null en los campos que
   // el paciente no tiene medido y el input se quedaba con null.
   const historial = [{ id: 7, cedula: '1712345678', nombre: 'ANA', esfera_od: null, avcl_od: undefined }];
-  const { ficha } = aplicarCedula({ paciente: fichaVacia(), valor: '1712345678', historial, hoy: HOY });
+  const { ficha } = aplicarCedula({ paciente: fichaVacia(), value: '1712345678', historial, hoy: HOY });
 
   for (const campo of Object.keys(fichaVacia())) {
     assert.ok(campo in ficha, 'falta el campo ' + campo);
@@ -133,10 +139,43 @@ test('traer la ficha de un paciente NO deja campos en null ni sin valor', () => 
   assert.equal(ficha.esfera_od, '');
 });
 
+// --- El contrato entre useGestor y esta funcion --------------------------
+test('useGestor le pasa a aplicarCedula los NOMBRES que la funcion entiende', () => {
+  // Fallo real: la funcion esperaba `valor` y el hook le pasaba `value`. Nada
+  // reventaba, los tests de la funcion pasaban, y el resultado era que el
+  // optometria NO PUEDE ESCRIBIR la cedula (llegaba undefined y el input se
+  // quedaba vacio). Este test compara los dos lados de la llamada.
+  const fuente = leer('useGestor.js');
+  const llamada = /aplicarCedula\(\{([\s\S]*?)\}\)/.exec(fuente);
+  assert.ok(llamada, 'debe existir la llamada a aplicarCedula en useGestor');
+
+  const claves = llamada[1]
+    .split(',')
+    .map(parte => parte.split(':')[0].trim())
+    .filter(Boolean);
+  assert.ok(claves.length > 0, 'la llamada debe pasar alguna clave');
+
+  for (const clave of claves) {
+    assert.ok(
+      CLAVES_ACEPTADAS.includes(clave),
+      `aplicarCedula no entiende "${clave}": se perderia en silencio y el `
+      + `optometria no podria escribir la cedula. Acepta: ${CLAVES_ACEPTADAS.join(', ')}`
+    );
+  }
+});
+
+test('una cedula que llega como undefined no borra nada ni rompe', () => {
+  // Guarda de seguridad: si alguien rompe el contrato otra vez, el formulario
+  // al menos no se queda con campos en undefined.
+  const { ficha, encontro } = aplicarCedula({ paciente: PACIENTE_TECLEANDO, historial: [], hoy: HOY });
+  assert.equal(encontro, false);
+  assert.equal(ficha.esfera_od, '-1.25');
+});
+
 test('una cedula con espacios de mas tambien encuentra al paciente', () => {
   const { encontro } = aplicarCedula({
     paciente: fichaVacia(),
-    valor: '1712345678 ',
+    value: '1712345678 ',
     historial: [{ cedula: '1712345678', nombre: 'ANA' }],
     hoy: HOY
   });
