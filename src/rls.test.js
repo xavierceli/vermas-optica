@@ -49,12 +49,21 @@ test('cada tabla de negocio queda con UNA politica, y es de solo lectura', () =>
   );
 });
 
-test('las vistas quedan con RLS y sin ningun permiso de escritura', () => {
+test('las vistas quedan sin permisos de escritura', () => {
   for (const vista of VISTAS) {
     assert.ok(sql().includes(`revoke all on public.${vista} from anon, authenticated;`), vista);
     assert.ok(sql().includes(`grant select on public.${vista} to authenticated;`), vista);
-    assert.ok(sql().includes(`alter table public.${vista} enable row level security;`), vista);
   }
+  // PostgreSQL 14, que es la version de este proyecto, NO admite RLS sobre
+  // vistas: falla con "ALTER action ENABLE ROW SECURITY cannot be performed on
+  // relation". En una vista la lectura se resuelve con los privilegios de su
+  // duenio, asi que el unico cerrojo posible es el permiso.
+  // Si un dia se actualiza a PG 15+, este test debe cambiar para exigir ademas
+  // la RLS en la vista (y entonces si convendra revisar la migracion).
+  assert.ok(
+    !/alter\s+table\s+public\.vista_pacientes(_unicos)?\s+enable\s+row\s+level\s+security/i.test(sql()),
+    'esta version de PostgreSQL no admite RLS en vistas: esos ALTER sobran'
+  );
 });
 
 test('anon se queda sin permisos en las tablas de negocio', () => {

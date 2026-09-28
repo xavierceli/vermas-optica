@@ -39,13 +39,17 @@
 begin;
 
 -- --- 1. Vistas de pacientes: solo lectura ---------------------------------
+-- OJO: aqui NO se activa la RLS. Este proyecto corre en PostgreSQL 14, donde
+-- una vista no admite RLS: falla con "ALTER action ENABLE ROW SECURITY cannot
+-- be performed on relation". En una vista, las lecturas se resuelven con los
+-- privilegios del duenio de la vista, asi que la unica puerta que se puede
+-- cerrar es el PERMISO. Por eso el revoke es el cerrojo de verdad: sin
+-- INSERT/UPDATE/DELETE concedidos, nadie escribe por aqui aunque la vista
+-- fuera actualizable.
 revoke all on public.vista_pacientes from anon, authenticated;
 revoke all on public.vista_pacientes_unicos from anon, authenticated;
 grant select on public.vista_pacientes to authenticated;
 grant select on public.vista_pacientes_unicos to authenticated;
-
-alter table public.vista_pacientes enable row level security;
-alter table public.vista_pacientes_unicos enable row level security;
 
 drop policy if exists vista_pacientes_lectura_autenticados on public.vista_pacientes;
 create policy vista_pacientes_lectura_autenticados on public.vista_pacientes
