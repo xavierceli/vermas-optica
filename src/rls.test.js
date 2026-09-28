@@ -72,6 +72,15 @@ test('anon se queda sin permisos en las tablas de negocio', () => {
   }
 });
 
+test('el historial de revisiones se queda sin ningun permiso, no solo sin SELECT', () => {
+  // La RLS sin politicas ya lo bloquea todo, pero los permisos heredados de
+  // escritura eran una mina para el dia que se exponga el historial en la app.
+  assert.ok(
+    sql().includes('revoke all on public.consultas_clinicas_revisiones from anon, authenticated;'),
+    'debe revocarse TODO, no solo SELECT'
+  );
+});
+
 // --- Y la app sigue sin escribir nunca directamente -----------------------
 test('la app NO escribe en ninguna tabla: todo entra por funciones del servidor', () => {
   const escrituras = [];

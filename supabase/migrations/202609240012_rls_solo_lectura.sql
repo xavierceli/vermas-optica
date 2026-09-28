@@ -100,10 +100,12 @@ create policy pedidos_ventas_lectura_autenticados on public.pedidos_ventas
   for select to authenticated using (true);
 
 -- --- 7. Historial de revisiones: solo el servidor -------------------------
--- Lo escribe un trigger y no lo lee nadie desde la app. Se le retira el SELECT
--- para que quede claro que es de solo servidor. El duenio de la tabla (las
--- funciones del servidor) sigue teniendo acceso.
-revoke select on public.consultas_clinicas_revisiones from anon, authenticated;
+-- Lo escribe un trigger y no lo lee nadie desde la app, asi que se queda sin
+-- permisos para anon y authenticated. Con la RLS activada y sin politicas ya no
+-- podian tocarla, pero esos permisos heredados (INSERT, UPDATE, DELETE,
+-- TRUNCATE) eran una mina: el dia que se añada una politica para mostrar el
+-- historial en la app, tambien se abririan las escrituras sin querer.
+revoke all on public.consultas_clinicas_revisiones from anon, authenticated;
 
 commit;
 
