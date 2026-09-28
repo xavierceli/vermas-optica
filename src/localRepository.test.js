@@ -680,3 +680,78 @@ test('una venta real si se mantiene en Pedidos', async () => {
   const tienePedido = Boolean(String(fila.pedido_id || '').trim()) || Number(fila.venta || 0) > 0;
   assert.equal(tienePedido, true, 'una venta real SI debe aparecer en Pedidos');
 });
+// ---------------------------------------------------------------------------
+// BUG: el paciente eliminado VOLVIA A APARECER al sincronizar o actualizar
+// ---------------------------------------------------------------------------
+// Al archivar una consulta solo se marcaba la fila de `consultations`, pero la
+// copia de esa consulta en la tabla `cache` (id "remote:<id>") seguia viva, y es
+// la que se dibuja en el historial. Resultado: eliminar un paciente y, al
+// recargar o actualizar la app, volvia a estar como si nada.
+
+test('eliminar un paciente no lo hace reaparecer al sincronizar', async () => {
+  await reset();
+  const consultaId = 'a1000000-0000-4000-8000-000000000001';
+  const cedula = '1712345678';
+
+  // 1) El servidor tiene al paciente en su caché de historial.
+  await localDb.cache.put({
+    id: `remote:${consultaId}`, kind: 'historial', idConsulta: consultaId,
+    cedula, nombre: 'PRUEBA', fecha: '2026-09-28', estado: 'En laboratorio',
+    venta: '0', pedido_id: ''
+  });
+  const antes = await obtenerSnapshotLocal();
+  assert.equal(antes.historial.filter(h => h.cedula === cedula).length, 1,
+    'el paciente debe estar visible antes de eliminarlo');
+
+  // 2) El optometría lo elimina.
+  await localDb.consultations.put({
+    id: consultaId, patientId: 'p1', cedula, nombre: 'PRUEBA',
+    fecha: '2026-09-28', syncStatus: 'pending'
+  });
+  await archivarConsultaLocal(consultaId);
+
+  // 3) Inmediatamente despues ya no debe verse.
+  const despues = await obtenerSnapshotLocal();
+  assert.equal(despues.historial.filter(h => h.cedula === cedula).length, 0,
+    'tras eliminar, el paciente no debe aparecer');
+
+  // 4) Y aunque el servidor lo mande OTRA VEZ (pull), debe seguir sin verse.
+  await localDb.cache.put({
+    id: `remote:${consultaId}`, kind: 'historial', idConsulta: consultaId,
+    cedula, nombre: 'PRUEBA', fecha: '2026-09-28', estado: 'En laboratorio',
+    venta: '0', pedido_id: ''
+  });
+  const trasPull = await obtenerSnapshotLocal();
+  assert.equal(trasPull.historial.filter(h => h.cedula === cedula).length, 0,
+    'el servidor puede reenviarlo, pero un borrado local manda hasta que el servidor confirme');
+});
+
+test('eliminar borra tambien la copia en la cache del servidor', async () => {
+  await reset();
+  const consultaId = 'a1000000-0000-4000-8000-000000000002';
+  await localDb.cache.put({
+    id: `remote:${consultaId}`, kind: 'historial', idConsulta: consultaId,
+    cedula: '1712345679', nombre: 'OTRO', fecha: '2026-09-28', estado: 'En laboratorio', venta: '0'
+  });
+  await localDb.consultations.put({
+    id: consultaId, patientId: 'p1', cedula: '1712345679', nombre: 'OTRO',
+    fecha: '2026-09-28', syncStatus: 'synced'
+  });
+
+  await archivarConsultaLocal(consultaId);
+
+  const cache = await localDb.cache.get(`remote:${consultaId}`);
+  assert.equal(cache, undefined,
+    'la copia de la cache debe borrarse al archivar: era la que hacia resucitar al paciente');
+});
+
+test('un paciente NO eliminado sigue apareciendo con normalidad', async () => {
+  await reset();
+  await guardarConsultaLocal({
+    patient: { id: 'a1000000-0000-4000-8000-000000000004', cedula: '1712345680', nombre: 'NORMAL' },
+    consultation: { id: 'a1000000-0000-4000-8000-000000000005', fecha: '2026-09-28', estado: 'Ninguno' }
+  });
+  const snapshot = await obtenerSnapshotLocal();
+  assert.equal(snapshot.historial.filter(h => h.cedula === '1712345680').length, 1,
+    'el filtro no debe afectar a pacientes que nunca se eliminaron');
+});

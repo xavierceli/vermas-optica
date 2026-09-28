@@ -569,16 +569,30 @@ const eliminarPrecioLocalImpl = async priceId => {
 };
 
 const archivarConsultaLocalImpl = async consultationId => {
-  // Archivar es idempotente: pulsar "Eliminar" dos veces no puede fallar ni mostrar
-  // un error. Antes la segunda pulsacionintentaba actuar sobre una consulta ya
-  // archivada y devolvia un fallo, lo que hace pensar que la app se rompio.
+  // Archivar es idempotente: pulsar "Eliminar" dos veces no puede fallar ni
+  // mostrar un error. Antes la segunda pulsacion reintentaba sobre una consulta
+  // ya archivada y devolvia un fallo, dando a pensar que la app se habia roto.
   const actual = await localDb.consultations.get(consultationId);
   if (!actual) return { yaArchivada: true, motivo: 'La consulta ya no existe en este dispositivo.' };
   if (actual.archivedAt) return { yaArchivada: true, motivo: 'La consulta ya estaba archivada.' };
 
-  await localDb.transaction('rw', localDb.consultations, localDb.outbox, async () => {
+  // Registro de cedulas eliminadas en ESTE dispositivo. El servidor puede tardar
+  // en aplicar el archivo y, mientras tanto, devolveria la consulta en el pull:
+  // el paciente "eliminado" reaparecia al sincronizar o al actualizar la app.
+  // Esta lista filtra siempre, por mucho que el servidor la mande de vuelta.
+  const borrados = new Set(await getMeta('cedulasArchivadas', []));
+  if (normalizeCedula(actual.cedula)) borrados.add(normalizeCedula(actual.cedula));
+  await setMeta('cedulasArchivadas', [...borrados]);
+
+  await localDb.transaction('rw', localDb.consultations, localDb.outbox, localDb.cache, async () => {
     const consultation = await localDb.consultations.get(consultationId);
     await localDb.consultations.put({ ...consultation, archivedAt: nowIso(), syncStatus: 'pending' });
+
+    // La copia de esta consulta en la tabla `cache` (id "remote:<id>") es la que
+    // se dibuja en el historial. Si no se borra aqui, el paciente eliminado
+    // reaparece en cuanto la app sincroniza. Antes solo se borraba cuando el
+    // servidor volvia a mandar la consulta, demasiado tarde.
+    await localDb.cache.delete(`remote:${consultationId}`);
 
     // Si la consulta NUNCA llego al servidor, no hay nada que archivar alla y el
     // servidor rechazaria el comando para siempre ("La consulta X no existe"),
@@ -772,6 +786,10 @@ export const obtenerSnapshotLocal = async () => {
     localDb.saleItems.toArray(), localDb.payments.toArray(), localDb.inventory.toArray(),
     localDb.prices.toArray(), localDb.outbox.toArray(), localDb.cache.toArray()
   ]);
+  // Cedulas eliminadas en este dispositivo. Se filtran del historial aunque el
+  // servidor las vuelva a mandar: el borrado local manda hasta que el servidor
+  // confirme el archivo. Sin esto, recargar o actualizar resucitaba al paciente.
+  const cedulasArchivadas = new Set((await getMeta('cedulasArchivadas', [])).map(normalizeCedula));
   const patientById = new Map(patients.map(row => [row.id, row]));
   const saleByConsultation = new Map(sales.filter(row => row.consultationId).map(row => [row.consultationId, row]));
   const itemsBySale = new Map();
@@ -779,7 +797,13 @@ export const obtenerSnapshotLocal = async () => {
   const paymentsBySale = new Map();
   payments.forEach(payment => paymentsBySale.set(payment.saleId, [...(paymentsBySale.get(payment.saleId) || []), payment]));
 
-  const localHistorial = consultations.filter(row => !row.archivedAt).map(consultation => {
+  const localHistorial = consultations
+    .filter(row => !row.archivedAt)
+    .filter(row => {
+      const cedula = normalizeCedula(row.cedula);
+      return !(cedula && cedulasArchivadas.has(cedula));
+    })
+    .map(consultation => {
     const patient = patientById.get(consultation.patientId) || {};
     const sale = saleByConsultation.get(consultation.id) || null;
     const salePayments = sale ? (paymentsBySale.get(sale.id) || []) : [];
@@ -796,7 +820,13 @@ export const obtenerSnapshotLocal = async () => {
   // tuvo venta, ese estado es inventado y hacia que apareciera sola en Pedidos
   // con monto $0. Se corrige en el origen: si la fila no trae pedido, no hay
   // estado de venta.
-  const remoteHistorial = cache.filter(row => row.kind === 'historial' && !row.archivedAt).map(row => {
+  const remoteHistorial = cache
+    .filter(row => row.kind === 'historial' && !row.archivedAt)
+    .filter(row => {
+      const cedula = normalizeCedula(row.cedula);
+      return !(cedula && cedulasArchivadas.has(cedula));
+    })
+    .map(row => {
     const data = { ...row };
     delete data.kind;
     delete data.updatedAt;
