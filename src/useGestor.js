@@ -3,7 +3,7 @@ import { supabase } from './supabaseClient'
 import { safeString, safeNum, comprimirImagen, calcularEdad } from './utilidades'
 import { localDb, createUuid as generarId } from './localDb'
 import { archivarConsultaLocal, guardarConsultaLocal, guardarInventarioLocal, guardarPrecioLocal, guardarVentaLocal, obtenerSnapshotLocal, importLegacyCache, anularVentaLocal, eliminarInventarioLocal, eliminarPrecioLocal, guardarAdjuntoLocal, anularVentaConReembolso } from './localRepository'
-import { iniciarMotorSync, suscribirSync, sincronizarAhora, fijarSesionAusente } from './syncEngine'
+import { iniciarMotorSync, suscribirSync, sincronizarAhora, fijarSesionAusente, obtenerDetalleCola, reintentarOperacion, descartarOperacion, descartarTodoLoAtascado } from './syncEngine'
 import { enrolarDispositivo, leerEnrolamiento, intentarDesbloqueo, revocarEnrolamiento, pinValido } from './seguridad'
 import { aplicarAvisoQueratometria, calcularTotal } from './reglas'
 import { limpiarHtml } from './escape'
@@ -826,6 +826,7 @@ if (sync) {
     estaAutenticado, cargandoAuth, cerrarSesion,
     modoSinConexion, entrarSinConexion, dispositivo, configurarAccesoSinConexion, desactivarAccesoSinConexion,
     toast, confirmDialog, setConfirmDialog, vistaActual, setVistaActual, syncEstado, sincronizarAhora,
+    obtenerDetalleCola, reintentarOperacion, descartarOperacion, descartarTodoLoAtascado,
     historial, inventario, listaPrecios, paciente, setPaciente, estadoInicial, editandoId, setEditandoId, 
     guardarPacienteClinico, manejarCambio, borrarHistoriaClinica, cargarParaEditarClinico, edadActual, claseInputRef,
     busqueda, setBusqueda, pedidosFiltrados, stats, enviarWhatsApp,

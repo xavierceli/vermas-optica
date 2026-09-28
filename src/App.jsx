@@ -1,7 +1,8 @@
-import { useEffect, useRef, lazy, Suspense } from 'react'
+import { useEffect, useState, useRef, lazy, Suspense } from 'react'
 import { useGestor } from './useGestor'
 import { imprimirOrdenTrabajo, imprimirRecibo } from './impresiones'
 import AvisoActualizacion from './AvisoActualizacion'
+import PanelSincronizacion from './PanelSincronizacion'
 
 // Las vistas se cargan bajo demanda. Antes todas viajaban en el bundle inicial
 // (mas de 700 kB) aunque el usuario solo mirara el historial: el telefono
@@ -60,6 +61,9 @@ function App() {
           : pendientes > 0
             ? { texto: `Pendientes: ${pendientes}`, detalle: detalleCola, clases: 'bg-blue-100 text-blue-800 border-blue-300', icono: '⏳' }
             : { texto: 'Sincronizado', detalle: 'Nube al dia', clases: 'bg-emerald-100 text-emerald-800 border-emerald-300', icono: '✅' };
+  // La barra de sincronizacion abre este panel cuando hay algo atascado.
+  // Antes resolverlo exigia abrir la consola del navegador.
+  const [panelSync, setPanelSync] = useState(false);
   const dialogoVisible = g.confirmDialog.visible;
   const setDialogoConfirmacion = g.setConfirmDialog;
   const refDialogo = useRef(null);
@@ -136,6 +140,8 @@ function App() {
         </div>
       )}
 
+      <PanelSincronizacion abierta={panelSync} cerrar={() => setPanelSync(false)} gestor={g} />
+
       {g.confirmDialog.visible && (
         // Clic en el fondo oscuro cierra: solo si el destino es el propio fondo,
         // no el panel, para que un clic dentro no lo cierre por error.
@@ -206,8 +212,18 @@ function App() {
             <h1 className="font-extrabold text-teal-800 text-2xl tracking-wider">VER+ ÓPTICA</h1>
             <button
               type="button"
-              onClick={() => g.sincronizarAhora()}
-              title={`Cola Outbox: ${pendientes} pendiente(s). Ultima sincronizacion: ${g.syncEstado?.lastSync ? new Date(g.syncEstado.lastSync).toLocaleTimeString() : 'nunca'}`}
+              onClick={() => {
+                // Si hay algo atascado, el clic abre el panel con el detalle y las
+                // acciones. Antes había que abrir la consola del navegador, lo
+                // cual dejaba al usuario sin salida si no era desarrollador.
+                if (fallos.length > 0 || descartadas > 0 || conflictos > 0) setPanelSync(true);
+                else g.sincronizarAhora();
+              }}
+              title={
+                fallos.length > 0 || descartadas > 0 || conflictos > 0
+                  ? 'Hay operaciones con problemas. Clic para verlas y resolverlas.'
+                  : `Cola Outbox: ${pendientes} pendiente(s). Clic para sincronizar ahora.`
+              }
               className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-black shadow-sm transition-colors ${estadoOutbox.clases} ${sincronizando ? 'animate-pulse' : ''}`}
             >
               <span>{estadoOutbox.icono}</span>
@@ -217,6 +233,18 @@ function App() {
               </span>
             </button>
           </div>
+          {/* Aviso explicito: si hay atascos, no hay que deducir que la barra
+              de arriba es clicable. */}
+          {(fallos.length > 0 || descartadas > 0 || conflictos > 0) && (
+            <button
+              type="button"
+              onClick={() => setPanelSync(true)}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-red-300 bg-red-100 text-red-800 text-xs font-black shadow-sm hover:bg-red-200 transition-colors"
+            >
+              <span aria-hidden="true">⚠️</span>
+              <span>Resolver problemas ({fallos.length + descartadas + conflictos})</span>
+            </button>
+          )}
           <div className="flex flex-wrap gap-2 items-center">
             <button onClick={() => g.setVistaActual('historial')} className={`px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-all ${g.vistaActual === 'historial' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>📋 Historial</button>
             <button onClick={() => {g.setVistaActual('nueva_medicion'); g.setEditandoId(null); g.setPaciente(g.estadoInicial)}} className={`px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-all ${g.vistaActual === 'nueva_medicion' ? 'bg-teal-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>🩺 Clínica</button>

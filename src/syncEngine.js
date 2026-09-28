@@ -117,6 +117,61 @@ const subscribe = listener => {
   return () => listeners.delete(listener);
 };
 
+// ---------------------------------------------------------------------------
+// ACCIONES DESDE LA INTERFAZ
+// ---------------------------------------------------------------------------
+// Antes, resolver una operacion atascada exigia abrir la consola del navegador y
+// escribir un script a mano. Eso no es una solucion: cualquier operacion que el
+// servidor rechazara por una causa permanente dejaba la barra roja puesta para
+// siempre y el usuario no tenia ninguna salida sin conocimientos tecnicos.
+// Estas funciones le dan al boton de la barra algo real que hacer.
+
+/** Detalle completo de la cola, para mostrarlo en un panel. */
+export const obtenerDetalleCola = async () => {
+  const operaciones = await localDb.outbox.orderBy('createdAt').toArray();
+  return operaciones.map(op => ({
+    id: op.id,
+    tipo: op.type,
+    entidad: op.entityId,
+    estado: op.status,
+    intentos: op.attempts || 0,
+    motivo: op.lastError || null,
+    creada: op.createdAt
+  }));
+};
+
+/** Reintentar una operacion ahora: vuelve a la cola y se sincroniza. */
+export const reintentarOperacion = async (operationId) => {
+  await localDb.outbox.update(operationId, {
+    status: 'pending', lastError: null, attempts: 0, updatedAt: nowIso()
+  });
+  await refreshCounts();
+  emit();
+  return sincronizarAhora({ pull: false });
+};
+
+/**
+ * Descartar una operacion. Borra SOLO la fila de la cola: el paciente, la venta
+ * y el inventario no se tocan. La operacion simplemente no se enviara.
+ */
+export const descartarOperacion = async (operationId) => {
+  await localDb.outbox.delete(operationId);
+  await refreshCounts();
+  emit();
+  return obtenerDetalleCola();
+};
+
+/** Descartar todas las atascadas (fallidas, en conflicto o ya descartadas). */
+export const descartarTodoLoAtascado = async () => {
+  const atascadas = await localDb.outbox
+    .filter(row => row.status === 'failed' || row.status === 'conflict' || row.status === 'descartada')
+    .primaryKeys();
+  if (atascadas.length > 0) await localDb.outbox.bulkDelete(atascadas);
+  await refreshCounts();
+  emit();
+  return atascadas.length;
+};
+
 const markOperation = async (operation, nextStatus, error = null) => {
   await localDb.outbox.update(operation.id, {
     status: nextStatus,
