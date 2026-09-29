@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
   CAMPOS_DE_VENTA, CLAVES_ACEPTADAS, INV_INICIAL, PRECIO_INICIAL, TRATAMIENTOS,
-  aplicarCedula, crearEstadoPaciente, hoyISO
+  aplicarCedula, buscarCoincidenciasPacientes, crearEstadoPaciente, hoyISO
 } from './fichaClinica.js';
 
 const SRC = join(dirname(fileURLToPath(import.meta.url)));
@@ -137,6 +137,52 @@ test('traer la ficha de un paciente NO deja campos en null ni sin valor', () => 
     assert.notEqual(ficha[campo], undefined, campo + ' quedo undefined');
   }
   assert.equal(ficha.esfera_od, '');
+});
+
+// --- El buscador de pacientes ---------------------------------------------
+// Fallo real: los resultados de la nube se guardaban en un estado que nunca se
+// volcaba a la lista visible, asi que en Clinica un paciente que no estuviera
+// descargado en el dispositivo no aparecia nunca (aunque en el Historial, que
+// si consulta la nube, se encontraba).
+test('el buscador incluye los pacientes que solo estan en la nube', () => {
+  const encontrados = buscarCoincidenciasPacientes({
+    locales: [{ cedula: '1111111111', nombre: 'LOCAL' }],
+    nube: [{ cedula: '0750577042', nombre: 'PRUEBA' }],
+    texto: '0750577'
+  });
+  assert.deepEqual(encontrados.map(p => p.nombre), ['PRUEBA']);
+});
+
+test('el buscador encuentra por cedula, por nombre y por alias', () => {
+  const lista = [
+    { cedula: '0750577042', nombre: 'PRUEBA', alias: 'Vecino' },
+    { cedula: '1111111111', nombre: 'ANA RUIZ', alias: '' }
+  ];
+  assert.equal(buscarCoincidenciasPacientes({ locales: lista, texto: '07505' }).length, 1);
+  assert.equal(buscarCoincidenciasPacientes({ locales: lista, texto: 'ana ru' }).length, 1);
+  assert.equal(buscarCoincidenciasPacientes({ locales: lista, texto: 'vecino' }).length, 1);
+});
+
+test('el buscador nunca ofrece CONSUMIDOR FINAL', () => {
+  const encontrados = buscarCoincidenciasPacientes({
+    locales: [{ cedula: '9999999999', nombre: 'CONSUMIDOR FINAL' }],
+    texto: '999999'
+  });
+  assert.deepEqual(encontrados, []);
+});
+
+test('el buscador no repite un paciente que esta en la nube y en local', () => {
+  const encontrados = buscarCoincidenciasPacientes({
+    locales: [{ id: 'l', cedula: '0750577042', nombre: 'PRUEBA' }],
+    nube: [{ id: 'n', cedula: '0750577042', nombre: 'PRUEBA' }],
+    texto: '0750577042'
+  });
+  assert.equal(encontrados.length, 1, 'la version de la nube es la buena');
+  assert.equal(encontrados[0].id, 'n');
+});
+
+test('con menos de dos letras no busca nada', () => {
+  assert.deepEqual(buscarCoincidenciasPacientes({ locales: [{ cedula: '111', nombre: 'A' }], texto: '1' }), []);
 });
 
 // --- El contrato entre useGestor y esta funcion --------------------------

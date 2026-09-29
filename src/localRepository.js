@@ -572,14 +572,19 @@ const archivarConsultaLocalImpl = async consultationId => {
   // Archivar es idempotente: pulsar "Eliminar" dos veces no puede fallar ni
   // mostrar un error. Antes la segunda pulsacion reintentaba sobre una consulta
   // ya archivada y devolvia un fallo, dando a pensar que la app se habia roto.
-  const actual = await localDb.consultations.get(consultationId);
+  // El historial dibuja las filas que vienen del servidor con el id ya
+  // prefijado ("remote:<id>"). Si se busca tal cual, la consulta se perdia: se
+  // buscaba "remote:remote:<id>" y no habia nada que archivar, con lo que el
+  // boton Eliminar no hacia NADA. Se normaliza siempre al id real.
+  const idConsulta = String(consultationId || '').replace(/^remote:/, '');
+  const actual = await localDb.consultations.get(idConsulta);
 
   // La consulta puede no tener fila propia y vivir SOLO en la cache del servidor
   // (id "remote:<id>"): es exactamente lo que se dibuja en el historial. Antes se
   // contestaba "no existe en este dispositivo" y NO se encolaba nada, de modo que
   // el servidor nunca se enteraba del archivo y el paciente reaparecia en cada
   // sincronizacion. Era un bucle sin salida: no se podia eliminar nunca.
-  const enCache = actual ? null : await localDb.cache.get(`remote:${consultationId}`);
+  const enCache = actual ? null : await localDb.cache.get(`remote:${idConsulta}`);
   const fila = actual || enCache;
   if (!fila) return { yaArchivada: true, motivo: 'La consulta ya no existe en este dispositivo.' };
   if (fila.archivedAt) return { yaArchivada: true, motivo: 'La consulta ya estaba archivada.' };
@@ -602,7 +607,7 @@ const archivarConsultaLocalImpl = async consultationId => {
     // se dibuja en el historial. Si no se borra aqui, el paciente eliminado
     // reaparece en cuanto la app sincroniza. Antes solo se borraba cuando el
     // servidor volvia a mandar la consulta, demasiado tarde.
-    await localDb.cache.delete(`remote:${consultationId}`);
+    await localDb.cache.delete(`remote:${idConsulta}`);
 
     // Si la consulta NUNCA llego al servidor, no hay nada que archivar alla y el
     // servidor rechazaria el comando para siempre ("La consulta X no existe"),
@@ -610,8 +615,8 @@ const archivarConsultaLocalImpl = async consultationId => {
     // confirma syncStatus 'synced', o vino del servidor y esta en la cache.
     if (consultation?.syncStatus === 'synced' || enCache) {
       await localDb.outbox.put(createOutboxOperation({
-        type: 'ARCHIVAR_CONSULTA', entityId: consultationId,
-        payload: { p_consulta_id: consultationId }
+        type: 'ARCHIVAR_CONSULTA', entityId: idConsulta,
+        payload: { p_consulta_id: idConsulta }
       }));
     }
   });

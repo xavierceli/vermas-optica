@@ -671,6 +671,27 @@ test('una venta normal SI mantiene su saldo pendiente', async () => {
   assert.equal(calcularTotal('100', '0') - Number(fila.abono), 60, 'una venta viva conserva su deuda');
 });
 
+test('el historial pasa el id con prefijo remote: y aun asi se archiva', async () => {
+  // BUG REAL: las filas que vienen del servidor se dibujan con el id "remote:<id>".
+  // El boton eliminar pasaba ese id tal cual y se buscaba "remote:remote:<id>":
+  // no habia nada que archivar, no se encolaba nada y el paciente no se borraba
+  // NUNCA. El optometria podia pulsar Eliminar mil veces sin que pasara nada.
+  await reset();
+  const id = '60000000-0000-4000-8000-000000000781';
+  await localDb.cache.put({
+    id: `remote:${id}`, kind: 'historial', cedula: '0750577042',
+    nombre: 'PRUEBA', fecha: '2026-09-28', venta: '0', descuento: '0'
+  });
+
+  // ASI LO LLAMA EL HISTORIAL: con el prefijo puesto.
+  const resultado = await archivarConsultaLocal(`remote:${id}`);
+  assert.equal(resultado.yaArchivada, false, 'debe archivar aunque le lleguen el id con prefijo');
+  assert.equal(await localDb.cache.get(`remote:${id}`), undefined, 'la fila desaparece del historial');
+  const ops = await localDb.outbox.toArray();
+  assert.equal(ops.filter(o => o.type === 'ARCHIVAR_CONSULTA').length, 1, 'y se avisa al servidor');
+  assert.equal(ops.find(o => o.type === 'ARCHIVAR_CONSULTA').entityId, id, 'con el id real, sin prefijo');
+});
+
 test('archivar una consulta inexistente no lanza error', async () => {
   await reset();
   const resultado = await archivarConsultaLocal('60000000-0000-4000-8000-000000000999');

@@ -56,8 +56,41 @@ export const PRECIO_INICIAL = {
   tipo_lente: 'Monofocal', material: 'Plástico', tratamiento: 'Ninguno', rango_medida: '',
   costo_laboratorio: '', precio_sugerido: '', notas: ''
 };
-// Campos que pertenecen a la VENTA anterior: al traer la ficha de un paciente
-// hay que vaciarlos, o se le cobraria a este paciente el pedido del anterior.
+/**
+ * Coincidencias del buscador de pacientes: lo tecleado en la cedula o el nombre
+ * se busca aqui, tanto en el historial local como en lo que devuelve la nube.
+ *
+ * Por que vive aqui y no en el componente: antes Clinica.jsx Guardaba el
+ * resultado de la nube en un estado aparte que NUNCA se volcaba a la lista
+ * visible. Es decir, buscar un paciente que no estuviera descargado en este
+ * dispositivo no encontraba NADA, aunque el comentario del codigo dijera que si.
+ * Se decidio en un solo sitio, y con test.
+ */
+export const buscarCoincidenciasPacientes = ({ locales = [], nube = [], texto = '', limite = 5 } = {}) => {
+  const val = String(texto || '').trim();
+  if (val.length < 2) return [];
+
+  const coincide = h => Boolean(h)
+    && aTexto(h.nombre).trim() !== 'CONSUMIDOR FINAL'
+    && (
+      aTexto(h.cedula).includes(val)
+      || aTexto(h.nombre).toLowerCase().includes(val.toLowerCase())
+      || aTexto(h.alias).toLowerCase().includes(val.toLowerCase())
+    );
+
+  // La nube va primero: si el paciente ya esta en la nube, su ficha es la buena.
+  const vistos = new Set();
+  const salida = [];
+  for (const h of [...nube, ...locales]) {
+    if (!coincide(h)) continue;
+    const clave = aTexto(h.cedula) || aTexto(h.id);
+    if (vistos.has(clave)) continue;
+    vistos.add(clave);
+    salida.push(h);
+    if (salida.length >= limite) break;
+  }
+  return salida;
+};
 export const CAMPOS_DE_VENTA = [
   'venta', 'abono', 'notas', 'notas_clinicas',
   'codigo_armazon', 'tipo_armazon',

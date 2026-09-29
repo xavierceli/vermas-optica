@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, Fragment } from 'react'
 import { safeString, calcularCerca, buscarPacientesEnSupabase } from './utilidades'
 import { LIMITE_QUERATOMETRIA, esQueratometriaAlta } from './reglas'
+import { buscarCoincidenciasPacientes } from './fichaClinica'
 
 const claseQueratometria = alta => `w-14 p-1 border rounded outline-none text-center text-sm font-bold focus:ring-1 focus:ring-teal-500 ${alta ? 'border-red-500 bg-red-50 text-red-700' : 'border-gray-300'}`;
 
@@ -164,36 +165,39 @@ export default function Clinica({
 
   useEffect(() => () => { if (timerNube.current) clearTimeout(timerNube.current); }, []);
 
+  // Una sola funcion decide lo que se ve: la nube manda y lo local rellena. Asi
+  // el listado se repinta tambien cuando llegan los resultados de la nube.
+  const pintarSugerencias = (texto, listaNube) => {
+    const encontradas = buscarCoincidenciasPacientes({
+      locales: historial || [], nube: listaNube || [], texto
+    });
+    setSugerenciasCedula(encontradas);
+    setMostrarSugerencias(encontradas.length > 0);
+  };
+
   const manejarEscrituraCedula = (e) => {
     manejarCambio(e); 
     const val = e.target.value.trim();
-    
+
+    // Se pinta AL INMEDIATO con lo que ya hay (nube de la vez anterior + local),
+    // y otra vez cuando llega la nube. Antes el resultado de la nube se guardaba
+    // en un estado que nunca se volcaba a la lista visible: buscar un paciente
+    // que no estuviera descargado aqui no encontraba nada.
+    pintarSugerencias(val, sugerenciasNube);
+
     // Búsqueda en la NUBE con pausa: encuentra pacientes aunque no estén en los últimos 100 locales
     if (timerNube.current) clearTimeout(timerNube.current);
     if (val.length >= 3 && navigator.onLine) {
       timerNube.current = setTimeout(async () => {
         try {
           const resultados = await buscarPacientesEnSupabase(val);
-          setSugerenciasNube((resultados || []).filter(r => safeString(r?.nombre) !== 'CONSUMIDOR FINAL').slice(0, 5));
+          const nube = (resultados || []).filter(r => safeString(r?.nombre) !== 'CONSUMIDOR FINAL').slice(0, 5);
+          setSugerenciasNube(nube);
+          pintarSugerencias(val, nube);
         } catch { /* silencioso: si falla, las sugerencias locales siguen */ }
       }, 400);
     } else {
       setSugerenciasNube([]);
-    }
-    
-    if (val.length >= 2) {
-      const base = [...sugerenciasNube, ...(historial || [])];
-      const matches = base.filter(h => 
-        h && safeString(h?.nombre) !== 'CONSUMIDOR FINAL' &&
-        (safeString(h?.cedula).includes(val) || safeString(h?.nombre).toLowerCase().includes(val.toLowerCase()) || safeString(h?.alias).toLowerCase().includes(val.toLowerCase()))
-      );
-      const unicos = Array.from(new Set(matches.map(s => s.cedula)))
-        .map(ced => matches.find(s => s.cedula === ced));
-      setSugerenciasCedula(unicos.slice(0, 5));
-      setMostrarSugerencias(true);
-    } else {
-      setSugerenciasCedula([]);
-      setMostrarSugerencias(false);
     }
   };
 
