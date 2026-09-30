@@ -567,7 +567,35 @@ if (sync) {
 
     const esVentaNueva = !safeString(itemFormateado.pedido_id);
     itemFormateado._nueva_venta = esVentaNueva;
-    if (esVentaNueva) itemFormateado.pedido_id = generarId();
+    if (esVentaNueva) {
+      itemFormateado.pedido_id = generarId();
+      // BUG REAL: al crear una venta NUEVA para un paciente que ya tenia otra,
+      // se arrastraba el armazon, el tipo de lente y los tratamientos de la
+      // VENTA ANTERIOR. El optometria abria el formulario de una segunda venta y
+      // el armazon de la primera ya estaba puesto: si no lo cambiaba, se vendia
+      // el armazon equivocado y el precio se calculaba sobre el, en silencio.
+      //
+      // Una venta nueva arranca en blanco. Lo que si se conserva son los DATOS
+      // CLINICOS del paciente (esfera, cilindro...): son suyos, no de la venta.
+      // Cada campo se limpia SOLO si viene de la venta anterior, nunca un dato
+      // clinico que el optometria haya escrito.
+      const CAMPOS_DE_LA_VENTA = [
+        'codigo_armazon', 'tipo_armazon', 'param_horizontal', 'param_puente',
+        'param_vertical', 'param_diagonal', 'tipo_lente', 'material_lente',
+        'material_nota', 'accesorio_id', 'venta', 'abono', 'pago_nota',
+        'estado', 'notas', 'comprobante_url', 'costo_armazon_int',
+        'costo_lunas_int', 'costo_accesorio_int', 'costo_tratamientos_int',
+        'costo_varios_int', 'codigo_armazon_confirmado'
+      ];
+      CAMPOS_DE_LA_VENTA.forEach(k => { itemFormateado[k] = ''; });
+      itemFormateado.descuento = '0';
+      itemFormateado.forma_pago = 'Efectivo';
+      itemFormateado.estado = 'En laboratorio';
+      itemFormateado.tratam_ar = 'NO'; itemFormateado.tratam_ar_azul = 'NO';
+      itemFormateado.tratam_azul = 'NO'; itemFormateado.tratam_tinturado = 'NO';
+      itemFormateado.tratam_foto = 'NO'; itemFormateado.tratam_trans = 'NO';
+      itemFormateado.tratam_ninguno = 'SI';
+    }
 
     const visitas = (historial || []).filter(h => safeString(h?.cedula) === safeString(item.cedula) && safeString(h?.nombre) !== 'CONSUMIDOR FINAL');
     setMedidasPaciente(visitas); setPedidoSeleccionado(itemFormateado); setAccesorioOriginalId(itemFormateado.accesorio_id || ''); setVistaActual('pedidos_form');

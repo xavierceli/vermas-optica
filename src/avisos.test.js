@@ -282,6 +282,51 @@ test('el motor marca offline ante un fallo de red, y vuelve a online al responde
   assert.match(fuente, /status\.online = true;[\s\S]{0,80}status\.phase/, 'un ciclo completo debe devolver la app a online');
 });
 
+test('un fallo de red NO se cuenta como rechazo del servidor', () => {
+  // BUG REAL, confirmado con una captura: sin internet la barra se ponia roja
+  // diciendo "El servidor rechazo 1 operacion(es): Failed to fetch". El servidor
+  // no habia rechazado nada: no llego a responder. Y como la barra prioriza
+  // `fallos` sobre `esOffline`, el aviso de "Sin conexion" no se veia NUNCA.
+  const fuente = leer('syncEngine.js');
+  assert.match(fuente, /if \(esFalloDeRed\(motivo\)\)/,
+    'un fallo de red debe detectarse al aplicar los resultados');
+  assert.match(fuente, /marcarPendientePorRed/,
+    'y la operacion debe quedar en espera, no rechazada');
+});
+
+test('un corte de internet NO gasta los intentos de la operacion', () => {
+  // Si cada corte sumara un intento, una venta acabaria en 'descartada' por no
+  // tener internet: se perderia el trabajo del optometria por una causa que no
+  // es de los datos.
+  const fuente = leer('syncEngine.js');
+  const i = fuente.indexOf('const marcarPendientePorRed');
+  const bloque = fuente.slice(i, i + 700);
+  assert.match(bloque, /status: 'pending'/, 'debe quedar pendiente');
+  assert.ok(!bloque.includes('attempts'), 'y no debe contar un intento mas');
+});
+
+test('la barra da prioridad a "sin conexion" sobre los fallos', () => {
+  // El orden de los ternarios es lo que decide el color. Con `fallos` delante,
+  // un "Failed to fetch" sin clasificar tapaba el aviso de red.
+  const fuente = leer('../src/App.jsx');
+  const color = fuente.slice(fuente.indexOf('const colorBarra'), fuente.indexOf('const colorBarra') + 320);
+  assert.match(color, /esOffline[\s\S]*fallos\.length/, 'sin conexion debe evaluarse antes que los fallos');
+});
+
+test('una venta nueva no arrastra el armazon de la venta anterior', () => {
+  // BUG REAL: el optometria abria el formulario de una segunda venta y el
+  // armazon de la primera ya estaba puesto. Si no lo cambiaba, se vendia el
+  // armazon equivocado y el precio se calculaba sobre el, en silencio.
+  const fuente = leer('../src/useGestor.js');
+  const i = fuente.indexOf('const esVentaNueva');
+  const bloque = fuente.slice(i, i + 1900);
+  assert.match(bloque, /CAMPOS_DE_LA_VENTA/, 'debe limpiar los campos de la venta');
+  assert.match(bloque, /'codigo_armazon'/, 'empezando por el codigo de armazon');
+  assert.match(bloque, /itemFormateado\[k\] = ''/, 'dejandolos en blanco');
+  // Y los datos clinicos del paciente NO se tocan: son suyos, no de la venta.
+  assert.ok(!bloque.includes('esfera_od'), 'no debe limpiar la refraccion del paciente');
+});
+
 test('las estadisticas se releen cuando el servidor recalcula, no solo al entrar', () => {
   // BUG REAL: con una venta nueva, "Ingresos Mes" no cambiaba hasta recargar la
   // app. El motor escribe 'remoteStats' en cada pull, pero la pantalla solo lo

@@ -403,7 +403,9 @@ export default function Historial({
                   <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 shadow-inner">
                     <div className="flex justify-between items-center mb-3">
                       <strong className="text-blue-900 text-base">Última RX Clínica</strong>
-                      <span className="text-xs text-gray-500 font-medium bg-white px-2 py-1 rounded border">📅 {safeString(item.fecha)} ({calcularTiempoTranscurrido(item.fecha)})</span>
+                      <span className="text-xs text-gray-500 font-medium bg-white px-2 py-1 rounded border">
+                        📅 {safeString(item.fecha_receta || item.fecha)}{item.fecha_receta && item.fecha_receta !== item.fecha ? ` (receta del ${safeString(item.fecha_receta)})` : ` (${calcularTiempoTranscurrido(item.fecha_receta || item.fecha)})`}
+                      </span>
                     </div>
                     <table className="w-full text-center text-sm bg-white rounded border overflow-hidden">
                       <thead className="bg-blue-50/50 text-gray-600"><tr><th className="p-2 border-b border-r"></th><th className="p-2 border-b border-r">Esf.</th><th className="p-2 border-b border-r">Cil.</th><th className="p-2 border-b border-r">Eje</th><th className="p-2 border-b">Adi.</th></tr></thead>

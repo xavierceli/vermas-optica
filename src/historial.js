@@ -75,14 +75,22 @@ export const tieneRefraccion = (item) =>
 /**
  * Una sola tarjeta por paciente, de una lista ORDENADA por fecha descendente.
  *
- * La tarjeta se titula "Ultima RX Clinica", asi que gana la visita mas reciente
- * QUE TIENE REFRACCION. Antes ganaba la mas reciente sin mas, y una visita de
- * control sin receta (o una consulta vacia) tapaba la ultima Rx real: el
- * optometria veia la tabla con guiones, creia que no habia receta, y "Ver
- * Evolucion" si la ensenaba. Un dato clinico visible en un sitio y no en otro.
+ * La tarjeta mezcla DOS datos de visitas distintas, y esta es la parte que
+ * costaba dos bugs seguidos:
  *
- * Si ninguna visita tiene refraccion, gana la mas reciente: es mejor una tabla
- * con guiones que una tarjeta con la fecha de una consulta antigua.
+ *   · Lo COMERCIAL (pedido, armazon, pago) va de la visita mas reciente: es lo
+ *     que se acaba de hacer y lo que el optometria tiene que ver.
+ *   · La RECETA (esfera, cilindro, eje, adicion) va de la visita mas reciente
+ *     QUE TENGA refraccion, y se indica su fecha.
+ *
+ * Antes ganaba una sola visita, la mas reciente, y si era un control sin receta
+ * la tabla salia con guiones aunque el paciente tuviera receta en otra visita
+ * (el boton "Ver Evolucion" si la ensenaba). Elegir la visita CON refraccion
+ * tampoco resolvia el caso offline, en el que las filas locales llegan sin
+ * datos de consulta: al fusionar, la receta de otra visita rellena los huecos.
+ *
+ * Si ninguna visita tiene refraccion, se queda con la mas reciente y la tabla
+ * sale con guiones: es mejor eso que una tarjeta anclada en una consulta vieja.
  */
 export const unaTarjetaPorCedula = (filas, claveDe) => {
   const clave = claveDe || (fila => aTexto(fila?.cedula).trim() || `id:${fila?.id}`);
@@ -91,8 +99,25 @@ export const unaTarjetaPorCedula = (filas, claveDe) => {
     if (!fila) continue;
     const k = clave(fila);
     const actual = elegidas.get(k);
-    if (!actual || (!tieneRefraccion(actual) && tieneRefraccion(fila))) {
-      elegidas.set(k, fila);
+    if (!actual) {
+      // Primera vez que se ve a este paciente: es la visita MAS RECIENTE (la
+      // lista llega ordenada), asi que si trae receta, esa es su ultima receta.
+      elegidas.set(k, tieneRefraccion(fila) ? { ...fila, fecha_receta: fila.fecha } : { ...fila });
+      continue;
+    }
+    // La receta se toma de la primera fila con refraccion que aparezca, porque
+    // la lista viene ordenada por fecha descendente: esa es la ultima receta.
+    if (!tieneRefraccion(actual) && tieneRefraccion(fila)) {
+      const receta = {};
+      for (const campo of CAMPOS_REFRACCION) receta[campo] = fila[campo];
+      elegidas.set(k, {
+        ...fila,
+        ...actual,
+        ...receta,
+        fecha_receta: aTexto(fila.fecha).trim() || actual.fecha_receta || actual.fecha
+      });
+    } else if (!actual.fecha_receta && tieneRefraccion(actual)) {
+      actual.fecha_receta = actual.fecha;
     }
   }
   return [...elegidas.values()];

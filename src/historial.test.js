@@ -149,24 +149,33 @@ test('una refraccion plana no inventa diagnosticos', () => {
 
 test('una consulta de control SIN receta no tapa la ultima Rx real', () => {
   const filas = [
-    consulta({ id: 'control', fecha: '2026-09-27', notas_clinicas: 'Solo control' }),
+    consulta({ id: 'control', fecha: '2026-09-30', notas_clinicas: 'Solo control', estado: 'En laboratorio', codigo_armazon: 'XC9502' }),
     consulta({ id: 'con-rx', fecha: '2026-03-02', esfera_od: '-1.25', cilindro_od: '-0.50', eje_od: '180' })
   ];
   const [tarjeta] = unaTarjetaPorCedula(filas);
-  assert.equal(tarjeta.id, 'con-rx', 'la tarjeta debe enseñar la ultima Rx que existe');
-  assert.equal(tarjeta.esfera_od, '-1.25');
-  assert.equal(tarjeta.fecha, '2026-03-02', 'la fecha que se muestra es la de la Rx que se enseña');
+  // Lo COMERCIAL es de la ultima visita: es lo que se acaba de hacer.
+  assert.equal(tarjeta.codigo_armazon, 'XC9502', 'el armazon debe ser el de la ultima visita');
+  assert.equal(tarjeta.estado, 'En laboratorio');
+  // La RECETA viene de la ultima visita que la tenia, aunque sea mas antigua.
+  assert.equal(tarjeta.esfera_od, '-1.25', 'la receta debe ser la ultima que existe');
+  assert.equal(tarjeta.cilindro_od, '-0.50');
+  assert.equal(tarjeta.eje_od, '180');
+  // Y se dice de que fecha es, para no hacer pasar una receta vieja por nueva.
+  assert.equal(tarjeta.fecha_receta, '2026-03-02');
+  assert.equal(tarjeta.fecha, '2026-09-30', 'la fecha de la tarjeta es la de la ultima visita');
 });
 
-test('una Rx nueva SI tapa una Rx antigua', () => {
-  // Lo contrario tambien seria un bug: si la ultima receta es nueva, tiene que
-  // ganar aunque la anterior tambien tenga refraccion.
+test('una Rx nueva SI tapa una Rx antigua, y sin marcar fecha aparte', () => {
+  // Si la ultima visita trae receta, esa es la ultima receta: no hace falta
+  // distinguirla de la fecha de la tarjeta.
   const filas = [
     consulta({ id: 'nueva', fecha: '2026-09-27', esfera_od: '-2.00' }),
     consulta({ id: 'anterior', fecha: '2025-01-10', esfera_od: '-1.00' })
   ];
   const [tarjeta] = unaTarjetaPorCedula(filas);
   assert.equal(tarjeta.id, 'nueva');
+  assert.equal(tarjeta.esfera_od, '-2.00', 'la receta mas reciente gana');
+  assert.equal(tarjeta.fecha_receta, '2026-09-27');
 });
 
 test('si ninguna visita tiene receta, gana la mas reciente', () => {
@@ -191,22 +200,40 @@ test('un cero es una receta: el paciente con esfera 0.00 tambien cuenta', () => 
 
 test('solo se agrupan las consultas del MISMO paciente', () => {
   const filas = [
-    consulta({ id: 'a1', cedula: '1712345678', fecha: '2026-09-27' }),
-    consulta({ id: 'b1', cedula: '0912345678', fecha: '2026-09-28' }),
+    consulta({ id: 'a1', cedula: '1712345678', fecha: '2026-09-27', estado: 'En laboratorio' }),
+    consulta({ id: 'b1', cedula: '0912345678', fecha: '2026-09-28', estado: 'Entregado' }),
     consulta({ id: 'a2', cedula: '1712345678', fecha: '2026-01-01', esfera_od: '-1.00' })
   ];
   const tarjetas = unaTarjetaPorCedula(filas);
   assert.equal(tarjetas.length, 2, 'una tarjeta por paciente');
-  assert.equal(tarjetas.find(t => t.cedula === '1712345678').id, 'a2');
-  assert.equal(tarjetas.find(t => t.cedula === '0912345678').id, 'b1');
+  const a = tarjetas.find(t => t.cedula === '1712345678');
+  const b = tarjetas.find(t => t.cedula === '0912345678');
+  assert.equal(a.estado, 'En laboratorio', 'comercial de la visita mas reciente');
+  assert.equal(a.esfera_od, '-1.00', 'receta de la visita que la tenia');
+  assert.equal(b.estado, 'Entregado', 'el otro paciente no se mezcla');
 });
 
 test('el buscador de la pantalla usa la MISMA regla que el historial', () => {
   // Estaban las dos reglas por separado y no tenian por que coincidir: la
   // buscador podia enseñar una cosa y la lista otra, para la misma paciente.
   const filas = [
-    consulta({ id: 'control', fecha: '2026-09-27' }),
+    consulta({ id: 'control', fecha: '2026-09-27', estado: 'En laboratorio' }),
     consulta({ id: 'con-rx', fecha: '2026-03-02', esfera_od: '-1.25' })
   ];
-  assert.equal(agruparPorCedula(filas)[0].id, 'con-rx');
+  const tarjeta = agruparPorCedula(filas)[0];
+  assert.equal(tarjeta.esfera_od, '-1.25', 'el buscador enseña la receta igual que el historial');
+  assert.equal(tarjeta.estado, 'En laboratorio', 'y el comercial de la ultima visita');
+});
+
+test('fusionar no pisa el armazon de la ultima venta con el de una anterior', () => {
+  // El bug del armazon persistente, en la parte de la tarjeta: al fusionar la
+  // receta de una visita antigua, sus campos COMERCIES no deben colarse.
+  const filas = [
+    consulta({ id: 'reciente', fecha: '2026-09-30', estado: 'En laboratorio', venta: '68' }),
+    consulta({ id: 'vieja', fecha: '2025-01-01', esfera_od: '-1.00', codigo_armazon: 'XC9502', venta: '200', estado: 'Entregado' })
+  ];
+  const [tarjeta] = unaTarjetaPorCedula(filas);
+  assert.equal(tarjeta.venta, '68', 'el importe debe ser el de la ultima venta');
+  assert.equal(tarjeta.estado, 'En laboratorio');
+  assert.equal(tarjeta.esfera_od, '-1.00', 'pero la receta si se conserva');
 });

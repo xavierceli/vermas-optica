@@ -53,10 +53,12 @@ function App() {
   // pendientes") sin decir por que deja al usuario sin ningun siguiente paso.
   const detalleCola = descartadas > 0
     ? `${descartadas} se descartaron; revisa la consola (F12)`
-    : fallos.length > 0
-    ? String(fallos[0].motivo || '').slice(0, 100)
+    // Sin conexion va PRIMERO: si no, un "Failed to fetch" sin clasificar se
+    // enseania como "El servidor rechazo..." y el aviso de red no aparecia nunca.
     : esOffline
     ? (pendientes > 0 ? 'Se subiran al recuperar conexion' : 'Todo guardado aqui')
+    : fallos.length > 0
+    ? String(fallos[0].motivo || '').slice(0, 100)
     : 'En cola de salida';
   // El historial se descarga por paginas y con tope: si este equipo lo alcanza,
   // su lista esta INCOMPLETA. Decirlo es mejor que fingir que es todo: las
@@ -139,20 +141,38 @@ function App() {
           activa el cambio, y solo cuando el usuario lo decide. */}
       <AvisoActualizacion hayTrabajoSinGuardar={pendientes > 0 || g.guardando} confirmar={g.confirmar} />
 
-      {(esOffline || pendientes > 0 || conflictos > 0 || fallos.length > 0 || g.modoSinConexion) && (
-        <div className={`fixed top-0 left-0 w-full text-white text-center py-2 font-black text-xs md:text-sm z-[200] shadow-md flex items-center justify-center gap-3 px-4 ${g.modoSinConexion ? 'bg-purple-800' : fallos.length > 0 ? 'bg-red-700' : conflictos > 0 ? 'bg-amber-600' : esOffline ? 'bg-slate-800' : 'bg-blue-700'}`}>
-          <span>{g.modoSinConexion ? '🔓' : fallos.length > 0 ? '⛔' : conflictos > 0 ? '⚠️' : esOffline ? '📴' : '🔄'}</span>
-          <span>{g.modoSinConexion
-            ? 'Modo sin conexión: entraste con el PIN local. Los cambios se guardan aquí y se subirán al volver a iniciar sesión.'
-            : fallos.length > 0
-            ? `El servidor rechazó ${fallos.length} operación(es): ${String(fallos[0].motivo || '').slice(0, 160)}`
-            : conflictos > 0 ? `${conflictos} conflictos requieren revisión.`
-            : sincronizando ? `Sincronizando ${pendientes} operación(es)…`
-            : esOffline ? 'Modo local: los datos se guardan en este dispositivo.'
-            : `${pendientes} operaciones en cola, esperando el próximo intento.`}</span>
-          {pendientes > 0 && !esOffline && !g.modoSinConexion && <button onClick={() => g.sincronizarAhora()} className="rounded bg-white/20 px-2 py-1">Sincronizar ahora</button>}
-        </div>
-      )}
+      {/* Sin conexion tiene PRIORIDAD sobre los fallos. Antes ganaba `fallos`, y
+          como un corte de internet llegaba a la cola como "Failed to fetch", la
+          barra se ponia roja diciendo "El servidor rechazo N operacion(es)" sin
+          que el servidor hubiera rechazado nada, y el aviso de "Sin conexion" no
+          se veia nunca. */}
+      {(() => {
+        const colorBarra = g.modoSinConexion ? 'bg-purple-800'
+          : esOffline ? 'bg-slate-800'
+          : fallos.length > 0 ? 'bg-red-700'
+          : conflictos > 0 ? 'bg-amber-600'
+          : 'bg-blue-700';
+        const iconoBarra = g.modoSinConexion ? '🔓' : esOffline ? '📴' : fallos.length > 0 ? '⛔' : conflictos > 0 ? '⚠️' : '🔄';
+        const textoBarra = g.modoSinConexion
+          ? 'Modo sin conexión: entraste con el PIN local. Los cambios se guardan aquí y se subirán al volver a iniciar sesión.'
+          : esOffline
+          ? 'Sin conexión a internet. Los datos se guardan en este dispositivo y se subirán solos al volver la red.'
+          : fallos.length > 0
+          ? `El servidor rechazó ${fallos.length} operación(es): ${String(fallos[0].motivo || '').slice(0, 160)}`
+          : conflictos > 0
+          ? `${conflictos} conflictos requieren revisión.`
+          : sincronizando
+          ? `Sincronizando ${pendientes} operación(es)…`
+          : `${pendientes} operaciones en cola, esperando el próximo intento.`;
+        if (!(esOffline || pendientes > 0 || conflictos > 0 || fallos.length > 0 || g.modoSinConexion)) return null;
+        return (
+          <div className={`fixed top-0 left-0 w-full text-white text-center py-2 font-black text-xs md:text-sm z-[200] shadow-md flex items-center justify-center gap-3 px-4 ${colorBarra}`}>
+            <span>{iconoBarra}</span>
+            <span>{textoBarra}</span>
+            {pendientes > 0 && !esOffline && !g.modoSinConexion && <button onClick={() => g.sincronizarAhora()} className="rounded bg-white/20 px-2 py-1">Sincronizar ahora</button>}
+          </div>
+        );
+      })()}
       {g.toast && (
         // role="status" + aria-live: sin esto el lector de pantalla no anuncia
         // el resultado de la accion. Es el unico canal para confirmar que el

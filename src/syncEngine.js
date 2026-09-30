@@ -111,6 +111,22 @@ const purgarDescartadas = async () => {
   return aBorrar.length;
 };
 
+// Un fallo de RED deja la operacion como 'pending', sin sumar intento ni dejar un
+// motivo de rechazo. Si no, cada corte de internet sumaria un intento, la venta
+// llegaria a MAX_INTENTOS y pasaria a 'descartada' por no tener internet: se
+// perderia el trabajo del optometria por una causa que no es de los datos.
+const marcarPendientePorRed = async operation => {
+  await localDb.outbox.put({
+    ...operation,
+    status: 'pending',
+    lastError: null,
+    updatedAt: nowIso()
+  });
+  status.online = false;
+  status.phase = 'offline';
+  console.warn(`[sync] "${operation.type}" queda en espera: sin conexion. No es un rechazo del servidor.`);
+};
+
 const refreshCounts = async () => {
   const operations = await localDb.outbox.toArray();
   status.pending = operations.filter(row => row.status === 'pending' || row.status === 'failed').length;
@@ -299,6 +315,19 @@ const applyResults = async results => {
       fallos.push({ tipo: operation.type, motivo: result.error || 'Conflicto de datos', estado: 'conflict' });
     } else {
       const motivo = result.error || 'La operación fue rechazada por el servidor';
+
+      // BUG REAL, confirmado con una captura: sin internet, el servidor devuelve
+      // "Failed to fetch" COMO si fuera el rechazo de una operacion. La barra se
+      // ponia roja y decia "El servidor rechazo 1 operacion(es): Failed to fetch",
+      // que es una mentira: el servidor no rechazo nada, no llego a responder. Y
+      // como la barra prioriza `fallos` sobre `esOffline`, el aviso de "Sin
+      // conexion" NUNCA llegaba a verse. Un fallo de red no es un rechazo: la
+      // operacion queda esperando y se avisa de la falta de conexion.
+      if (esFalloDeRed(motivo)) {
+        await marcarPendientePorRed(operation);
+        console.warn('[sync] sin red al enviar una operacion; se reintentara. No es un rechazo del servidor.');
+        continue;
+      }
 
       // "La consulta X no existe" al archivar significa que la consulta NUNCA
       // llego al servidor (se creo y archivo antes de que se sincronizara). El
