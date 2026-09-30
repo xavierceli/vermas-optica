@@ -49,18 +49,10 @@ export const comprimirImagen = (archivo) => {
   });
 };
 
-export const calcularEdad = (fechaNacimiento) => {
-  try {
-    if (!fechaNacimiento) return '';
-    const hoyDate = new Date();
-    const cumpleanos = new Date(fechaNacimiento);
-    if (isNaN(cumpleanos.getTime())) return '';
-    let edad = hoyDate.getFullYear() - cumpleanos.getFullYear();
-    const m = hoyDate.getMonth() - cumpleanos.getMonth();
-    if (m < 0 || (m === 0 && hoyDate.getDate() < cumpleanos.getDate())) { edad--; }
-    return edad;
-  } catch { return ''; }
-};
+// La edad vive en fechas.js (modulo puro) para poder probarla: antes estaba
+// aqui y hacia new Date('AAAA-MM-DD'), que se interpreta a MEDIANOCHE UTC y en
+// Ecuador nos adelantaba la edad un dia entero. Ver fechas.test.js.
+export { calcularEdad } from './fechas';
 
 export const calcularTiempoTranscurrido = (fecha) => {
   try {

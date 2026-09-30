@@ -8,7 +8,7 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test:local": "node --test src/reglas.test.js src/paginacion.test.js src/seguridad.test.js src/escape.test.js src/accesibilidad.test.js src/syncEngine.test.js src/validacion.test.js src/imagenesInventario.test.js src/actualizacion.test.js src/errores.test.js src/respaldo.test.js src/rls.test.js src/fichaClinica.test.js src/localRepository.test.js"
+    "test:local": "node --test src/reglas.test.js src/paginacion.test.js src/seguridad.test.js src/escape.test.js src/accesibilidad.test.js src/syncEngine.test.js src/validacion.test.js src/imagenesInventario.test.js src/actualizacion.test.js src/errores.test.js src/respaldo.test.js src/rls.test.js src/fichaClinica.test.js src/fechas.test.js src/localRepository.test.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.110.8",

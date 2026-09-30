@@ -237,7 +237,11 @@ const applyResults = async results => {
       }
       if (operation.type === 'UPSERT_INVENTARIO' && serverResult.inventario) {
         const serverId = Number(serverResult.servidor_id);
-        if (operation.entityId !== serverId) {
+        // OJO: los dos ids se comparan como NUMERO. operation.entityId es el id
+        // que dio el dispositivo y puede venir como TEXTO desde un formulario;
+        // comparar texto con numero da siempre "distintos" y hacia reconciliar
+        // de mas (borrar y reinsertar el producto local) en cada subida.
+        if (Number(operation.entityId) !== serverId) {
           await localDb.saleItems.where('inventoryId').equals(operation.entityId).modify({ inventoryId: serverId });
           await localDb.inventoryMovements.where('inventoryId').equals(operation.entityId).modify({ inventoryId: serverId });
           await localDb.inventory.delete(operation.entityId);
@@ -245,7 +249,8 @@ const applyResults = async results => {
         await localDb.inventory.put({ ...serverResult.inventario, syncStatus: 'synced', updatedAt: nowIso() });
       } else if (operation.type === 'UPSERT_PRECIO' && serverResult.precio) {
         const serverId = Number(serverResult.servidor_id);
-        if (operation.entityId !== serverId) await localDb.prices.delete(operation.entityId);
+        // Mismo motivo que en el inventario: comparar como numero, no como texto.
+        if (Number(operation.entityId) !== serverId) await localDb.prices.delete(operation.entityId);
         await localDb.prices.put({ ...serverResult.precio, syncStatus: 'synced', updatedAt: nowIso() });
       } else {
         await markLocalOperationSynced(operation);
