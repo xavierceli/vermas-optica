@@ -81,6 +81,22 @@ test('el historial de revisiones se queda sin ningun permiso, no solo sin SELECT
   );
 });
 
+// --- Limpieza puntual de un paciente de prueba ---------------------------
+test('la migracion de limpieza archiva por id explicito y es idempotente', () => {
+  const fuente = leerRuta(join(MIGRACIONES, '202609240013_archiva_consultas_prueba.sql'));
+  // Por id y no por cedula: los ids son los del servidor y no dependen de como
+  // este escrito el documento en cada ficha.
+  assert.match(fuente, /where archived_at is null/i, 'debe tocar solo lo que falta archivar');
+  assert.match(fuente, /set archived_at = now\(\)/i);
+  for (const sufijo of ['1a0298a0', '25157037', '84deef12', 'd7cf3787']) {
+    assert.ok(fuente.includes(sufijo), 'falta la consulta ' + sufijo);
+  }
+  assert.ok(
+    !/delete\s+from/i.test(fuente),
+    'esta migracion archiva, nunca borra: el historial clinico no se elimina'
+  );
+});
+
 // --- Y la app sigue sin escribir nunca directamente -----------------------
 test('la app NO escribe en ninguna tabla: todo entra por funciones del servidor', () => {
   const escrituras = [];
