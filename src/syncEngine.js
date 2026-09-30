@@ -486,25 +486,58 @@ const descargarHistorialPaginado = async () => {
 // La vista no se toca: se redefine sin conocer su definicion original y eso es
 // arriesgado. En su lugar se pregunta directamente a la tabla, que si sabe.
 //
+// OJO, TRAMPA IMPORTANTE: `consultas_clinicas` NO tiene columna `cedula`. La cedula
+// vive en `pacientes_perfil`; la consulta solo guarda `paciente_id`. Preguntar
+// `select cedula` a la consulta devuelve un error 42703 y, como este bloque traga
+// los errores a proposito (no puede impedir sincronizar), el fallo pasaba DESAPARECIDO:
+// los pacientes borrados seguian apareciendo y no habia ni un rastro. Por eso van
+// tres consultas: una para las consultas archivadas, otra para las vivas (un
+// paciente sigue existiendo si tiene CUALQUIER consulta viva) y una tercera para
+// traducir paciente_id a cedula.
+//
 // El borrado es un hecho del NEGOCIO, no del dispositivo: si el optometria
 // borra un paciente en el mostrador, no debe reaparecer en la tablet de la otra
 // punta del mostrador.
 const leerCedulasArchivadasDelServidor = async () => {
   try {
-    const { data, error } = await supabase
+    const soloVivas = await supabase
       .from('consultas_clinicas')
-      .select('cedula')
+      .select('paciente_id')
+      .is('archived_at', null);
+    if (soloVivas.error) throw soloVivas.error;
+
+    const { data: archivadas, error: errorArchivadas } = await supabase
+      .from('consultas_clinicas')
+      .select('paciente_id')
       .not('archived_at', 'is', null);
-    if (error) { console.warn('[sync] no se pudieron leer las cedulas archivadas:', error.message); return; }
-    const lista = [...new Set((data || [])
+    if (errorArchivadas) throw errorArchivadas;
+
+    const conConsultaViva = new Set((soloVivas.data || []).map(r => String(r.paciente_id ?? '')));
+    const idsArchivados = [...new Set((archivadas || [])
+      .map(r => String(r.paciente_id ?? ''))
+      .filter(id => id && !conConsultaViva.has(id)))];
+    if (idsArchivados.length === 0) {
+      await localDb.meta.put({ key: 'cedulasArchivadasServidor', value: [], updatedAt: nowIso() });
+      return;
+    }
+
+    const { data: pacientes, error: errorPacientes } = await supabase
+      .from('pacientes_perfil')
+      .select('cedula')
+      .in('id', idsArchivados);
+    if (errorPacientes) throw errorPacientes;
+
+    const lista = [...new Set((pacientes || [])
       .map(row => String(row?.cedula ?? '').trim().toUpperCase())
       .filter(Boolean))];
     await localDb.meta.put({ key: 'cedulasArchivadasServidor', value: lista, updatedAt: nowIso() });
     if (lista.length > 0) console.log(`[sync] el servidor tiene ${lista.length} cedula(s) archivadas.`);
   } catch (e) {
     // Si esto falla, el equipo sigue ocultando lo que borro el mismo. Es una red
-    // de seguridad, no un requisito: no puede impedir sincronizar.
-    console.warn('[sync] no se pudieron leer las cedulas archivadas:', e?.message || e);
+    // de seguridad, no un requisito: no puede impedir sincronizar. Pero un fallo
+    // AQUI es el motivo por el que un borrado hecho en otro equipo no se ve, asi
+    // que se avisa bien alto en consola.
+    console.warn('[sync] NO se pudieron leer las cedulas archivadas del servidor. Los pacientes borrados en otro equipo pueden aparecer aqui:', e?.message || e);
   }
 };
 

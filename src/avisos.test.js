@@ -367,8 +367,18 @@ test('el borrado de un paciente es un hecho del SERVIDOR, no del dispositivo', (
   const motor = leer('syncEngine.js');
   assert.match(motor, /leerCedulasArchivadasDelServidor/,
     'el sincronizador debe leer del servidor las cedulas archivadas');
-  assert.match(motor, /from\('consultas_clinicas'\)[\s\S]{0,80}not\('archived_at', 'is', null\)/,
-    'preguntando a la tabla, que si conoce archived_at, y no a la vista, que no');
+  // `consultas_clinicas` NO tiene columna `cedula`: la cedula vive en el PACIENTE.
+  // Pedirla a la consulta devuelve un error 42703 y, como este bloque traga los
+  // errores a proposito, el fallo pasaba DESAPARECIDO: los pacientes borrados
+  // seguian apareciendo igual. Este test existe para que no vuelva a pasar.
+  assert.ok(
+    !/from\('consultas_clinicas'\)[\s\S]{0,60}select\('cedula'\)/.test(motor),
+    'cedula no existe en consultas_clinicas: hay que pasar por paciente_id y pacientes_perfil'
+  );
+  assert.match(motor, /from\('pacientes_perfil'\)[\s\S]{0,60}select\('cedula'\)/,
+    'la cedula se lee de la tabla de pacientes');
+  assert.match(motor, /\.is\('archived_at', null\)/,
+    'y hay que distinguir las consultas VIVAS: un paciente sigue existiendo si tiene alguna viva');
 
   const repo = leer('localRepository.js');
   assert.match(repo, /getMeta\('cedulasArchivadasServidor', \[\]\)/,

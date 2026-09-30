@@ -8,75 +8,52 @@
 -- navegador nuevo (Edge, por ejemplo) "PRUEBA" y "PRUEBA2" aparecian como si
 -- nadie los hubiera borrado nunca.
 --
--- La app ya pregunta al servidor que cedulas estan archivadas, pero SOLO puede
--- ocultar lo que el servidor sepa. Si el borrado nunca subio, el servidor no lo
--- sabe y este script lo pone al dia.
+-- OJO, TRAMPA: `consultas_clinicas` NO tiene columna `cedula`. La cedula vive en
+-- `pacientes_perfil` y la consulta guarda `paciente_id`. Por eso todo esto va por
+-- JOIN.
 --
 -- QUE HACE
--- Archiva las consultas de los pacientes DE PRUEBA, tomando la lista de
--- pacientes que se van a verificar justo antes de tocar nada.
---
--- ES SEGURO
---   · Solo toca las CEDULAS de la lista de abajo.
---   · Solo lo que sigue SIN archivar: correrlo dos veces no hace nada la segunda.
---   · Se puede deshacer (ver el final del archivo).
---   · No toca ventas ni pagos: solo consultas clinicas.
+-- Archiva las consultas de los pacientes de PRUEBA. Es idempotente, reversible y
+-- NO toca ventas ni pagos.
 -- ============================================================================
 
--- ---------------------------------------------------------------------------
--- PASO 1 — VERIFICACION. Esto SOLO LEE. Copia y ejecuta este bloque primero.
--- ---------------------------------------------------------------------------
--- Debe salirte SOLO lo que ya conoces: los pacientes de prueba. Si aparece un nombre
--- real (GINA, DOMENICA, un paciente de verdad), NO sigas al paso 2 y dimelo.
+-- PASO 1 - VERIFICACION (solo lee). Ejecuta esto primero.
 select
-  c.cedula,
-  c.nombre,
+  p.cedula,
+  p.nombre,
   count(*) as consultas,
   count(*) filter (where c.archived_at is not null) as ya_archivadas
 from public.consultas_clinicas c
-where c.cedula in ('0705770742', '0705770743')
-group by c.cedula, c.nombre
-order by c.cedula;
+join public.pacientes_perfil p on p.id = c.paciente_id
+where p.cedula in ('0705770742', '0705770743')
+group by p.cedula, p.nombre
+order by p.cedula;
 
--- Si quieres ver el detalle una a una:
--- select cedula, nombre, fecha, archived_at
--- from public.consultas_clinicas
--- where cedula in ('0705770742', '0705770743')
--- order by cedula, fecha desc;
-
--- ---------------------------------------------------------------------------
--- PASO 2 — ARCHIVAR. Copia y ejecuta este bloque solo si el paso 1 salio bien.
--- ---------------------------------------------------------------------------
+-- PASO 2 - ARCHIVAR. Solo si el paso 1 salio bien.
 begin;
 
-update public.consultas_clinicas
+update public.consultas_clinicas c
 set archived_at = now(),
-    sync_version = sync_version + 1,
+    sync_version = c.sync_version + 1,
     server_updated_at = now()
-where archived_at is null
-  and cedula in ('0705770742', '0705770743');
+where c.archived_at is null
+  and c.paciente_id in (
+    select id from public.pacientes_perfil
+    where cedula in ('0705770742', '0705770743')
+  );
 
 commit;
 
--- ---------------------------------------------------------------------------
--- PASO 3 — COMPROBACION. Debe decir consultas = archivadas.
--- ---------------------------------------------------------------------------
+-- PASO 3 - COMPROBACION: consultas debe coincidir con archivadas.
 select
   count(*) as consultas,
-  count(*) filter (where archived_at is not null) as archivadas
-from public.consultas_clinicas
-where cedula in ('0705770742', '0705770743');
+  count(*) filter (where c.archived_at is not null) as archivadas
+from public.consultas_clinicas c
+join public.pacientes_perfil p on p.id = c.paciente_id
+where p.cedula in ('0705770742', '0705770743');
 
--- ---------------------------------------------------------------------------
--- COMO DESHACERLO, si te arrepientes
--- ---------------------------------------------------------------------------
--- update public.consultas_clinicas
--- set archived_at = null, sync_version = sync_version + 1, server_updated_at = now()
--- where cedula in ('0705770742', '0705770743');
-
--- ---------------------------------------------------------------------------
--- NOTA SOBRE EL CODIGO
--- El error "syntax error at or near supabase" aparece cuando se pega la RUTA
--- del archivo en lugar de su CONTENIDO. En la consola de Supabase SQL Editor hay
--- que abrir el archivo, copiar el texto de dentro y pegarlo.
+-- COMO DESHACERLO
+-- update public.consultas_clinicas c
+-- set archived_at = null, sync_version = c.sync_version + 1, server_updated_at = now()
+-- where c.paciente_id in (select id from public.pacientes_perfil where cedula in ('0705770742','0705770743'));
 -- ============================================================================
