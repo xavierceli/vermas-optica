@@ -18,7 +18,15 @@ const initialStatus = {
   // "pendientes": se muestran aparte para que el usuario sepa que se perdieron.
   descartadas: 0,
   lastSync: null,
-  lastError: null
+  lastError: null,
+  // El historial tiene tope de paginas para no descargarse la base entera. Si
+  // se llega al tope, este equipo tiene una VISTA PARCIAL del historial: las
+  // consultas mas antiguas siguen en la nube (se encuentran buscando por cedula
+  // o nombre) pero no salen en la lista. Antes esto solo se avisaba por consola,
+  // que el optometria no abre: parecia que el historial estaba completo.
+  historialParcial: false,
+  historialDescargadas: 0,
+  historialTope: TAMPAGINA_HISTORIAL * MAX_PAGINAS_HISTORIAL
 };
 let status = { ...initialStatus };
 // Cuando el usuario entra con el PIN local no hay token del servidor. La
@@ -393,8 +401,14 @@ const pullServerCache = async () => {
   try {
     const descargado = await descargarHistorialPaginado();
     historialRows = descargado.filas;
-    if (descargado.paginasDescargadas >= MAX_PAGINAS_HISTORIAL) {
-      console.warn(`Historial descargado hasta el tope de ${MAX_PAGINAS_HISTORIAL} paginas.`);
+    // Se recalcula en cada pull: si la clinica archiva consultas y el equipo
+    // vuelve a caber en el tope, el aviso tiene que desaparecer solo.
+    status.historialDescargadas = descargado.filas.length;
+    status.historialParcial = descargado.paginasDescargadas >= MAX_PAGINAS_HISTORIAL;
+    if (status.historialParcial) {
+      // No basta con avisar por consola: el optometria no la abre, y una lista
+      // incompleta que parece completa es peor que un aviso.
+      console.warn(`Historial descargado hasta el tope: este equipo solo tiene ${descargado.filas.length} consultas.`);
     }
   } catch (error) {
     // El historial no es critico: si falla, el catalogo debe seguir actualizandose.

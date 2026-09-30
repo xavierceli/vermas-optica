@@ -58,6 +58,14 @@ function App() {
     : esOffline
     ? (pendientes > 0 ? 'Se subiran al recuperar conexion' : 'Todo guardado aqui')
     : 'En cola de salida';
+  // El historial se descarga por paginas y con tope: si este equipo lo alcanza,
+  // su lista esta INCOMPLETA. Decirlo es mejor que fingir que es todo: las
+  // consultas mas antiguas se encuentran buscando por cedula o nombre, porque
+  // esa busqueda va a la nube.
+  const historialParcial = !!g.syncEstado?.historialParcial;
+  const descargas = g.syncEstado?.historialDescargadas || 0;
+  const tope = g.syncEstado?.historialTope || 0;
+
   const estadoOutbox = sesionInvalida
     ? { texto: 'Sesion expirada', detalle: 'Vuelve a iniciar sesion', clases: 'bg-red-100 text-red-800 border-red-300', icono: '🔑' }
     : fallos.length > 0
@@ -74,7 +82,9 @@ function App() {
           ? { texto: 'Sincronizando...', detalle: pendientes > 0 ? `Pendientes: ${pendientes}` : 'Enviando a la nube', clases: 'bg-blue-100 text-blue-800 border-blue-300', icono: '🔄' }
           : pendientes > 0
             ? { texto: `Pendientes: ${pendientes}`, detalle: detalleCola, clases: 'bg-blue-100 text-blue-800 border-blue-300', icono: '⏳' }
-            : { texto: 'Sincronizado', detalle: 'Nube al dia', clases: 'bg-emerald-100 text-emerald-800 border-emerald-300', icono: '✅' };
+            : historialParcial
+              ? { texto: 'Historial parcial', detalle: `Solo ${descargas} de ${tope} consultas en este equipo`, clases: 'bg-amber-100 text-amber-800 border-amber-300', icono: '⚠️' }
+              : { texto: 'Sincronizado', detalle: 'Nube al dia', clases: 'bg-emerald-100 text-emerald-800 border-emerald-300', icono: '✅' };
   // La barra de sincronizacion abre este panel cuando hay algo atascado.
   // Antes resolverlo exigia abrir la consola del navegador.
   const [panelSync, setPanelSync] = useState(false);
@@ -239,7 +249,11 @@ function App() {
                 else g.sincronizarAhora();
               }}
               title={
-                fallos.length > 0 || descartadas > 0 || conflictos > 0
+                historialParcial
+                  ? `Este equipo tiene ${descargas} de ${tope} consultas descargadas (tope del sincronizador). `
+                    + 'Las más antiguas no salen en la lista, pero se encuentran buscando por cédula o nombre, '
+                    + 'porque esa búsqueda consulta la nube.'
+                  : fallos.length > 0 || descartadas > 0 || conflictos > 0
                   ? 'Hay operaciones con problemas. Clic para verlas y resolverlas.'
                   : `Cola Outbox: ${pendientes} pendiente(s). Clic para sincronizar ahora.`
               }

@@ -74,6 +74,36 @@ test('un suscriptor que se rompe no impide que el aviso llegue a los demas', () 
   baja1(); baja2(); cerrarAviso();
 });
 
+// --- Cabeceras de seguridad y honestidad del sincronizador --------------
+test('la app declara las cabeceras de seguridad que necesita', () => {
+  const raiz = join(SRC, '..');
+  const conf = JSON.parse(readFileSync(join(raiz, 'vercel.json'), 'utf8'));
+  const todas = (conf.headers || []).flatMap(regla => (regla.headers || []).map(h => `${h.key}: ${h.value}`));
+  for (const clave of [
+    'X-Content-Type-Options', 'X-Frame-Options', 'Referrer-Policy',
+    'Permissions-Policy', 'Strict-Transport-Security', 'Content-Security-Policy'
+  ]) {
+    assert.ok(todas.some(cabecera => cabecera.startsWith(clave + ':')), 'falta la cabecera ' + clave);
+  }
+  const csp = todas.find(c => c.startsWith('Content-Security-Policy:'));
+  assert.match(csp, /script-src 'self'/, 'la CSP debe permitir los scripts propios');
+  assert.match(csp, /object-src 'none'/);
+  assert.match(csp, /frame-ancestors 'none'/);
+  // El service worker cacheado es lo que hacia que el aviso de version nueva se
+  // repitiera sin converger nunca.
+  const sw = (conf.headers || []).find(regla => regla.source === '/sw.js');
+  assert.ok(sw, 'falta la regla de /sw.js');
+  assert.match(sw.headers.find(h => h.key === 'Cache-Control').value, /no-cache/);
+});
+
+test('el sincronizador avisa cuando el historial le queda incompleto', () => {
+  const fuente = leer('syncEngine.js');
+  assert.match(fuente, /historialParcial/, 'el estado debe llevar si el historial esta completo');
+  // Un aviso que solo sale por consola no es un aviso: el optometria no la abre.
+  assert.match(fuente, /status\.historialParcial = descargado\.paginasDescargadas >= MAX_PAGINAS_HISTORIAL/);
+  assert.match(leer('App.jsx'), /Historial parcial/, 'la interfaz debe decirlo, no solo la consola');
+});
+
 // ---------------------------------------------------------------------------
 // Y QUE NO VUELVAN LOS ALERT DEL NAVEGADOR
 // ---------------------------------------------------------------------------

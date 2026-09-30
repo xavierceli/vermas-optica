@@ -1,0 +1,37 @@
+{
+  "//": [
+    "Cabeceras de seguridad. Se anaden con un fichero de 30 lineas y closes",
+    "puertas que hasta ahora estaban abiertas de par en par.",
+    "",
+    "LA CSP LLEVA 'unsafe-inline' EN SCRIPT POR UN MOTIVO CONCRETO: las",
+    "plantillas de impresion (impresiones.js) se escriben con document.write en",
+    "una ventana nueva e incluyen un <script> y un <style> en linea. Sin eso, la",
+    "impresion de recetas, recibos y etiquetas dejaria de funcionar.",
+    "Siguiente paso: mover ese <script> a un addEventListener (imprimirEn) y",
+    "quitar 'unsafe-inline' de script-src para que la CSP empezara a proteger de",
+    "verdad contra un XSS. El resto de cabeceras no tienen compensaciones."
+  ],
+  "headers": [
+    {
+      "//": "El service worker nunca debe quedarse cacheado: si lo sirve una copia vieja, la app no se actualiza nunca y el aviso de version nueva se repite sin Convergence.",
+      "source": "/sw.js",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
+      ]
+    },
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "X-Frame-Options", "value": "DENY" },
+        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
+        { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=(), payment=()" },
+        { "key": "Strict-Transport-Security", "value": "max-age=63072000; includeSubDomains; preload" },
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.supabase.co; connect-src 'self' https://*.supabase.co wss://*.supabase.co; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+        }
+      ]
+    }
+  ]
+}
