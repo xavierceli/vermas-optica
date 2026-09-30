@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
 import { safeString, safeNum, comprimirImagen } from './utilidades'
+import { mostrarAviso } from './avisos'
 import { calcularTotal, calcularSaldo, calcularMontoDescuento, normalizarDescuento } from './reglas'
 import { supabase } from './supabaseClient'
 import { guardarAdjuntoLocal } from './localRepository'
@@ -32,7 +33,7 @@ export default function PedidosForm({
 
   const registrarAbono = async () => {
     const monto = safeNum(nuevoAbonoMonto);
-    if (monto <= 0) return alert('Por favor, ingrese un monto válido mayor a 0.');
+    if (monto <= 0) return mostrarAviso('Por favor, ingrese un monto válido mayor a 0.');
 
     setSubiendoComprobante(true);
     let urlComprobanteFinal = pedidoSeleccionado.comprobante_url || '';
@@ -90,7 +91,7 @@ export default function PedidosForm({
         avisarComprobantePendiente('Comprobante guardado en este dispositivo. Se subirá solo al recuperar conexión.');
       }
     } catch (err) {
-      alert('No se pudo registrar el abono localmente: ' + err.message);
+      mostrarAviso('No se pudo registrar el abono localmente: ' + err.message);
     } finally {
       setSubiendoComprobante(false);
     }

@@ -1,4 +1,5 @@
 import { supabase } from './supabaseClient';
+import { mostrarAviso } from './avisos'
 import { neutralizarFormula } from './escape';
 
 export const safeString = (val) => (val === null || val === undefined) ? '' : String(val);
@@ -95,7 +96,7 @@ export const generarDiagnosticos = (item) => {
 // (HTML, CSV, JavaScript) esta reunida alli, que si es un modulo puro.
 
 export const descargarCSV = (datos, nombreArchivo) => {
-  if (!datos || datos.length === 0) return alert("No hay datos para exportar.");
+  if (!datos || datos.length === 0) return mostrarAviso("No hay datos para exportar.");
   const cabeceras = Object.keys(datos[0]);
   const filas = datos.map(fila => {
     return cabeceras.map(cab => {

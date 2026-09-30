@@ -61,11 +61,15 @@ export default function PanelSincronizacion({ abierta, cerrar, gestor }) {
   const setTrabajarFinal = () => {};
 
   const descartarTodo = async () => {
-    const ok = window.confirm(
-      `Se quitaran ${problemas.length} operaciones de la cola.\n\n` +
-      'NO se borra ningun paciente, venta ni producto: esos cambios simplemente no se enviaran al servidor.\n\n' +
-      'Continuar?'
-    );
+    // Pregunta con el dialogo de la app: el confirm del navegador congela la
+    // pagina entera mientras el optometria decide.
+    const ok = typeof gestor?.confirmar === 'function'
+      ? await gestor.confirmar(
+        'Se quitaran ' + problemas.length + ' operaciones de la cola.' + '\n\n' +
+        'NO se borra ningun paciente, venta ni producto: esos cambios simplemente no se enviaran al servidor.',
+        'Descartar todo'
+      )
+      : false;
     if (!ok) return;
     setTrabajando(true);
     try { await gestor.descartarTodoLoAtascado(); await cargar(); } finally { setTrabajando(false); }

@@ -13,7 +13,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { registerSW } from 'virtual:pwa-register';
 
-export default function AvisoActualizacion({ hayTrabajoSinGuardar = false }) {
+export default function AvisoActualizacion({ hayTrabajoSinGuardar = false, confirmar }) {
   const [hayNuevaVersion, setHayNuevaVersion] = useState(false);
   const [actualizando, setActualizando] = useState(false);
   // Si tras activar el worker la pagina no llega a recargarse, se avisa y se
@@ -51,10 +51,17 @@ export default function AvisoActualizacion({ hayTrabajoSinGuardar = false }) {
   useEffect(() => () => { temporizadoresRef.current.forEach(clearTimeout); }, []);
 
   const aplicar = useCallback(async () => {
-    if (hayTrabajoSinGuardar && !window.confirm(
-      'Tienes cambios sin terminar de enviar. Si actualizas ahora se recargará la página y podrían perderse. '
-      + '¿Guardar y continuar de todas formas?'
-    )) return;
+    // Pregunta con el dialogo de la app, no con window.confirm: el del navegador
+    // congela la pagina y el optometria ve una ventana que no parece de la app.
+    if (hayTrabajoSinGuardar) {
+      const ok = typeof confirmar === 'function'
+        ? await confirmar(
+          'Tienes cambios sin terminar de enviar. Si actualizas ahora se recargará la página y podrían perderse.',
+          'Actualizar de todos modos'
+        )
+        : false;
+      if (!ok) return;
+    }
 
     setActualizando(true);
     setFallo(false);
@@ -75,7 +82,7 @@ export default function AvisoActualizacion({ hayTrabajoSinGuardar = false }) {
     programar(() => window.location.reload(), 1500);
     // 3) Si aun asi no se recarga, se avisa y se deja recargar a mano.
     programar(() => setFallo(true), 8000);
-  }, [hayTrabajoSinGuardar, programar]);
+  }, [hayTrabajoSinGuardar, programar, confirmar]);
 
   // 4) Camino rapido: si el worker nuevo llega a tomar el control, se recarga ya.
   useEffect(() => {

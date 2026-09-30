@@ -9,27 +9,68 @@ import { aplicarAvisoQueratometria, calcularTotal } from './reglas'
 import { limpiarHtml } from './escape'
 import { validarFichaClinica, motivoDocumentoInvalido } from './validacion'
 import { aplicarCedula, crearEstadoPaciente, hoyISO, INV_INICIAL, PRECIO_INICIAL } from './fichaClinica'
+import { leerAviso, mostrarAviso, suscribirAvisos } from './avisos'
 
 export function useGestor() {
   const [estaAutenticado, setEstaAutenticado] = useState(false);
   const [cargandoAuth, setCargandoAuth] = useState(true);
   const [guardando, setGuardando] = useState(false);
 
-  const [toast, setToast] = useState(null);
-  const toastTimer = useRef(null);
+  // El aviso en pantalla vive en el almacen global (avisos.js) para que
+  // CUALQUIER modulo pueda avisar, incluso los que no usan React (el boton del
+  // comprobante, las descargas). Aqui solo se refleja en el estado.
+  const [toast, setToast] = useState(() => leerAviso());
+  useEffect(() => suscribirAvisos(setToast), []);
 
   // `duracion` permite que los mensajes de validacion, que son largos y listan
   // varios campos, permanezcan mas tiempo en pantalla que un ok simple.
-  const mostrarToast = (mensaje, tipo = 'success', duracion = 3500) => {
-    setToast({ mensaje, tipo });
-    if (toastTimer.current) clearTimeout(toastTimer.current);
-    toastTimer.current = setTimeout(() => setToast(null), duracion);
+  const mostrarToast = (mensaje, tipo = 'success', duracion = 3500) =>
+    mostrarAviso(mensaje, tipo, duracion);
+
+  const [confirmDialog, setConfirmDialog] = useState({ visible: false, mensaje: '', onConfirm: null, onCancel: null });
+
+  // Cancelar (boton o clic en el fondo). Se extrae para no repetir la logica y
+  // para que el dialogo quede SIEMPRE cerrado, llegue como llegue el clic.
+  const cancelarConfirmacion = () => {
+    const pendiente = confirmDialog.onCancel;
+    setConfirmDialog({ visible: false, mensaje: '', onConfirm: null, onCancel: null });
+    if (typeof pendiente === 'function') pendiente();
   };
 
-  const [confirmDialog, setConfirmDialog] = useState({ visible: false, mensaje: '', onConfirm: null });
-  const solicitarConfirmacion = (mensaje, onConfirmCallback) => {
-    setConfirmDialog({ visible: true, mensaje: mensaje, onConfirm: onConfirmCallback });
+  // Aceptar. Cierra SIEMPRE y despues lanza lo que hubiera: asi sirve tanto para
+  // la confirmacion por promesa (que ya se resuelve sola) como para la antigua
+  // por callback (que no cierra nada por su cuenta).
+  const aceptarConfirmacion = () => {
+    const pendiente = confirmDialog.onConfirm;
+    setConfirmDialog({ visible: false, mensaje: '', onConfirm: null, onCancel: null });
+    if (typeof pendiente === 'function') pendiente();
   };
+
+  const solicitarConfirmacion = (mensaje, onConfirmCallback) => {
+    setConfirmDialog({ visible: true, mensaje, onConfirm: onConfirmCallback, onCancel: null });
+  };
+
+  /**
+   * Confirmacion como PROMESA. Sustituye a window.confirm, que congela la pagina
+   * y corta el flujo a mitad de una venta.
+   *
+   * IMPORTANTE: todas las salidas (Sí, Cancelar y el clic en el fondo) resuelven
+   * la promesa, y solo la primera vez. Una promesa que se queda colgada
+   * reproduce justo el bug de "Actualizando..." infinito que ya arrastramos.
+   */
+  const confirmar = (mensaje, textoSi = 'Sí, Continuar') => new Promise(resolve => {
+    let respondido = false;
+    const responder = valor => {
+      if (respondido) return;
+      respondido = true;
+      setConfirmDialog({ visible: false, mensaje: '', onConfirm: null, onCancel: null });
+      resolve(valor);
+    };
+    setConfirmDialog({
+      visible: true, mensaje, textoSi,
+      onConfirm: () => responder(true), onCancel: () => responder(false)
+    });
+  });
 
   // El formulario de consulta, el de inventario y el de tarifas viven ahora en
   // fichaClinica.js: son puro dato, sin React, y se pueden probar de verdad.
@@ -856,7 +897,7 @@ if (sync) {
 
   return {
     guardando,
-    obtenerDatos, solicitarConfirmacion,
+    obtenerDatos, solicitarConfirmacion, confirmar, cancelarConfirmacion, aceptarConfirmacion,
     estaAutenticado, cargandoAuth, cerrarSesion,
     modoSinConexion, entrarSinConexion, dispositivo, configurarAccesoSinConexion, desactivarAccesoSinConexion,
     toast, confirmDialog, setConfirmDialog, vistaActual, setVistaActual, syncEstado, sincronizarAhora,

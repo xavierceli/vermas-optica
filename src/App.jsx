@@ -79,26 +79,31 @@ function App() {
   // Antes resolverlo exigia abrir la consola del navegador.
   const [panelSync, setPanelSync] = useState(false);
   const dialogoVisible = g.confirmDialog.visible;
-  const setDialogoConfirmacion = g.setConfirmDialog;
   const refDialogo = useRef(null);
 
   // Cerrar el diálogo de confirmación con la tecla Escape
   useEffect(() => {
+    // IMPORTANTE: passa por cancelarConfirmacion(), no por setConfirmDialog().
+    // Si el diálogo se cerrara sin resolver la promesa de confirmar(), quien la
+    // espera se quedaria colgado para siempre.
     const cerrarConEscape = (e) => {
-      if (e.key === 'Escape') setDialogoConfirmacion({ visible: false });
+      if (e.key === 'Escape') g.cancelarConfirmacion();
     };
     if (dialogoVisible) {
       window.addEventListener('keydown', cerrarConEscape);
       return () => window.removeEventListener('keydown', cerrarConEscape);
     }
-  }, [dialogoVisible, setDialogoConfirmacion]);
+    // El gestor se recrea en cada render; depender de el aqui volveria a
+    // registrar el oyente sin parar. Se depende solo de la visibilidad.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dialogoVisible, g.cancelarConfirmacion]);
 
   // Al abrir, el foco entra en el diálogo. Sin esto el teclado sigue en el body y
   // un usuario de lector de pantalla no se entera de que hay una pregunta
   // esperándole (WCAG 2.4.3 Foco en orden).
   useEffect(() => {
     if (dialogoVisible) refDialogo.current?.focus();
-  }, [dialogoVisible]);
+  }, [dialogoVisible, g.cancelarConfirmacion]);
 
   // Si no está autenticado, mostramos el login de inmediato (evita quedarse congelado cargando)
   if (!g.estaAutenticado) {
@@ -122,7 +127,7 @@ function App() {
 
       {/* Con registerType:'prompt' el service worker espera. Este aviso es quien
           activa el cambio, y solo cuando el usuario lo decide. */}
-      <AvisoActualizacion hayTrabajoSinGuardar={pendientes > 0 || g.guardando} />
+      <AvisoActualizacion hayTrabajoSinGuardar={pendientes > 0 || g.guardando} confirmar={g.confirmar} />
 
       {(esOffline || pendientes > 0 || conflictos > 0 || fallos.length > 0 || g.modoSinConexion) && (
         <div className={`fixed top-0 left-0 w-full text-white text-center py-2 font-black text-xs md:text-sm z-[200] shadow-md flex items-center justify-center gap-3 px-4 ${g.modoSinConexion ? 'bg-purple-800' : fallos.length > 0 ? 'bg-red-700' : conflictos > 0 ? 'bg-amber-600' : esOffline ? 'bg-slate-800' : 'bg-blue-700'}`}>
@@ -161,7 +166,7 @@ function App() {
         // no el panel, para que un clic dentro no lo cierre por error.
         <div
           className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] px-4"
-          onClick={e => e.target === e.currentTarget && g.setConfirmDialog({ visible: false })}
+          onClick={e => e.target === e.currentTarget && g.cancelarConfirmacion()}
         >
           <div
             role="dialog"
@@ -174,8 +179,8 @@ function App() {
             <div className="text-5xl mb-4" aria-hidden="true">⚠️</div>
             <h3 id="titulo-confirmacion" className="text-xl font-black text-gray-800 mb-6">{g.confirmDialog.mensaje}</h3>
             <div className="flex gap-4 justify-center">
-              <button onClick={() => g.setConfirmDialog({visible: false})} className="flex-1 px-4 py-3 bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-xl font-bold transition-colors">Cancelar</button>
-              <button onClick={() => { g.confirmDialog.onConfirm(); g.setConfirmDialog({visible: false}); }} className="flex-1 px-4 py-3 bg-red-600 text-white hover:bg-red-700 rounded-xl font-bold shadow-lg shadow-red-200 transition-colors">Sí, Continuar</button>
+              <button onClick={() => g.cancelarConfirmacion()} className="flex-1 px-4 py-3 bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-xl font-bold transition-colors">Cancelar</button>
+              <button onClick={() => g.aceptarConfirmacion()} className="flex-1 px-4 py-3 bg-red-600 text-white hover:bg-red-700 rounded-xl font-bold shadow-lg shadow-red-200 transition-colors">{g.confirmDialog.textoSi || 'Sí, Continuar'}</button>
             </div>
           </div>
         </div>
