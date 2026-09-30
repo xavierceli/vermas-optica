@@ -1,4 +1,4 @@
-import { localDb, createUuid, nowIso, pendingRecord, createOutboxOperation, getMeta, setMeta } from './localDb.js';
+﻿import { localDb, createUuid, nowIso, pendingRecord, createOutboxOperation, getMeta, setMeta } from './localDb.js';
 import { calcularSaldo } from './reglas.js';
 
 const safeString = value => value === null || value === undefined ? '' : String(value);
@@ -72,13 +72,13 @@ export const enColaEscritura = (tarea, prioridad = 'alta', nombre = 'tarea') => 
 
 let contadorEscaneosInventario = 0;
 const normalizeCedula = value => safeString(value).trim().toUpperCase();
-// Un id de inventario SIEMPRE es un entero. Esta función se usa para leer
-// valores que vienen de un <input> o de un campo mal formado, y antes devolvía
+// Un id de inventario SIEMPRE es un entero. Esta funciÃ³n se usa para leer
+// valores que vienen de un <input> o de un campo mal formado, y antes devolvÃ­a
 // NaN para cualquier cosa que no fuera convertible ("ABC", "12abc", {}).
 // NaN no es un null: al serializar a JSON se convierte en null sin avisar, y el
 // servidor rechazaba la venta con "Cada item necesita inventario_id o codigo"
-// (sqlstate 22023) sin señalar cuál de los dos campos venía mal. Un id que no es
-// un número es, sencillamente, la ausencia de id.
+// (sqlstate 22023) sin seÃ±alar cuÃ¡l de los dos campos venÃ­a mal. Un id que no es
+// un nÃºmero es, sencillamente, la ausencia de id.
 const numericId = value => {
   if (value === null || value === undefined || value === '') return null;
   const n = Number(value);
@@ -352,7 +352,7 @@ const registrarPagoLocalImpl = async ({ saleId, amount, method = 'Efectivo', ref
 
     const current = Number(safeNum(sale.abono).toFixed(2));
     const balance = calcularSaldo(sale.venta, sale.descuento, current);
-    if (balance <= 0) throw new Error('La venta ya está pagada.');
+    if (balance <= 0) throw new Error('La venta ya estÃ¡ pagada.');
     if (paymentAmount > balance + 0.005) throw new Error(`El pago supera el saldo pendiente (${balance.toFixed(2)}).`);
 
     const payment = pendingRecord({
@@ -448,7 +448,7 @@ const anularVentaConReembolsoImpl = async ({ saleId, method = 'Efectivo', refere
 
 const cambiarEstadoVentaLocalImpl = async ({ saleId, estado }) => {
   const allowed = ['Ninguno', 'En laboratorio', 'Listo para Entrega', 'Entregado'];
-  if (!allowed.includes(estado)) throw new Error('Estado de venta inválido.');
+  if (!allowed.includes(estado)) throw new Error('Estado de venta invÃ¡lido.');
   const operation = createOutboxOperation({
     type: 'CAMBIAR_ESTADO_VENTA', entityId: saleId,
     payload: { p_venta_id: saleId, p_estado: estado }
@@ -584,7 +584,7 @@ const archivarConsultaLocalImpl = async consultationId => {
   // contestaba "no existe en este dispositivo" y NO se encolaba nada, de modo que
   // el servidor nunca se enteraba del archivo y el paciente reaparecia en cada
   // sincronizacion. Era un bucle sin salida: no se podia eliminar nunca.
-  const enCache = actual ? null : await localDb.cache.get(`remote:${idConsulta}`);
+  const enCache = await localDb.cache.get(`remote:${idConsulta}`);
   const fila = actual || enCache;
   if (!fila) return { yaArchivada: true, motivo: 'La consulta ya no existe en este dispositivo.' };
   if (fila.archivedAt) return { yaArchivada: true, motivo: 'La consulta ya estaba archivada.' };
@@ -593,12 +593,23 @@ const archivarConsultaLocalImpl = async consultationId => {
   // en aplicar el archivo y, mientras tanto, devolveria la consulta en el pull:
   // el paciente "eliminado" reaparecia al sincronizar o al actualizar la app.
   // Esta lista filtra siempre, por mucho que el servidor la mande de vuelta.
+  // La cedula vive en el PACIENTE, no en la consulta. Leerla de la consulta daba
+  // cadena vacia, con lo que el registro de "cedulas eliminadas" se quedaba
+  // vacio y el paciente seguia apareciendo en el historial por mucho que su
+  // consulta ya estuviera archivada. Ese era el motivo de que "Eliminar" no
+  // quitara nada: la app creia haberlo hecho, pero no habia filtrado nada.
+  const idPaciente = fila.patientId ?? fila.paciente_id;
+  let cedula = safeString(fila.cedula);
+  if (!cedula && idPaciente) {
+    const paciente = await localDb.patients.get(idPaciente);
+    cedula = safeString(paciente?.cedula);
+  }
   const borrados = new Set(await getMeta('cedulasArchivadas', []));
-  if (normalizeCedula(fila.cedula)) borrados.add(normalizeCedula(fila.cedula));
+  if (normalizeCedula(cedula)) borrados.add(normalizeCedula(cedula));
   await setMeta('cedulasArchivadas', [...borrados]);
 
   await localDb.transaction('rw', localDb.consultations, localDb.outbox, localDb.cache, async () => {
-    const consultation = await localDb.consultations.get(consultationId);
+    const consultation = await localDb.consultations.get(idConsulta);
     if (consultation) {
       await localDb.consultations.put({ ...consultation, archivedAt: nowIso(), syncStatus: 'pending' });
     }
@@ -844,8 +855,13 @@ export const obtenerSnapshotLocal = async () => {
   // tuvo venta, ese estado es inventado y hacia que apareciera sola en Pedidos
   // con monto $0. Se corrige en el origen: si la fila no trae pedido, no hay
   // estado de venta.
+  // Consultas ya archivadas en ESTE dispositivo. La copia del servidor (remote:)
+  // se filtra tambien por aqui: aunque el pull todavia no haya limpiado la cache,
+  // una consulta archivada no puede seguir apareciendo en el historial.
+  const archivadasLocales = new Set(consultations.filter(c => c.archivedAt).map(c => String(c.id)));
   const remoteHistorial = cache
     .filter(row => row.kind === 'historial' && !row.archivedAt)
+    .filter(row => !archivadasLocales.has(String(row.id).replace(/^remote:/, '')))
     .filter(row => {
       const cedula = normalizeCedula(row.cedula);
       return !(cedula && cedulasArchivadas.has(cedula));

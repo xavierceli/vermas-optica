@@ -692,6 +692,52 @@ test('el historial pasa el id con prefijo remote: y aun asi se archiva', async (
   assert.equal(ops.find(o => o.type === 'ARCHIVAR_CONSULTA').entityId, id, 'con el id real, sin prefijo');
 });
 
+test('EL CASO REAL: la cedula esta en el paciente, no en la consulta', async () => {
+  // Asi esta guardado de verdad: la consulta no lleva cedula, el paciente si. Al
+  // leer la cedula de la consulta se Guardaba '' en el registro de eliminados, el
+  // historial no filtraba nada y el paciente seguia apareciendo: la app decia
+  // "ya estaba archivada" mientras no habia quitado nada de la pantalla.
+  await reset();
+  const idConsulta = '60000000-0000-4000-8000-000000000790';
+  const idPaciente = '70000000-0000-4000-8000-000000000790';
+  await guardarConsultaLocal({
+    patient: { id: idPaciente, cedula: '0750577042', nombre: 'PRUEBA' },
+    consultation: { id: idConsulta, fecha: '2026-09-28', cedula: '' }
+  });
+  await localDb.cache.put({
+    id: `remote:${idConsulta}`, kind: 'historial', cedula: '0750577042',
+    patientId: idPaciente, nombre: 'PRUEBA', fecha: '2026-09-28', venta: '0', descuento: '0'
+  });
+
+  assert.ok((await obtenerSnapshotLocal()).historial.length >= 1, 'antes de archivar se ve');
+
+  await archivarConsultaLocal(`remote:${idConsulta}`);
+
+  assert.equal(
+    (await obtenerSnapshotLocal()).historial.length,
+    0,
+    'despues de archivar el paciente NO debe seguir apareciendo, aunque la copia de la nube siga ahi'
+  );
+});
+
+test('una consulta archivada desaparece aunque la copia de la nube siga en la cache', async () => {
+  await reset();
+  const id = '60000000-0000-4000-8000-000000000791';
+  await guardarConsultaLocal({
+    patient: { id: 'p-9', cedula: '1712345678', nombre: 'ANA' },
+    consultation: { id, fecha: '2026-09-28' }
+  });
+  await localDb.cache.put({
+    id: `remote:${id}`, kind: 'historial', cedula: '1712345678',
+    patientId: 'p-9', nombre: 'ANA', fecha: '2026-09-28', venta: '0', descuento: '0'
+  });
+  // Se archiva SOLO la fila local, sin pasar por el boton (como si el pull
+  // llegase despues): la vista no debe resucitar la consulta.
+  await localDb.consultations.put({ ...(await localDb.consultations.get(id)), archivedAt: '2026-09-28' });
+
+  assert.equal((await obtenerSnapshotLocal()).historial.length, 0);
+});
+
 test('archivar una consulta inexistente no lanza error', async () => {
   await reset();
   const resultado = await archivarConsultaLocal('60000000-0000-4000-8000-000000000999');
