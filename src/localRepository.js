@@ -1,4 +1,4 @@
-﻿import { localDb, createUuid, nowIso, pendingRecord, createOutboxOperation, getMeta, setMeta } from './localDb.js';
+import { localDb, createUuid, nowIso, pendingRecord, createOutboxOperation, getMeta, setMeta } from './localDb.js';
 import { calcularSaldo } from './reglas.js';
 
 const safeString = value => value === null || value === undefined ? '' : String(value);
@@ -71,14 +71,14 @@ export const enColaEscritura = (tarea, prioridad = 'alta', nombre = 'tarea') => 
 });
 
 let contadorEscaneosInventario = 0;
-const normalizeCedula = value => safeString(value).trim().toUpperCase();
-// Un id de inventario SIEMPRE es un entero. Esta funciÃ³n se usa para leer
-// valores que vienen de un <input> o de un campo mal formado, y antes devolvÃ­a
+export const normalizeCedula = value => safeString(value).trim().toUpperCase();
+// Un id de inventario SIEMPRE es un entero. Esta función se usa para leer
+// valores que vienen de un <input> o de un campo mal formado, y antes devolvía
 // NaN para cualquier cosa que no fuera convertible ("ABC", "12abc", {}).
 // NaN no es un null: al serializar a JSON se convierte en null sin avisar, y el
 // servidor rechazaba la venta con "Cada item necesita inventario_id o codigo"
-// (sqlstate 22023) sin seÃ±alar cuÃ¡l de los dos campos venÃ­a mal. Un id que no es
-// un nÃºmero es, sencillamente, la ausencia de id.
+// (sqlstate 22023) sin señalar cuál de los dos campos venía mal. Un id que no es
+// un número es, sencillamente, la ausencia de id.
 const numericId = value => {
   if (value === null || value === undefined || value === '') return null;
   const n = Number(value);
@@ -352,7 +352,7 @@ const registrarPagoLocalImpl = async ({ saleId, amount, method = 'Efectivo', ref
 
     const current = Number(safeNum(sale.abono).toFixed(2));
     const balance = calcularSaldo(sale.venta, sale.descuento, current);
-    if (balance <= 0) throw new Error('La venta ya estÃ¡ pagada.');
+    if (balance <= 0) throw new Error('La venta ya está pagada.');
     if (paymentAmount > balance + 0.005) throw new Error(`El pago supera el saldo pendiente (${balance.toFixed(2)}).`);
 
     const payment = pendingRecord({
@@ -448,7 +448,7 @@ const anularVentaConReembolsoImpl = async ({ saleId, method = 'Efectivo', refere
 
 const cambiarEstadoVentaLocalImpl = async ({ saleId, estado }) => {
   const allowed = ['Ninguno', 'En laboratorio', 'Listo para Entrega', 'Entregado'];
-  if (!allowed.includes(estado)) throw new Error('Estado de venta invÃ¡lido.');
+  if (!allowed.includes(estado)) throw new Error('Estado de venta inválido.');
   const operation = createOutboxOperation({
     type: 'CAMBIAR_ESTADO_VENTA', entityId: saleId,
     payload: { p_venta_id: saleId, p_estado: estado }
@@ -816,7 +816,24 @@ export const obtenerSnapshotLocal = async () => {
   // Cedulas eliminadas en este dispositivo. Se filtran del historial aunque el
   // servidor las vuelva a mandar: el borrado local manda hasta que el servidor
   // confirme el archivo. Sin esto, recargar o actualizar resucitaba al paciente.
-  const cedulasArchivadas = new Set((await getMeta('cedulasArchivadas', [])).map(normalizeCedula));
+  // Cedulas de pacientes que ya no existen en este dispositivo, por dos vias:
+  //  1. el registro que escribe el boton Eliminar;
+  //  2. las consultas YA archivadas que no dejan ninguna viva del mismo
+  //     paciente. Sin la segunda via, un paciente archivado antes de que el
+  //     registro existiera seguia apareciendo para siempre en el historial.
+  // OJO: se archiva una CONSULTA, no un paciente. Solo se oculta cuando el
+  // paciente se queda sin ninguna consulta viva, que es cuando ya no existe aqui.
+  const cedulasVivas = new Set(
+    consultations.filter(c => !c.archivedAt).map(c => normalizeCedula(c.cedula)).filter(Boolean)
+  );
+  const soloArchivadas = consultations
+    .filter(c => c.archivedAt)
+    .map(c => normalizeCedula(c.cedula))
+    .filter(cedula => cedula && !cedulasVivas.has(cedula));
+  const cedulasArchivadas = new Set([
+    ...(await getMeta('cedulasArchivadas', [])).map(normalizeCedula),
+    ...soloArchivadas
+  ].filter(Boolean));
   const patientById = new Map(patients.map(row => [row.id, row]));
   const saleByConsultation = new Map(sales.filter(row => row.consultationId).map(row => [row.consultationId, row]));
   const itemsBySale = new Map();
@@ -885,6 +902,7 @@ export const obtenerSnapshotLocal = async () => {
 
   return {
     historial: [...byCedula.values()],
+    cedulasArchivadas: [...cedulasArchivadas],
     inventory,
     prices,
     patients,

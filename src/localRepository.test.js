@@ -1,4 +1,4 @@
-﻿import 'fake-indexeddb/auto';
+import 'fake-indexeddb/auto';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { localDb } from './localDb.js';
@@ -37,7 +37,7 @@ const sale = (accessory = '1') => ({
   estado: 'En laboratorio', accesorio_id: accessory
 });
 
-test('guardar consulta crea dominio y outbox en la misma transacciÃ³n', async () => {
+test('guardar consulta crea dominio y outbox en la misma transacción', async () => {
   await reset();
   const consultationId = '30000000-0000-4000-8000-000000000001';
   await guardarConsultaLocal({
@@ -239,7 +239,7 @@ test('REPRO: anular una venta que llego del servidor', async () => {
   await reset();
   await localDb.inventory.put({ id: 1, categoria: 'Accesorio', codigo: 'ACC-1', precio: '10', stock: 5, syncStatus: 'synced' });
 
-  // AsÃ­ se ve una venta en el servidor: llega por cacheServerHistorial.
+  // Así se ve una venta en el servidor: llega por cacheServerHistorial.
   await cacheServerHistorial([{
     id: 'consulta-remota-1',
     paciente_id: '30000000-0000-4000-8000-000000000001',
@@ -837,7 +837,7 @@ test('eliminar un paciente no lo hace reaparecer al sincronizar', async () => {
   const consultaId = 'a1000000-0000-4000-8000-000000000001';
   const cedula = '1712345678';
 
-  // 1) El servidor tiene al paciente en su cachÃ© de historial.
+  // 1) El servidor tiene al paciente en su caché de historial.
   await localDb.cache.put({
     id: `remote:${consultaId}`, kind: 'historial', idConsulta: consultaId,
     cedula, nombre: 'PRUEBA', fecha: '2026-09-28', estado: 'En laboratorio',
@@ -847,7 +847,7 @@ test('eliminar un paciente no lo hace reaparecer al sincronizar', async () => {
   assert.equal(antes.historial.filter(h => h.cedula === cedula).length, 1,
     'el paciente debe estar visible antes de eliminarlo');
 
-  // 2) El optometrÃ­a lo elimina.
+  // 2) El optometría lo elimina.
   await localDb.consultations.put({
     id: consultaId, patientId: 'p1', cedula, nombre: 'PRUEBA',
     fecha: '2026-09-28', syncStatus: 'pending'

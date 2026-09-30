@@ -3,7 +3,7 @@ import { supabase } from './supabaseClient';
 import { safeString, safeNum, calcularEdad, calcularTiempoTranscurrido, generarDiagnosticos, buscarPacientesEnSupabase } from './utilidades';
 import { imprimirInforme, imprimirRecetaSimple } from './impresiones';
 import { calcularTotal, calcularSaldo } from './reglas';
-import { obtenerSnapshotLocal } from './localRepository';
+import { obtenerSnapshotLocal, normalizeCedula } from './localRepository';
 import BotonComprobante from './BotonComprobante';
 
 export default function Historial({
@@ -36,6 +36,11 @@ export default function Historial({
 
     const timer = setTimeout(async () => {
       setBuscando(true);
+      // Cedulas que en ESTE dispositivo ya no existen. Sin este filtro la
+      // busqueda en la nube resucita al paciente eliminado Y ademas pisa la
+      // lista local, porque setResultadosBusqueda se llama con los datos de la nube.
+      let borradas = new Set();
+      let filtradosLocales = [];
       // 1. Mostrar resultados locales inmediatamente
       try {
         // Se lee el snapshot de Dexie, la MISMA fuente que usa useGestor. Antes
@@ -45,12 +50,14 @@ export default function Historial({
         // el optometra la miraba.
         const snapshot = await obtenerSnapshotLocal();
         const histLocal = snapshot?.historial || historialReciente || [];
+        borradas = new Set(snapshot?.cedulasArchivadas || []);
         const busqueda = termino.toLowerCase();
         const filtrados = histLocal.filter(item => 
           safeString(item.nombre).toLowerCase().includes(busqueda) ||
           safeString(item.cedula).includes(busqueda) ||
           safeString(item.alias).toLowerCase().includes(busqueda)
         );
+        filtradosLocales = filtrados;
         if (filtrados.length > 0) setResultadosBusqueda({ termino, datos: filtrados });
       } catch { /* la bóveda local falló: se muestran los resultados de la nube */ }
 
@@ -58,7 +65,11 @@ export default function Historial({
       try {
         if (navigator.onLine) {
           const datos = await buscarPacientesEnSupabase(termino);
-          if (datos && datos.length > 0) setResultadosBusqueda({ termino, datos });
+          // Nombre propio: visibles es un useState de este componente y
+          // sombrearlo aqui haria fallar cualquier uso futuro dentro del bloque.
+          const enNube = (datos || []).filter(d => !borradas.has(normalizeCedula(d.cedula)));
+          if (enNube.length > 0) setResultadosBusqueda({ termino, datos: enNube });
+          else if (filtradosLocales.length === 0) setResultadosBusqueda({ termino, datos: [] });
         }
       } catch {
         console.warn("Búsqueda en nube falló, usando local.");
