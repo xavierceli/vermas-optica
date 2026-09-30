@@ -1,6 +1,11 @@
 import { supabase } from './supabaseClient';
 import { localDb, nowIso, requestPersistentStorage } from './localDb';
-import { cacheServerCatalog, cacheServerHistorial, markLocalOperationSynced } from './localRepository';
+import { cacheServerCatalog, cacheServerHistorial, enColaEscritura, markLocalOperationSynced } from './localRepository';
+
+// OJO, TRAMPA DE INTERBLOQUEO: markLocalOperationSynced y cacheServerHistorial
+// YA pasan por la cola de escritura. Envolverlos aqui otra vez dejaria la cola
+// esperando a si misma y TODO se quedaria colgado. Solo se encolan bloques que
+// escriben directamente en localDb (ver test en avisos.test.js).
 import { paginarConsulta } from './paginacion';
 
 let running = false;
@@ -199,10 +204,15 @@ const reconciliarStockVenta = async serverResult => {
     .select('id,stock')
     .in('id', [...new Set(ids)]);
   if (error) return;
-  for (const row of data || []) {
-    const local = await localDb.inventory.get(row.id);
-    if (local) await localDb.inventory.put({ ...local, stock: Number(row.stock), syncStatus: 'synced', updatedAt: nowIso() });
-  }
+  // Lee, MODIFICA y escribe el stock de productos que el usuario puede estar
+  // editando a la vez. Sin la cola, un cambio de precio hecho por el optometria
+  // en ese instante se pierde: se sobrescribe con el valor viejo del servidor.
+  await enColaEscritura(async () => {
+    for (const row of data || []) {
+      const local = await localDb.inventory.get(row.id);
+      if (local) await localDb.inventory.put({ ...local, stock: Number(row.stock), syncStatus: 'synced', updatedAt: nowIso() });
+    }
+  }, 'bajo');
 };
 const MAX_INTENTOS = 5;
 const TIEMPO_ESPERA_BASE_MS = 15000;
@@ -249,17 +259,29 @@ const applyResults = async results => {
         // que dio el dispositivo y puede venir como TEXTO desde un formulario;
         // comparar texto con numero da siempre "distintos" y hacia reconciliar
         // de mas (borrar y reinsertar el producto local) en cada subida.
+        // Todo el bloque va en la cola: cambia el id del producto en ventaItems,
+        // movimientos e inventario, y el usuario puede estar editando ese
+        // producto a la vez.
         if (Number(operation.entityId) !== serverId) {
-          await localDb.saleItems.where('inventoryId').equals(operation.entityId).modify({ inventoryId: serverId });
-          await localDb.inventoryMovements.where('inventoryId').equals(operation.entityId).modify({ inventoryId: serverId });
-          await localDb.inventory.delete(operation.entityId);
+          await enColaEscritura(async () => {
+            await localDb.saleItems.where('inventoryId').equals(operation.entityId).modify({ inventoryId: serverId });
+            await localDb.inventoryMovements.where('inventoryId').equals(operation.entityId).modify({ inventoryId: serverId });
+            await localDb.inventory.delete(operation.entityId);
+            await localDb.inventory.put({ ...serverResult.inventario, syncStatus: 'synced', updatedAt: nowIso() });
+          }, 'bajo');
+        } else {
+          await enColaEscritura(
+            () => localDb.inventory.put({ ...serverResult.inventario, syncStatus: 'synced', updatedAt: nowIso() }),
+            'bajo'
+          );
         }
-        await localDb.inventory.put({ ...serverResult.inventario, syncStatus: 'synced', updatedAt: nowIso() });
       } else if (operation.type === 'UPSERT_PRECIO' && serverResult.precio) {
         const serverId = Number(serverResult.servidor_id);
         // Mismo motivo que en el inventario: comparar como numero, no como texto.
-        if (Number(operation.entityId) !== serverId) await localDb.prices.delete(operation.entityId);
-        await localDb.prices.put({ ...serverResult.precio, syncStatus: 'synced', updatedAt: nowIso() });
+        await enColaEscritura(async () => {
+          if (Number(operation.entityId) !== serverId) await localDb.prices.delete(operation.entityId);
+          await localDb.prices.put({ ...serverResult.precio, syncStatus: 'synced', updatedAt: nowIso() });
+        }, 'bajo');
       } else {
         await markLocalOperationSynced(operation);
         if (operation.type === 'EDITAR_VENTA' && serverResult.version) {

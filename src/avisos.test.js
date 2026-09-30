@@ -104,6 +104,37 @@ test('el sincronizador avisa cuando el historial le queda incompleto', () => {
   assert.match(leer('App.jsx'), /Historial parcial/, 'la interfaz debe decirlo, no solo la consola');
 });
 
+// --- La cola de escritura del motor de sincronizacion ---------------------
+test('el motor de sincronizacion no envuelve lo que YA pasa por la cola', () => {
+  // markLocalOperationSynced y cacheServerHistorial ya se encolan dentro de
+  // localRepository. Envolverlos aqui otra vez haria que la cola esperase a si
+  // misma: TODO se quedaria colgado sin ningun error visible. Es la trampa mas
+  // peligrosa de este archivo, asi que queda vigilada por test.
+  const fuente = leer('syncEngine.js');
+  const bloques = [...fuente.matchAll(/enColaEscritura\([\s\S]{0,400}?\)\s*[,;]/g)].map(m => m[0]);
+  assert.ok(bloques.length > 0, 'deberia haber bloques encolados: si no hay ninguno, la guarda no comprueba nada');
+  for (const bloque of bloques) {
+    for (const yaEncolado of ['markLocalOperationSynced', 'cacheServerHistorial', 'cacheServerCatalog']) {
+      assert.ok(
+        !bloque.includes(yaEncolado),
+        `enColaEscritura envuelve a ${yaEncolado}, que ya pasa por la cola: interbloqueo garantizado`
+      );
+    }
+  }
+});
+
+test('el stock que reconcilia el servidor pasa por la cola', () => {
+  // Lee, MODIFICA y escribe. Sin la cola, un cambio de precio o de stock hecho
+  // por el optometria en ese instante se pierde con el valor viejo del servidor.
+  const fuente = leer('syncEngine.js');
+  const i = fuente.indexOf('const reconciliarStockVenta');
+  assert.ok(i >= 0, 'no se encuentra reconciliarStockVenta');
+  assert.ok(
+    fuente.slice(i, i + 900).includes('enColaEscritura'),
+    'la reconciliacion de stock debe ir por la cola de escritura'
+  );
+});
+
 // ---------------------------------------------------------------------------
 // Y QUE NO VUELVAN LOS ALERT DEL NAVEGADOR
 // ---------------------------------------------------------------------------
