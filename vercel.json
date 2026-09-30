@@ -3,13 +3,21 @@
     "Cabeceras de seguridad. Se anaden con un fichero de 30 lineas y closes",
     "puertas que hasta ahora estaban abiertas de par en par.",
     "",
-    "LA CSP LLEVA 'unsafe-inline' EN SCRIPT POR UN MOTIVO CONCRETO: las",
+    "LA CSP NO LLEVA 'unsafe-inline' EN SCRIPT. Antes lo llevaba porque las",
     "plantillas de impresion (impresiones.js) se escriben con document.write en",
-    "una ventana nueva e incluyen un <script> y un <style> en linea. Sin eso, la",
-    "impresion de recetas, recibos y etiquetas dejaria de funcionar.",
-    "Siguiente paso: mover ese <script> a un addEventListener (imprimirEn) y",
-    "quitar 'unsafe-inline' de script-src para que la CSP empezara a proteger de",
-    "verdad contra un XSS. El resto de cabeceras no tienen compensaciones."
+    "una ventana nueva e inclinaban un <script> en linea que pedia la impresion.",
+    "Ese script era el unico agujero de verdad de toda la politica: permitia",
+    "ejecutar ARBITRARIO dentro de un documento lleno de datos reales. Se",
+    "elimino en septiembre de 2026: el padre escucha el load de la ventana con",
+    "addEventListener (alCargar en impressiones.js) y el codigo de barras se",
+    "sirve desde /vendor, no desde un CDN.",
+    "",
+    "style-src SI conserva 'unsafe-inline' y es a proposito: las plantillas",
+    "imprimen con <style> dentro del documento, y React pone estilos en linea",
+    "(style={{...}}). Sin ahi, no se imprime nada. Un <style> no ejecuta codigo.",
+    "",
+    "Hay tests en avisos.test.js que impiden que vuelva un <script> en linea.",
+    "El resto de cabeceras no tienen compensaciones."
   ],
   "headers": [
     {
@@ -29,7 +37,7 @@
         { "key": "Strict-Transport-Security", "value": "max-age=63072000; includeSubDomains; preload" },
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.supabase.co; connect-src 'self' https://*.supabase.co wss://*.supabase.co; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+          "value": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://*.supabase.co; connect-src 'self' https://*.supabase.co wss://*.supabase.co; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
         }
       ]
     }

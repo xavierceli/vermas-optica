@@ -1,11 +1,31 @@
 import { safeString, safeNum, calcularCerca, generarDiagnosticos } from './utilidades';
-import { esc, escJs } from './escape';
+import { esc } from './escape';
 
 // Todo dato que entra en las plantillas de impresion pasa por txt(): safeString
 // solo convierte a texto, txt() ademas neutraliza < > & " '', de modo que un
 // nombre de paciente no puede inyectar etiquetas ni romper el documento.
 const txt = valor => esc(safeString(valor));
 import { calcularTotal, calcularSaldo, calcularMontoDescuento } from './reglas';
+
+// ---------------------------------------------------------------------------
+// ESPERAR A QUE LA VENTANA ESTE LISTA PARA IMPRIMIR
+// ---------------------------------------------------------------------------
+// Cada plantilla llevaba su propio <script>window.onload = ... print()</script>.
+// Eso era lo unico que hacia falta para que la CSP dijera 'unsafe-inline':
+// permitia ejecutar ARBITRARIO dentro de un documento construido con datos
+// reales. Con 'self' en script-src, ese script dejo de ser una excepcion y pasa
+// a ser un agujero.
+//
+// El evento load no cambia: lo escucha el padre, sobre la ventana. El codigo
+// vive en el bundle, no dentro del documento impreso.
+const alCargar = (win, fn) => {
+  try {
+    // Si el documento ya terminó de cargar, load no volverá a dispararse y la
+    // impresión se quedaría en blanco para siempre.
+    if (win.document.readyState === 'complete') { fn(); return; }
+    win.addEventListener('load', () => { try { fn(); } catch (e) { console.error(e); } }, { once: true });
+  } catch (e) { console.error(e); }
+};
 
 export const imprimirInforme = (item) => {
   try {
@@ -81,11 +101,11 @@ export const imprimirInforme = (item) => {
             <div class="firma-line">Darwin Xavier Celi</div>
             <p style="margin:2px; font-size:12px;">Optómetra | Reg. 2250-2024-8005219</p>
           </div>
-          <script>window.onload = function() { window.print(); };</script>
-        </body>
+            </body>
       </html>
     `);
     win.document.close();
+  alCargar(win, () => win.print());
   } catch(e) { console.error(e); }
 };
 
@@ -129,11 +149,11 @@ export const imprimirRecetaSimple = (item) => {
             <tr><td class="label">Cerca OD</td><td class="bold">${txt(item?.adicion_od)||'-'}</td></tr>
             <tr><td class="label">OI</td><td class="bold">${txt(item?.adicion_oi)||'-'}</td></tr>
           </table>
-          <script>window.onload = function() { window.print(); };</script>
-        </body>
+            </body>
       </html>
     `);
     win.document.close();
+  alCargar(win, () => win.print());
   } catch(e) { console.error(e); }
 };
 
@@ -229,11 +249,11 @@ export const imprimirOrdenTrabajo = (item) => {
             OPT. XAVIER CELI | 📱 0999911209 / 0988503206 | ✉️ XAVIERCELI@ICLOUD.COM
           </div>
 
-          <script>window.onload = function() { window.print(); };</script>
-        </body>
+            </body>
       </html>
     `);
     win.document.close();
+  alCargar(win, () => win.print());
   } catch(e) { console.error(e); }
 };
 
@@ -310,11 +330,11 @@ export const imprimirRecibo = (item) => {
             Por favor revisa tus medidas y productos al momento de la entrega.
           </div>
 
-          <script>window.onload = function() { window.print(); };</script>
-        </body>
+            </body>
       </html>
     `);
     win.document.close();
+  alCargar(win, () => win.print());
   } catch(e) { console.error(e); }
 };
 
@@ -361,8 +381,11 @@ export const imprimirEtiqueta = (item) => {
             .barcode-container svg { height: 6mm !important; width: auto !important; }
             .bold { font-weight: bold; }
           </style>
-          <!-- Cargamos el generador de código de barras -->
-          <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+          <!-- Generador de código de barras, servido por NOSOTROS -->
+          <!-- Venía de un CDN externo: sin internet no se imprimía la etiqueta -->
+          <!-- (el error se tragaba en un catch vacío) y salía con el hueco del -->
+          <!-- código de barras, sin decir nada. -->
+          <script src="/vendor/JsBarcode.all.min.js"></script>
         </head>
         <body>
           
@@ -383,29 +406,30 @@ export const imprimirEtiqueta = (item) => {
             <div class="text-line">${categoria}</div>
           </div>
 
-          <script>
-            window.onload = function() {
-              try {
-                // Generar el código de barras real.
-                // El valor va DENTRO de un literal de JavaScript, asi que aqui el
-                // escape HTML no sirve: hace falta un literal JS bien cerrado
-                // (escJs). Con esc(), un codigo como A" onload="alert(1) rompia
-                // el script entero de la etiqueta.
-                JsBarcode("#barcode", ${escJs(codigoPlano)}, {
-                  format: "CODE128",
-                  displayValue: false,
-                  height: 25,
-                  margin: 0,
-                  width: 1.2
-                });
-              } catch(e) {}
-              // Esperamos medio segundo para que dibuje el código antes de abrir la impresión
-              setTimeout(() => { window.print(); }, 500);
-            };
-          </script>
-        </body>
+          </body>
       </html>
     `);
     win.document.close();
+    alCargar(win, () => {
+      try {
+        // El valor llega por la API, no dentro de un literal de JavaScript: ya no
+        // hace falta escJs(). Un código como A" onload="alert(1) es texto, no
+        // código, y sale impreso tal cual.
+        win.JsBarcode('#barcode', codigoPlano, {
+          format: 'CODE128',
+          displayValue: false,
+          height: 25,
+          margin: 0,
+          width: 1.2
+        });
+      } catch (e) {
+        // Antes el fallo se tragaba en un catch vacío y la etiqueta salía con el
+        // hueco del código de barras sin decir nada. Se avisa por consola, pero
+        // se imprime igualmente: el código en texto ya está en la plantilla.
+        console.error(e);
+      }
+      // Medio segundo para que el SVG se dibuje antes de abrir la impresión.
+      setTimeout(() => { try { win.print(); } catch (e) { console.error(e); } }, 500);
+    });
   } catch (e) { console.error(e); }
 };

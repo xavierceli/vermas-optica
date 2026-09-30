@@ -5,7 +5,10 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  // public/vendor contiene el JsBarcode minificado, copiado tal cual para que la
+  // etiqueta se imprima sin internet. No es codigo nuestro: lintarlo solo da
+  // 49 errores de formato y no dice nada de nuestra seguridad.
+  globalIgnores(['dist', 'public/vendor/**']),
   {
     files: ['**/*.{js,jsx}'],
     extends: [

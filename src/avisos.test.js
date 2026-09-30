@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
@@ -87,6 +87,14 @@ test('la app declara las cabeceras de seguridad que necesita', () => {
   }
   const csp = todas.find(c => c.startsWith('Content-Security-Policy:'));
   assert.match(csp, /script-src 'self'/, 'la CSP debe permitir los scripts propios');
+  // 'unsafe-inline' en script-src anula la CSP por completo: cualquier texto que
+  // se cuele en el DOM se ejecuta. Solo lo justificaba el <script> en linea de
+  // las plantillas de impresion, que ya no existe (impresion.js usa alCargar).
+  const scriptSrc = csp.split(';').map(d => d.trim()).find(d => d.startsWith('script-src'));
+  assert.ok(
+    !/unsafe-inline|unsafe-eval/.test(scriptSrc),
+    `script-src no debe permitir ejecucion en linea: ${scriptSrc}`
+  );
   assert.match(csp, /object-src 'none'/);
   assert.match(csp, /frame-ancestors 'none'/);
   // El service worker cacheado es lo que hacia que el aviso de version nueva se
@@ -133,6 +141,54 @@ test('el stock que reconcilia el servidor pasa por la cola', () => {
     fuente.slice(i, i + 900).includes('enColaEscritura'),
     'la reconciliacion de stock debe ir por la cola de escritura'
   );
+});
+
+// --- Las plantillas de impresion y la CSP ---------------------------------
+// Los comentarios hablan de <script> y de CDN, y no ejecutan nada: lo que se
+// analiza es el codigo de verdad.
+const codigo = nombre => leer(nombre)
+  .replace(/\/\*[\s\S]*?\*\//g, ' ')
+  .replace(/(^|[^:])\/\/.*$/gm, '$1');
+
+test('ninguna plantilla de impresion lleva un <script> en linea', () => {
+  // Cada plantilla se escribe con document.write dentro de una ventana nueva. Un
+  // <script> ahi es la unica excepcion que hacia falta en script-src, y con el
+  // desaparecio la CSP puede cerrarse de verdad.
+  const enLinea = [...codigo('impresiones.js').matchAll(/<script(?![^>]*\ssrc=)[^>]*>/g)].map(m => m[0]);
+  assert.deepEqual(enLinea, [], `script en linea en una plantilla: ${enLinea.join(', ')}`);
+});
+
+test('las plantillas de impresion no cargan nada de un CDN', () => {
+  // El codigo de barras venía de un CDN externo. Sin internet la etiqueta se
+  // imprimia con el hueco del codigo y sin avisar: el try/catch se lo tragaba.
+  // Ni el dominio ni ninguna URL externa, ni en codigo ni en los comentarios
+  // HTML de la plantilla: si vuelve a aparecer, el test lo para.
+  const fuente = codigo('impresiones.js');
+  assert.ok(
+    !/cdn\.jsdelivr\.net|unpkg\.com|cdnjs|googleapis/.test(fuente),
+    'el generador de codigo de barras debe servirse desde /vendor, no desde un CDN'
+  );
+  const externos = [...fuente.matchAll(/https?:\/\/[^\s"')]+/g)]
+    .map(m => m[0]).filter(u => !u.includes('w3.org'));
+  assert.deepEqual(externos, [], `origen externo en una plantilla: ${externos.join(', ')}`);
+});
+
+test('el generador de codigo de barras esta en public/vendor', () => {
+  // Si se borra o no se copia, la etiqueta se imprime sin barras: el fallo es
+  // silencioso porque el SVG vacio es un documento valido.
+  const vendor = join(SRC, '..', 'public', 'vendor', 'JsBarcode.all.min.js');
+  assert.ok(existsSync(vendor), 'falta public/vendor/JsBarcode.all.min.js');
+  assert.ok(statSync(vendor).size > 1000, 'el fichero de vendor parece vacio o truncado');
+});
+
+test('al cargar la ventana se imprime, y con un codigo de barras valido', () => {
+  const fuente = leer('impresiones.js');
+  assert.match(fuente, /const alCargar = \(win, fn\)/, 'falta el helper alCargar');
+  // Cada plantilla debe imprimir al cargar; si no, el documento sale en blanco.
+  const cierres = (fuente.match(/win\.document\.close\(\);/g) || []).length;
+  const esperas = (fuente.match(/alCargar\(win, \(\) =>/g) || []).length;
+  assert.equal(esperas, cierres, 'cada plantilla debe imprimir con alCargar tras cerrar el documento');
+  assert.match(fuente, /win\.JsBarcode\('#barcode', codigoPlano/, 'el codigo se pasa por la API, no por un literal JS');
 });
 
 // ---------------------------------------------------------------------------
