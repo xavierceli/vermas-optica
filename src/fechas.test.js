@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { calcularEdad, hoyLocal, parsearFechaLocal } from './fechas.js';
+import { calcularEdad, parsearFechaLocal } from './fechas.js';
 
 // BUG REAL Y MEDIDO: `new Date('1990-05-15')` no es medianoche local, es
 // MEDIANOCHE UTC. En Ecuador (UTC-5) eso es el dia 14 a las 19:00, y la edad se
