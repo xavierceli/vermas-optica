@@ -1,9 +1,10 @@
 import { useState, useEffect, useMemo, Fragment } from 'react';
 import { supabase } from './supabaseClient'; 
-import { safeString, safeNum, calcularEdad, calcularTiempoTranscurrido, generarDiagnosticos, buscarPacientesEnSupabase } from './utilidades';
+import { safeString, safeNum, calcularEdad, calcularTiempoTranscurrido, buscarPacientesEnSupabase } from './utilidades';
 import { imprimirInforme, imprimirRecetaSimple } from './impresiones';
 import { calcularTotal, calcularSaldo } from './reglas';
 import { obtenerSnapshotLocal, normalizeCedula } from './localRepository';
+import { generarDiagnosticos, listaSegunBusqueda, resumenConsulta } from './historial';
 import BotonComprobante from './BotonComprobante';
 
 export default function Historial({
@@ -93,21 +94,12 @@ export default function Historial({
   const hayTermino = busquedaTexto.trim().length >= 2;
 
   const pacientesAgrupados = useMemo(() => {
-    const terminoActual = busquedaTexto.trim();
-    const listaBruta = hayTermino
-      ? (resultadosBusqueda.termino === terminoActual ? resultadosBusqueda.datos : [])
-      : (historialReciente || []);
-
-    const agrupados = [];
-    const cedulasVistas = new Set();
-    for (const item of listaBruta) {
-      if (!item || safeString(item.nombre) === 'CONSUMIDOR FINAL') continue;
-      if (cedulasVistas.has(item.cedula)) continue;
-      cedulasVistas.add(item.cedula);
-      agrupados.push(item);
-    }
-    return agrupados;
-  }, [busquedaTexto, resultadosBusqueda, historialReciente, hayTermino]);
+    // Las reglas (que lista se ve, como se agrupa, cuando hay pedido, cuanto debe
+    // y que diagnostico se imprime) viven en historial.js, con tests.
+    return listaSegunBusqueda({
+      busquedaTexto, resultados: resultadosBusqueda, historial: historialReciente
+    }).lista;
+  }, [busquedaTexto, resultadosBusqueda, historialReciente]);
 
   const filasVisibles = pacientesAgrupados.slice(0, filasPorMostrar);
 
@@ -353,23 +345,9 @@ export default function Historial({
         {filasVisibles.map(item => {
           try {
             const diagnosticos = generarDiagnosticos(item);
-            const desc = safeNum(item.descuento);
-            const vta = safeNum(item.venta);
-            const abono = safeNum(item.abono);
-            const vFinal = calcularTotal(vta, desc);
-            // El saldo se calcula SIEMPRE con los datos locales de la venta. Antes
-            // se preferia `deuda_total` (cache del servidor) y, al anular o borrar
-            // una venta, ese valor se quedaba pegado: el historial seguia
-            // mostrando "SALDO PENDIENTE" de algo ya cobrado o eliminado.
-            const saldoPendiente = calcularSaldo(vta, desc, abono);
-            const tieneDeuda = saldoPendiente > 0;
-            // Solo hay pedido si existe una venta. Sin esta comprobacion, una
-            // consulta clinica sin venta aparecia como pedido porque el servidor
-            // le asigna el estado 'En laboratorio' por defecto.
-            const tienePedido = Boolean(safeString(item.pedido_id).trim())
-              || Number(item.venta || 0) > 0
-              || String(item.codigo_armazon || '').trim() !== ''
-              || String(item.accesorio_id || '').trim() !== '';
+            // Cuanto debe, si tiene pedido y el diagnostico: reglas de negocio
+            // con tests en historial.test.js.
+            const { saldo: saldoPendiente, tieneDeuda, tienePedido, total: vFinal, descuento: desc } = resumenConsulta(item);
             
             return (
               <div key={item.id} className="border border-gray-200 bg-white p-6 rounded-2xl shadow-sm hover:shadow-md transition-all">
