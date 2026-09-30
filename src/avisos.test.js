@@ -415,6 +415,25 @@ test('eliminar un paciente pide confirmacion y dice lo que hace', () => {
     '"Consulta archivada" hacia creer que solo se habia escondido una visita');
 });
 
+test('archivar un paciente NO hace desaparecer su venta de Pedidos', () => {
+  // BUG REAL que yo mismo cree: Pedidos se construye a partir del HISTORIAL
+  // clinico. Al archivar a un paciente, sus ventas se iban con el, y como la
+  // venta sigue viva sujetando el stock, el inventario se comia el producto y no
+  // habia ninguna forma de anularla desde la app: "Stock insuficiente" sin
+  // salida. La ficha clinica se oculta; la venta, no.
+  const repo = leer('localRepository.js');
+  assert.match(repo, /ventasArchivadas: sales/,
+    'el snapshot debe devolver las ventas de pacientes archivados');
+  assert.match(repo, /_pacienteArchivado: true/,
+    'marcadas como tales, para distinguirlas de una venta corriente');
+
+  const gestor = leer('../src/useGestor.js');
+  const i = gestor.indexOf('const pedidosFiltrados');
+  const bloque = gestor.slice(i, i + 700);
+  assert.match(bloque, /\.\.\.\(ventasArchivadas \|\| \[\]\)/,
+    'Pedidos debe incluir tambien las ventas de los pacientes archivados');
+});
+
 test('el archivado se reconoce en los dos idiomas', () => {
   // La app escribe `archivedAt` (camelCase) y la base devuelve `archived_at`
   // (snake_case). Mirar solo uno de los dos hacía que un borrado hecho en otro

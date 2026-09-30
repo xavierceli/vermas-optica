@@ -87,6 +87,11 @@ export function useGestor() {
   // nombre en Clinica y la app le rellena los datos de un paciente que ya no
   // existe.
   const [cedulasArchivadas, setCedulasArchivadas] = useState([]);
+  // Ventas de pacientes que ya no estan en el historial clinico, pero que siguen
+  // vivas y sujetando stock. Si desaparecieran de Pedidos, el optometria no
+  // podria anularlas y ese stock no volveria nunca al inventario. Solo se
+  // esconden del historial, no de la lista de ventas.
+  const [ventasArchivadas, setVentasArchivadas] = useState([]);
   const [inventario, setInventario] = useState([]);
   const [listaPrecios, setListaPrecios] = useState([]);
   
@@ -152,6 +157,7 @@ export function useGestor() {
   const aplicarSnapshotLocal = snapshot => {
     if (!snapshot) return;
     setHistorial(snapshot.historial || []);
+    setVentasArchivadas(snapshot.ventasArchivadas || []);
     setInventario(snapshot.inventory || []);
     setListaPrecios(snapshot.prices || []);
     setCedulasArchivadas(snapshot.cedulasArchivadas || []);
@@ -871,7 +877,13 @@ if (sync) {
   // useGestor se vuelve a renderizar con cualquier pulsación de tecla de la
   // clínica, así que aquí se filtraba miles de filas para un resultado idéntico.
   const queryGlobal = safeString(busqueda).toLowerCase();
-  const pedidosFiltrados = useMemo(() => (historial || []).filter(item => {
+  const pedidosFiltrados = useMemo(() => {
+    // Pedidos se alimenta del historial clinico MAS las ventas de pacientes ya
+    // archivados. Sin estas ultimas, archivar un paciente dejaba su venta viva
+    // sujetando el stock y sin ninguna forma de anularla desde la app: el
+    // inventario se comia el producto para siempre.
+    const base = [...(historial || []), ...(ventasArchivadas || [])];
+    return base.filter(item => {
     if (!item) return false;
     const matchSearch = safeString(item.nombre).toLowerCase().includes(queryGlobal) || safeString(item.cedula).includes(queryGlobal);
     // Mismo criterio que PedidosLista: sin venta real (pedido_id) no hay pedido.
@@ -882,7 +894,8 @@ if (sync) {
       || safeString(item.codigo_armazon).trim() !== ''
       || safeString(item.accesorio_id).trim() !== '';
     return queryGlobal ? matchSearch : tienePedido;
-  }), [historial, queryGlobal]);
+    });
+  }, [historial, ventasArchivadas, queryGlobal]);
 
   const listaPreciosFiltrada = useMemo(() => {
     const q = safeString(busquedaPrecio).toLowerCase();
@@ -960,7 +973,7 @@ if (sync) {
     modoSinConexion, entrarSinConexion, dispositivo, configurarAccesoSinConexion, desactivarAccesoSinConexion,
     toast, confirmDialog, setConfirmDialog, vistaActual, setVistaActual, syncEstado, sincronizarAhora,
     obtenerDetalleCola, reintentarOperacion, descartarOperacion, descartarTodoLoAtascado,
-    historial, inventario, listaPrecios, paciente, setPaciente, estadoInicial, editandoId, setEditandoId,
+    historial, ventasArchivadas, inventario, listaPrecios, paciente, setPaciente, estadoInicial, editandoId, setEditandoId,
     cedulasArchivadas, 
     guardarPacienteClinico, manejarCambio, borrarHistoriaClinica, cargarParaEditarClinico, edadActual, claseInputRef,
     busqueda, setBusqueda, pedidosFiltrados, stats, enviarWhatsApp,

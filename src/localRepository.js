@@ -953,6 +953,29 @@ export const obtenerSnapshotLocal = async () => {
       fila => normalizeCedula(fila.cedula) || `id:${fila.id}`
     ),
     cedulasArchivadas: [...cedulasArchivadas],
+    // Ventas de pacientes archivados. NO desaparecen: la venta es un hecho
+    // economico y sigue sujetando el stock de los productos. Si se ocultaran con
+    // el historial, el optometria no tendria forma de ANULARLAS y el inventario
+    // se quedaria sin devolver para siempre. Solo se esconden de la lista de
+    // pacientes, no de Pedidos.
+    ventasArchivadas: sales
+      .map(venta => ({ venta, patient: patientById.get(venta.patientId) || {} }))
+      .filter(({ patient }) => {
+        const cedula = normalizeCedula(patient.cedula);
+        return cedula && cedulasArchivadas.has(cedula);
+      })
+      .map(({ venta, patient }) => ({
+        ...patient,
+        ...venta,
+        id: venta.id,
+        pedido_id: venta.pedido_id || venta.id,
+        patient_id: patient.id,
+        paciente_id: patient.id,
+        cedula: patient.cedula,
+        nombre: patient.nombre,
+        fecha: venta.fecha,
+        _pacienteArchivado: true
+      })),
     inventory,
     prices,
     patients,
