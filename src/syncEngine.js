@@ -111,6 +111,39 @@ const purgarDescartadas = async () => {
   return aBorrar.length;
 };
 
+// BUG REAL: el payload de una venta se congelaba al CREAR la operacion y se
+// reenviaba tal cual, edito o no el optometria la venta despues. Una venta
+// guardada antes de arreglar el filtro dejo en la cola un item con
+// inventario_id null, el servidor lo rechazo con "Item de venta invalido." y se
+// produjo un bucle infinito: la misma operacion, con el mismo payload viejo,
+// rechazada cada 30 s para siempre. Arreglar el filtro al guardar NO la
+// desbloquea, porque la operacion ya estaba en la cola.
+//
+// Aqui se reconstruyen los items desde la venta local, que es la verdad actual:
+// si la venta ya no tiene ese armazon, el item desaparece del envio y la venta
+// sube. Una operacion atascada se cura sola en cuanto hay red. Y se le devuelven
+// los intentos: es un payload NUEVO, se merece una oportunidad limpia. Si no,
+// una venta corregida a la cuarta se descartaba sin llegar a subirse nunca.
+const refrescarItemsDeVenta = async operation => {
+  if (operation.type !== 'CREAR_VENTA' && operation.type !== 'EDITAR_VENTA') return operation;
+  const items = await localDb.saleItems.where('saleId').equals(operation.entityId).toArray();
+  const resueltos = items
+    .filter(item => item?.inventoryId !== null && item?.inventoryId !== undefined)
+    .map(item => ({ inventario_id: item.inventoryId, codigo: null, cantidad: Math.max(1, Number(item.quantity) || 1) }));
+  const actuales = operation?.payload?.p_payload?.items || [];
+  if (JSON.stringify(actuales) === JSON.stringify(resueltos)) return operation;
+  console.warn(`[sync] se actualizan los items de "${operation.type}" (${operation.entityId}) con la venta local antes de enviarla.`);
+  const actualizado = {
+    ...operation,
+    attempts: 0,
+    status: 'pending',
+    lastError: null,
+    payload: { ...operation.payload, p_payload: { ...operation.payload.p_payload, items: resueltos } }
+  };
+  await localDb.outbox.put(actualizado);
+  return actualizado;
+};
+
 // Un fallo de RED deja la operacion como 'pending', sin sumar intento ni dejar un
 // motivo de rechazo. Si no, cada corte de internet sumaria un intento, la venta
 // llegaria a MAX_INTENTOS y pasaria a 'descartada' por no tener internet: se
@@ -125,6 +158,18 @@ const marcarPendientePorRed = async operation => {
   status.online = false;
   status.phase = 'offline';
   console.warn(`[sync] "${operation.type}" queda en espera: sin conexion. No es un rechazo del servidor.`);
+};
+
+// Errores que NO se arreglan reintentando: el dato es invalido de origen. Meterlos
+// en la rueda de reintentos solo genera ruido y bloquea la cola con un error que
+// nadie va a arreglar solo. Se descartan de una vez, diciendo por que.
+const RECHAZO_PERMANENTE = [
+  'Item de venta inválido', 'Item de venta invalido',
+  'Stock insuficiente', 'violates check constraint', 'duplicate key'
+];
+const esRechazoPermanente = motivo => {
+  const texto = String(motivo || '').toLowerCase();
+  return RECHAZO_PERMANENTE.some(marca => texto.includes(marca.toLowerCase()));
 };
 
 const refreshCounts = async () => {
@@ -348,12 +393,15 @@ const applyResults = async results => {
       }
 
       const intentos = (operation.attempts || 0) + 1;
-      if (intentos >= MAX_INTENTOS) {
+      // Un rechazo permanente no mejora reintentandolo. Antes daba cinco vueltas
+      // y la barra se quedaba roja semanas, hasta que el optometria pulsaba el
+      // boton "Resolver problemas" sin saber que estaba haciendo.
+      if (intentos >= MAX_INTENTOS || esRechazoPermanente(motivo)) {
         await finalizarOperacion(operation, 'descartada',
-          `${motivo} (se descartó tras ${intentos} intentos)`);
+          `${motivo} (no se reintenta: el dato es invalido, no fue un corte de red)`);
         fallos.push({
           tipo: operation.type,
-          motivo: `${motivo}. Descartada tras ${intentos} intentos.`,
+          motivo: `${motivo}. Descartada: revisar los datos antes de reintentarlo.`,
           estado: 'descartada'
         });
       } else {
@@ -515,7 +563,7 @@ running = true;
       .filter(row => (row.status === 'pending' || row.status === 'failed') && row.type !== 'SUBIR_ADJUNTO');
     const operations = [];
     for (const row of candidatas) {
-      if (await aplicarBackoff(row)) operations.push(row);
+      if (await aplicarBackoff(row)) operations.push(await refrescarItemsDeVenta(row));
     }
 
     for (let index = 0; index < operations.length; index += 20) {

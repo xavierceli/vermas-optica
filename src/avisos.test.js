@@ -282,6 +282,33 @@ test('el motor marca offline ante un fallo de red, y vuelve a online al responde
   assert.match(fuente, /status\.online = true;[\s\S]{0,80}status\.phase/, 'un ciclo completo debe devolver la app a online');
 });
 
+test('los items de una venta se reconstruyen antes de enviarla', () => {
+  // BUG REAL: el payload se congelaba al crear la operacion. Arreglar el filtro
+  // al guardar NO desbloqueaba la venta atascada, porque la operacion ya estaba en
+  // la cola con el payload viejo y se reenviaba identica cada 30 s. La venta se
+  // quedaba rechazada para siempre.
+  const fuente = leer('syncEngine.js');
+  const i = fuente.indexOf('const refrescarItemsDeVenta');
+  const bloque = fuente.slice(i, i + 1200);
+  assert.match(bloque, /saleItems\.where\('saleId'\)/,
+    'los items deben salir de la venta local, no del payload congelado');
+  assert.match(bloque, /inventoryId !== null/,
+    'y solo los que tienen inventario resuelto');
+  assert.match(bloque, /attempts: 0/,
+    'con un payload nuevo hay que devolver los intentos: si no, una venta corregida a la cuarta se descarta sin subirse nunca');
+});
+
+test('un rechazo permanente no se reintenta cinco veces', () => {
+  // "Item de venta invalido." es un dato malo, no un corte de red. Reintentar no
+  // lo arregla: solo deja la barra roja semanas hasta que alguien pulse "Resolver".
+  const fuente = leer('syncEngine.js');
+  assert.match(fuente, /esRechazoPermanente/);
+  const i = fuente.indexOf('const intentos = (operation.attempts || 0) + 1;');
+  const bloque = fuente.slice(i, i + 460);
+  assert.match(bloque, /esRechazoPermanente\(motivo\)/,
+    'un rechazo permanente debe descartarse de inmediato');
+});
+
 test('nunca se envia un item de venta sin inventario resuelto', () => {
   // BUG REAL: al editar una venta y poner medidas, salia "Item de venta invalido."
   // El filtro dejaba pasar items con `inventario_id: null` (solo codigo), y el
