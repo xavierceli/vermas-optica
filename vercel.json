@@ -1,27 +1,6 @@
 {
-  "//": [
-    "Cabeceras de seguridad. Se anaden con un fichero de 30 lineas y closes",
-    "puertas que hasta ahora estaban abiertas de par en par.",
-    "",
-    "LA CSP NO LLEVA 'unsafe-inline' EN SCRIPT. Antes lo llevaba porque las",
-    "plantillas de impresion (impresiones.js) se escriben con document.write en",
-    "una ventana nueva e inclinaban un <script> en linea que pedia la impresion.",
-    "Ese script era el unico agujero de verdad de toda la politica: permitia",
-    "ejecutar ARBITRARIO dentro de un documento lleno de datos reales. Se",
-    "elimino en septiembre de 2026: el padre escucha el load de la ventana con",
-    "addEventListener (alCargar en impressiones.js) y el codigo de barras se",
-    "sirve desde /vendor, no desde un CDN.",
-    "",
-    "style-src SI conserva 'unsafe-inline' y es a proposito: las plantillas",
-    "imprimen con <style> dentro del documento, y React pone estilos en linea",
-    "(style={{...}}). Sin ahi, no se imprime nada. Un <style> no ejecuta codigo.",
-    "",
-    "Hay tests en avisos.test.js que impiden que vuelva un <script> en linea.",
-    "El resto de cabeceras no tienen compensaciones."
-  ],
   "headers": [
     {
-      "//": "El service worker nunca debe quedarse cacheado: si lo sirve una copia vieja, la app no se actualiza nunca y el aviso de version nueva se repite sin Convergence.",
       "source": "/sw.js",
       "headers": [
         { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }

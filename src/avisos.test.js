@@ -191,6 +191,66 @@ test('al cargar la ventana se imprime, y con un codigo de barras valido', () => 
   assert.match(fuente, /win\.JsBarcode\('#barcode', codigoPlano/, 'el codigo se pasa por la API, no por un literal JS');
 });
 
+// --- El esquema de vercel.json, que es donde se rompio el despliegue --------
+// ESTO NO ES COSA DEL AVISO, pero vive aqui porque vigila las mismas cabeceras.
+//
+// Vercel valida vercel.json contra un esquema ESTRICTO antes de construir nada.
+// Cualquier clave que no exista ahi hace fallar el despliegue entero. Lo que
+// paso: para dejar el porque de cada cabecera, se metio una clave "//" con un
+// comentario. Build en verde, lint en verde, 238 tests en verde... y Vercel
+// rechazando el fichero: "should NOT have additional property '//'". La app
+// llego a publicarse con las cabeceras de hace semanas, sin que nadie lo viera.
+//
+// El porque de la CSP, entonces, vive aqui (JSON no admite comentarios):
+//   - script-src 'self' y SIN unsafe-inline. Antes lo llevaba porque cada
+//     plantilla de impresion llevaba su <script> en linea. Ese script era el
+//     unico agujero de verdad: permitia ejecutar arbitrario dentro de un
+//     documento impreso con datos reales de pacientes. AlCargar lo sustituyo.
+//   - style-src SI lleva 'unsafe-inline', y es a proposito: las plantillas
+//     imprimen con <style> dentro del documento y React pone estilos en linea.
+//     Sin ahi no se imprime nada, y un <style> no ejecuta codigo.
+//   - /sw.js nunca se cachea: si se sirve una copia vieja, la app no se
+//     actualiza nunca y el aviso de version nueva se repite sin converger.
+const CLAVES_VERCEL = new Set([
+  '$schema', 'buildCommand', 'outputDirectory', 'installCommand', 'devCommand',
+  'framework', 'ignoreCommand', 'public', 'regions', 'functions', 'headers',
+  'redirects', 'rewrites', 'cleanUrls', 'trailingSlash', 'git', 'github',
+  'gitlab', 'bitbucket'
+]);
+const CLAVES_REGLA = new Set(['source', 'headers', 'has', 'missing', 'continue']);
+const CLAVES_CABECERA = new Set(['key', 'value']);
+
+test('vercel.json solo usa claves que Vercel acepta', () => {
+  const conf = JSON.parse(leer('../vercel.json'));
+  const comprobarClaves = (obj, permitidas, donde) => {
+    for (const clave of Object.keys(obj || {})) {
+      assert.ok(
+        permitidas.has(clave),
+        `vercel.json${donde} tiene la clave "${clave}", que Vercel no admite: ` +
+        'rechaza el despliegue ENTERO antes de construir. Sin build, sin lint y sin tests.'
+      );
+    }
+  };
+  comprobarClaves(conf, CLAVES_VERCEL, '');
+  for (const [i, regla] of (conf.headers || []).entries()) {
+    comprobarClaves(regla, CLAVES_REGLA, ` > headers[${i}]`);
+    for (const [j, cabecera] of (regla.headers || []).entries()) {
+      comprobarClaves(cabecera, CLAVES_CABECERA, ` > headers[${i}].headers[${j}]`);
+    }
+  }
+});
+
+test('vercel.json no esconde comentarios en claves "//"', () => {
+  // El intento de documentar el fichero con una clave "//" es justo lo que
+  // tumbaba el despliegue. Si alguien lo vuelve a intentar, que lo sepa aqui y
+  // no en el panel de Vercel.
+  const conf = JSON.parse(leer('../vercel.json'));
+  assert.ok(
+    !JSON.stringify(conf).includes('"//"'),
+    'vercel.json no admite comentarios: pon la explicacion en avisos.test.js'
+  );
+});
+
 // ---------------------------------------------------------------------------
 // Y QUE NO VUELVAN LOS ALERT DEL NAVEGADOR
 // ---------------------------------------------------------------------------
