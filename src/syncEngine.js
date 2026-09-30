@@ -7,6 +7,7 @@ import { cacheServerCatalog, cacheServerHistorial, enColaEscritura, markLocalOpe
 // esperando a si misma y TODO se quedaria colgado. Solo se encolan bloques que
 // escriben directamente en localDb (ver test en avisos.test.js).
 import { paginarConsulta } from './paginacion';
+import { esFalloDeRed } from './reglas';
 
 let running = false;
 let started = false;
@@ -503,10 +504,25 @@ running = true;
 
     if (pull) await pullServerCache();
     status.lastSync = nowIso();
+    // Si el ciclo llego aqui es que el servidor RESPONDIO: hay red. Sin esto, un
+    // solo fallo de red dejaba la app en "Sin conexion" para siempre, porque el
+    // evento 'online' del navegador no vuelve a dispararse si el enlace jamas se
+    // llego a caer (wifi del negocio con un router sin salida, por ejemplo).
+    if (!sesionAusente) status.online = true;
     status.phase = status.pending > 0 ? 'pending' : 'synced';
     emit();
   } catch (error) {
-    status.phase = status.online === false ? 'offline' : 'error';
+    // BUG REAL: con el wifi conectado y sin internet, navigator.onLine sigue
+    // diciendo true, el fetch fallaba y la app se creia sincronizada: no salia
+    // ni el aviso de "Sin conexion" ni el de error. El optometria guardaba una
+    // consulta creyendo que estaba en la nube. Un fallo de RED es una
+    // desconexion de hecho, y hay que decirselo.
+    if (esFalloDeRed(error) && !sesionAusente) {
+      status.online = false;
+      status.phase = 'offline';
+    } else {
+      status.phase = status.online === false ? 'offline' : 'error';
+    }
     status.lastError = error?.message || String(error);
     if (esFalloDeSesion(error)) {
       status.sesionInvalida = true;

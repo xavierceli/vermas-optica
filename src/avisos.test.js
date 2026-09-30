@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import {
   avisarAviso, avisarError, cerrarAviso, leerAviso, mostrarAviso, suscribirAvisos
 } from './avisos.js';
+import { esFalloDeRed } from './reglas.js';
 
 const SRC = join(dirname(fileURLToPath(import.meta.url)));
 const leer = nombre => readFileSync(join(SRC, nombre), 'utf8');
@@ -248,6 +249,86 @@ test('vercel.json no esconde comentarios en claves "//"', () => {
   assert.ok(
     !JSON.stringify(conf).includes('"//"'),
     'vercel.json no admite comentarios: pon la explicacion en avisos.test.js'
+  );
+});
+
+// ---------------------------------------------------------------------------
+// QUE LA APP NO SE DIGA "SINCRONIZADA" CUANDO NO HAY RED
+// ---------------------------------------------------------------------------
+test('un fallo de red se reconoce como falta de red', () => {
+  // El aviso rojo de "Sin conexion" desaparecia: con el wifi del negocio
+  // conectado a un router sin salida, navigator.onLine sigue diciendo true, el
+  // fetch fallaba y la barra se quedaba en "Sincronizado / Nube al dia".
+  assert.equal(esFalloDeRed(new TypeError('Failed to fetch')), true);
+  assert.equal(esFalloDeRed(new Error('NetworkError when attempting to fetch resource')), true);
+  assert.equal(esFalloDeRed(new Error('Tiempo agotado (10s) en aplicar_operaciones')), true);
+  assert.equal(esFalloDeRed(new Error('Load failed')), true);
+});
+
+test('un rechazo del servidor NO se disfraza de falta de red', () => {
+  // Si no, el optometria veria "Modo local" cuando el problema es que el servidor
+  // le esta rechazando los datos, y no arreglaria nada.
+  assert.equal(esFalloDeRed(new Error('violates check constraint "venta_positiva"')), false);
+  assert.equal(esFalloDeRed(new Error('duplicate key value violates unique constraint')), false);
+  assert.equal(esFalloDeRed(new Error('401 Unauthorized')), false);
+});
+
+test('el motor marca offline ante un fallo de red, y vuelve a online al responder', () => {
+  // Las dos mitades. Sin la segunda, un solo fallo dejaba la app "Sin conexion"
+  // para siempre: el evento 'online' del navegador no vuelve a dispararse si el
+  // enlace nunca se llego a caer.
+  const fuente = leer('syncEngine.js');
+  assert.match(fuente, /esFalloDeRed\(error\)/, 'un fallo de red debe marcar la app como offline');
+  assert.match(fuente, /status\.online = true;[\s\S]{0,80}status\.phase/, 'un ciclo completo debe devolver la app a online');
+});
+
+test('las estadisticas se releen cuando el servidor recalcula, no solo al entrar', () => {
+  // BUG REAL: con una venta nueva, "Ingresos Mes" no cambiaba hasta recargar la
+  // app. El motor escribe 'remoteStats' en cada pull, pero la pantalla solo lo
+  // copiaba al ENTRAR, y el sincronizador corre solo cada 30 s.
+  const fuente = leer('../src/useGestor.js');
+  assert.match(
+    fuente,
+    /\[ultimaSync\]|syncEstado\?\.lastSync/,
+    'las stats deben releerse cuando termina una sincronizacion'
+  );
+  assert.match(fuente, /localDb\.meta\.get\('remoteStats'\)/,
+    'y leerlas de la base local, que es donde el motor las deja');
+});
+
+test('imprimir no depende SOLO del evento load de la ventana', () => {
+  // BUG REAL: sin internet, la etiqueta no imprimia NADA. El <script src> del
+  // generador de codigo de barras no se resolvía y el evento 'load' de la
+  // ventana nunca llegaba a dispararse, asi que el trabajo se quedaba colgado
+  // para siempre. Una etiqueta sin barras es mejor que ninguna etiqueta.
+  const fuente = leer('impresiones.js');
+  assert.match(fuente, /ESPERA_MAX_SIN_LOAD_MS/,
+    'debe existir un tope de espera para el caso de que load no llegue');
+  assert.match(fuente, /setTimeout\([\s\S]{0,240}ESPERA_MAX_SIN_LOAD_MS/,
+    'el salvavidas debe usar ese tope');
+});
+
+test('la etiqueta se imprime aunque el codigo de barras no se pueda dibujar', () => {
+  // El fallo real de la etiqueta offline era un `catch` vacio: se comia el
+  // error y la etiqueta salia con el hueco del codigo, sin decir nada. Ahora
+  // avisa y, aun asi, imprime.
+  const fuente = leer('impresiones.js');
+  assert.match(fuente, /typeof win\.JsBarcode !== 'function'/,
+    'debe comprobar si el generador esta disponible antes de usarlo');
+  assert.match(fuente, /win\.print\(\)/, 'y debe imprimir igualmente');
+  assert.ok(!/catch\s*\(\s*e\s*\)\s*\{\s*\}/.test(fuente),
+    'ningun catch puede estar vacio: un fallo silencioso en una impresion es un fallo invisible');
+});
+
+test('el aviso de "Sin conexion" depende del motor, no de navigator.onLine', () => {
+  // Es lo que fallaba: la barra se alimentaba de navigator.onLine, que dice
+  // "conectado" con el wifi enganchado a un router sin salida.
+  const fuente = leer('../src/App.jsx');
+  assert.match(fuente, /esOffline = g\.syncEstado\?\.online === false/,
+    'el aviso debe leer el estado que el motor deduce de si el servidor responde');
+  assert.ok(
+    !/navigator\.onLine/.test(fuente),
+    'App.jsx no debe decidir la conexion con navigator.onLine: solo sabe si hay interfaz, no si hay internet'
   );
 });
 

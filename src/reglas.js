@@ -116,3 +116,21 @@ export const calcularMontoDescuento = (venta, descuento) => {
 /** Saldo pendiente = total - abono. */
 export const calcularSaldo = (venta, descuento, abono) =>
   Number((calcularTotal(venta, descuento) - aMonto(abono)).toFixed(2));
+
+/**
+ * ¿Este error significa que NO HAY RED, o que el servidor ha contestado?
+ *
+ * Importa porque navigator.onLine no sirve para saber si hay internet: con el
+ * wifi del negocio conectado a un router sin salida, onLine sigue diciendo
+ * true. El sincronizador fallaba, la app se creia al dia y no avisaba de nada:
+ * el optometria guardinga creyendo que estaba en la nube.
+ *
+ * No es un error de "servidor que dice que no": eso es un rechazo y hay que
+ * enseñarselo tal cual.
+ */
+export const esFalloDeRed = (error) => {
+  const texto = String(error?.message || error || '').toLowerCase();
+  if (/rechaz|rechazo|violat|constraint|duplicate key|401|403|409|400/.test(texto)) return false;
+  return /failed to fetch|network|load failed|aborted|tiempo agotado|timeout|conexion|conexión|dns|socket/.test(texto)
+    || error?.name === 'TypeError';
+};

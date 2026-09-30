@@ -178,6 +178,24 @@ if (sync) {
     iniciarMotorSync();
     return suscribirSync(setSyncEstado);
   }, []);
+  // BUG REAL: las estadisticas se quedaban congeladas al hacer una venta.
+  // El motor escribe 'remoteStats' en la base local en cada pull, pero ese valor
+  // solo se copiaba a la pantalla al ENTRAR (obtenerDatos). El sincronizador, sin
+  // embargo, corre solo cada 30 s: la venta se subia, el servidor recalculaba sus
+  // totales, y el panel seguia enseñando los de antes. Por eso "cuando hay una
+  // venta no cambia nada en Stats".
+  //
+  // Se relee cuando cambia lastSync, que es la marca de "el pull termino bien".
+  // Sin esto habia que recargar la app a mano para ver un euro nuevo.
+  const ultimaSync = syncEstado?.lastSync;
+  useEffect(() => {
+    if (!ultimaSync) return;
+    let vigente = true;
+    localDb.meta.get('remoteStats')
+      .then(row => { if (vigente && row?.value) setStatsRemotos(row.value); })
+      .catch(() => {});
+    return () => { vigente = false; };
+  }, [ultimaSync]);
   useEffect(() => {
     let vigente = true;
     leerEnrolamiento(localDb.meta).then(enrolamiento => {

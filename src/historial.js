@@ -61,21 +61,51 @@ export const resumenConsulta = (item) => {
 };
 
 /**
- * Una sola tarjeta por paciente. Gana la PRIMERA fila de cada cedula, asi que
- * quien llama debe pasar la lista ordenada por fecha descendente (el snapshot ya
- * lo hace). CONSUMIDOR FINAL nunca se muestra.
+ * Campos de refraccion final. Si uno solo tiene valor, la consulta es una Rx.
  */
-export const agruparPorCedula = (filas) => {
-  const agrupados = [];
-  const cedulasVistas = new Set();
-  for (const item of filas || []) {
-    if (!item || aTexto(item.nombre) === NOMBRE_CONSUMIDOR_FINAL) continue;
-    if (cedulasVistas.has(item.cedula)) continue;
-    cedulasVistas.add(item.cedula);
-    agrupados.push(item);
+const CAMPOS_REFRACCION = [
+  'esfera_od', 'esfera_oi', 'cilindro_od', 'cilindro_oi',
+  'eje_od', 'eje_oi', 'adicion_od', 'adicion_oi'
+];
+
+/** ¿Esta consulta tiene refraccion, o es una visita sin receta? */
+export const tieneRefraccion = (item) =>
+  CAMPOS_REFRACCION.some(campo => aTexto(item?.[campo]).trim() !== '');
+
+/**
+ * Una sola tarjeta por paciente, de una lista ORDENADA por fecha descendente.
+ *
+ * La tarjeta se titula "Ultima RX Clinica", asi que gana la visita mas reciente
+ * QUE TIENE REFRACCION. Antes ganaba la mas reciente sin mas, y una visita de
+ * control sin receta (o una consulta vacia) tapaba la ultima Rx real: el
+ * optometria veia la tabla con guiones, creia que no habia receta, y "Ver
+ * Evolucion" si la ensenaba. Un dato clinico visible en un sitio y no en otro.
+ *
+ * Si ninguna visita tiene refraccion, gana la mas reciente: es mejor una tabla
+ * con guiones que una tarjeta con la fecha de una consulta antigua.
+ */
+export const unaTarjetaPorCedula = (filas, claveDe) => {
+  const clave = claveDe || (fila => aTexto(fila?.cedula).trim() || `id:${fila?.id}`);
+  const elegidas = new Map();
+  for (const fila of filas || []) {
+    if (!fila) continue;
+    const k = clave(fila);
+    const actual = elegidas.get(k);
+    if (!actual || (!tieneRefraccion(actual) && tieneRefraccion(fila))) {
+      elegidas.set(k, fila);
+    }
   }
-  return agrupados;
+  return [...elegidas.values()];
 };
+
+/**
+ * Una sola tarjeta por paciente, saltandose el CONSUMIDOR FINAL.
+ * Ver unaTarjetaPorCedula, que es donde vive la regla de la ultima Rx.
+ */
+export const agruparPorCedula = (filas) =>
+  unaTarjetaPorCedula(
+    (filas || []).filter(item => item && aTexto(item.nombre) !== NOMBRE_CONSUMIDOR_FINAL)
+  );
 
 /** Filtro del buscador sobre el historial local. Menos de 2 letras: nada. */
 export const filtrarPorTermino = (filas, termino) => {

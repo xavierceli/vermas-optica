@@ -18,12 +18,31 @@ import { calcularTotal, calcularSaldo, calcularMontoDescuento } from './reglas';
 //
 // El evento load no cambia: lo escucha el padre, sobre la ventana. El codigo
 // vive en el bundle, no dentro del documento impreso.
+// La etiqueta lleva un <script src> para el codigo de barras. BUG REAL: sin
+// internet, esa peticion no se resuelve y el evento 'load' de la ventana NO
+// llegaba a dispararse, con lo que la etiqueta no imprimia NADA: ni barcode ni
+// el codigo en texto. El optometria se quedaba sin etiqueta y sin aviso.
+//
+// Por eso el trabajo no cuelga solo de 'load': si pasan ESPERA_MAX_SIN_LOAD_MS y
+// la ventana sigue sin terminar de cargar, se imprime igualmente. Es peor
+// imprimir la etiqueta sin las barras que no imprimirla: el codigo sigue
+// escrito en el papel y el crystal se puede leer a mano.
+const ESPERA_MAX_SIN_LOAD_MS = 2500;
+
 const alCargar = (win, fn) => {
   try {
     // Si el documento ya terminó de cargar, load no volverá a dispararse y la
     // impresión se quedaría en blanco para siempre.
-    if (win.document.readyState === 'complete') { fn(); return; }
-    win.addEventListener('load', () => { try { fn(); } catch (e) { console.error(e); } }, { once: true });
+    if (win.document.readyState === 'complete') { ejecutar(); return; }
+    win.addEventListener('load', ejecutar, { once: true });
+    const salvavidas = setTimeout(() => {
+      console.warn('[impresion] la ventana no terminó de cargar a tiempo; se imprime igualmente.');
+      ejecutar();
+    }, ESPERA_MAX_SIN_LOAD_MS);
+    function ejecutar() {
+      clearTimeout(salvavidas);
+      try { fn(); } catch (e) { console.error(e); }
+    }
   } catch (e) { console.error(e); }
 };
 
@@ -415,18 +434,25 @@ export const imprimirEtiqueta = (item) => {
         // El valor llega por la API, no dentro de un literal de JavaScript: ya no
         // hace falta escJs(). Un código como A" onload="alert(1) es texto, no
         // código, y sale impreso tal cual.
-        win.JsBarcode('#barcode', codigoPlano, {
-          format: 'CODE128',
-          displayValue: false,
-          height: 25,
-          margin: 0,
-          width: 1.2
-        });
+        if (typeof win.JsBarcode !== 'function') {
+          // Sin internet el generador no se pudo cargar. Se avisa por consola, pero
+          // NO se rompe la impresión: el código ya está escrito en la plantilla,
+          // en texto legible, que es lo que se usa para leer el crystal a mano.
+          console.warn('[impresion] el generador de código de barras no está disponible; se imprime sin barras.');
+        } else {
+          win.JsBarcode('#barcode', codigoPlano, {
+            format: 'CODE128',
+            displayValue: false,
+            height: 25,
+            margin: 0,
+            width: 1.2
+          });
+        }
       } catch (e) {
         // Antes el fallo se tragaba en un catch vacío y la etiqueta salía con el
-        // hueco del código de barras sin decir nada. Se avisa por consola, pero
-        // se imprime igualmente: el código en texto ya está en la plantilla.
-        console.error(e);
+        // hueco del código de barras sin decir nada. Ahora se avisa, y aun así se
+        // imprime: una etiqueta sin barras es mejor que ninguna etiqueta.
+        console.error('[impresion] no se pudo dibujar el código de barras:', e);
       }
       // Medio segundo para que el SVG se dibuje antes de abrir la impresión.
       setTimeout(() => { try { win.print(); } catch (e) { console.error(e); } }, 500);

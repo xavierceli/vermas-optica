@@ -1,5 +1,6 @@
 import { localDb, createUuid, nowIso, pendingRecord, createOutboxOperation, getMeta, setMeta } from './localDb.js';
 import { calcularSaldo } from './reglas.js';
+import { unaTarjetaPorCedula } from './historial.js';
 
 const safeString = value => value === null || value === undefined ? '' : String(value);
 const safeNum = value => {
@@ -894,14 +895,15 @@ export const obtenerSnapshotLocal = async () => {
     return data;
   });
   const combined = [...localHistorial, ...remoteHistorial].sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')));
-  const byCedula = new Map();
-  combined.forEach(row => {
-    const key = normalizeCedula(row.cedula) || `id:${row.id}`;
-    if (!byCedula.has(key)) byCedula.set(key, row);
-  });
-
+  // La tarjeta se titula "Ultima RX Clinica", asi que gana la visita mas reciente
+  // CON refraccion y no la mas reciente sin mas: si no, un control sin receta
+  // tapa la ultima Rx y el optometria ve una tabla vacia. La regla vive en
+  // historial.js, con tests, y es la MISMA que usa el buscador de la pantalla.
   return {
-    historial: [...byCedula.values()],
+    historial: unaTarjetaPorCedula(
+      combined,
+      fila => normalizeCedula(fila.cedula) || `id:${fila.id}`
+    ),
     cedulasArchivadas: [...cedulasArchivadas],
     inventory,
     prices,

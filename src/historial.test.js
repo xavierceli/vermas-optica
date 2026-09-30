@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   agruparPorCedula, filtrarPorTermino, generarDiagnosticos,
-  listaSegunBusqueda, resumenConsulta
+  listaSegunBusqueda, resumenConsulta, tieneRefraccion, unaTarjetaPorCedula
 } from './historial.js';
 
 // Estas reglas estaban dentro del .map() de Historial.jsx (488 lineas de JSX) y
@@ -138,4 +138,75 @@ test('si los dos ojos coinciden, el diagnostico NO se repite', () => {
 test('una refraccion plana no inventa diagnosticos', () => {
   assert.deepEqual(generarDiagnosticos({ esfera_od: 0, cilindro_od: 0, adicion_od: 0 }), []);
   assert.deepEqual(generarDiagnosticos({}), []);
+});
+
+// --- Que visita enseña la tarjeta del historial ----------------------------
+// BUG REAL, reportado por el optometria con una captura: la tarjeta de un
+// paciente ensenaba la tabla de refraccion con guiones y un "No hay pedido
+// registrado en esta fecha", mientras que "Ver Evolucion" si desplegaba los
+// valores. No faltaba el dato: la tarjeta se quedaba con la visita mas
+// reciente, que era un control sin receta, y la Rx estaba en la anterior.
+
+test('una consulta de control SIN receta no tapa la ultima Rx real', () => {
+  const filas = [
+    consulta({ id: 'control', fecha: '2026-09-27', notas_clinicas: 'Solo control' }),
+    consulta({ id: 'con-rx', fecha: '2026-03-02', esfera_od: '-1.25', cilindro_od: '-0.50', eje_od: '180' })
+  ];
+  const [tarjeta] = unaTarjetaPorCedula(filas);
+  assert.equal(tarjeta.id, 'con-rx', 'la tarjeta debe enseñar la ultima Rx que existe');
+  assert.equal(tarjeta.esfera_od, '-1.25');
+  assert.equal(tarjeta.fecha, '2026-03-02', 'la fecha que se muestra es la de la Rx que se enseña');
+});
+
+test('una Rx nueva SI tapa una Rx antigua', () => {
+  // Lo contrario tambien seria un bug: si la ultima receta es nueva, tiene que
+  // ganar aunque la anterior tambien tenga refraccion.
+  const filas = [
+    consulta({ id: 'nueva', fecha: '2026-09-27', esfera_od: '-2.00' }),
+    consulta({ id: 'anterior', fecha: '2025-01-10', esfera_od: '-1.00' })
+  ];
+  const [tarjeta] = unaTarjetaPorCedula(filas);
+  assert.equal(tarjeta.id, 'nueva');
+});
+
+test('si ninguna visita tiene receta, gana la mas reciente', () => {
+  // Mejor una tabla con guiones, con la fecha de la ultima visita, que una
+  // tarjeta anclada en una consulta antigua que el optometria no reconoce.
+  const filas = [
+    consulta({ id: 'reciente', fecha: '2026-09-27' }),
+    consulta({ id: 'antigua', fecha: '2024-01-01' })
+  ];
+  const [tarjeta] = unaTarjetaPorCedula(filas);
+  assert.equal(tarjeta.id, 'reciente');
+});
+
+test('un cero es una receta: el paciente con esfera 0.00 tambien cuenta', () => {
+  // Si el cero se tratara como "vacio", un paciente con esfera 0.00 perderia su
+  // ultima Rx en la tarjeta.
+  assert.equal(tieneRefraccion({ esfera_od: 0, cilindro_od: 0 }), true);
+  assert.equal(tieneRefraccion({ esfera_od: '   ' }), false);
+  assert.equal(tieneRefraccion({}), false);
+  assert.equal(tieneRefraccion(null), false);
+});
+
+test('solo se agrupan las consultas del MISMO paciente', () => {
+  const filas = [
+    consulta({ id: 'a1', cedula: '1712345678', fecha: '2026-09-27' }),
+    consulta({ id: 'b1', cedula: '0912345678', fecha: '2026-09-28' }),
+    consulta({ id: 'a2', cedula: '1712345678', fecha: '2026-01-01', esfera_od: '-1.00' })
+  ];
+  const tarjetas = unaTarjetaPorCedula(filas);
+  assert.equal(tarjetas.length, 2, 'una tarjeta por paciente');
+  assert.equal(tarjetas.find(t => t.cedula === '1712345678').id, 'a2');
+  assert.equal(tarjetas.find(t => t.cedula === '0912345678').id, 'b1');
+});
+
+test('el buscador de la pantalla usa la MISMA regla que el historial', () => {
+  // Estaban las dos reglas por separado y no tenian por que coincidir: la
+  // buscador podia enseñar una cosa y la lista otra, para la misma paciente.
+  const filas = [
+    consulta({ id: 'control', fecha: '2026-09-27' }),
+    consulta({ id: 'con-rx', fecha: '2026-03-02', esfera_od: '-1.25' })
+  ];
+  assert.equal(agruparPorCedula(filas)[0].id, 'con-rx');
 });
