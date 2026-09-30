@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { safeString, safeNum, comprimirImagen } from './utilidades'
 import { mostrarAviso } from './avisos'
+import { validarCobroSobreVenta, validarVentaParaCambiarEstado } from './cobros'
 import { supabase } from './supabaseClient'
 import { createUuid as generarId } from './localDb'
 import { cambiarEstadoVentaLocal, registrarPagoLocal } from './localRepository'
@@ -27,7 +28,8 @@ export default function PedidosLista({
   const manejarCambioArchivo = (id, archivo) => setComprobantesRapidos(prev => ({ ...prev, [id]: archivo }));
 
   const cambiarEstadoRapido = async (item, nuevoEstado) => {
-    if (!item.pedido_id) return mostrarAviso('Este registro todavía no tiene una venta local.');
+    const problema = validarVentaParaCambiarEstado(item);
+    if (problema) return mostrarAviso(problema);
     try {
       await cambiarEstadoVentaLocal({ saleId: item.pedido_id, estado: nuevoEstado });
       await refrescarDatos({ sync: false });
@@ -38,11 +40,10 @@ export default function PedidosLista({
 
   const ejecutarCobro = async (item) => {
     const monto = safeNum(abonosRapidos[item.id]);
-    if (monto <= 0) return mostrarAviso('Por favor, ingrese un monto válido mayor a 0.');
-    if (Math.abs(monto * 100 - Math.round(monto * 100)) > 0.000001) {
-      return mostrarAviso('El monto debe tener como máximo dos decimales.');
-    }
-    if (!item.pedido_id) return mostrarAviso('Este registro todavía no tiene una venta local.');
+    // Las reglas del cobro viven en cobros.js: monto, decimales y existencia de
+    // la venta, en el mismo orden que ve el optometria.
+    const problema = validarCobroSobreVenta({ item, monto });
+    if (problema) return mostrarAviso(problema);
     if (procesandoCobroId === item.id) return;
 
     const formaPago = formasPagoRapidas[item.id] || 'Efectivo';

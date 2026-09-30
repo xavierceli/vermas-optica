@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { safeString, safeNum, comprimirImagen } from './utilidades'
 import { mostrarAviso } from './avisos'
+import { validarMontoCobro } from './cobros'
 import { calcularTotal, calcularSaldo, calcularMontoDescuento, normalizarDescuento } from './reglas'
 import { supabase } from './supabaseClient'
 import { guardarAdjuntoLocal } from './localRepository'
@@ -33,7 +34,8 @@ export default function PedidosForm({
 
   const registrarAbono = async () => {
     const monto = safeNum(nuevoAbonoMonto);
-    if (monto <= 0) return mostrarAviso('Por favor, ingrese un monto válido mayor a 0.');
+    const problema = validarMontoCobro(monto);
+    if (problema) return mostrarAviso(problema);
 
     setSubiendoComprobante(true);
     let urlComprobanteFinal = pedidoSeleccionado.comprobante_url || '';
