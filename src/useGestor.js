@@ -553,7 +553,12 @@ if (sync) {
       }
       await obtenerDatos({ sync: false });
       void sincronizarAhora({ pull: false });
-      mostrarToast('Consulta archivada.', 'success');
+      // Se dice "historial completo" y no "consulta": el boton archiva TODAS las
+      // visitas del paciente, no solo la de la tarjeta. Antes decia "Consulta
+      // archivada" y el optometria creia haber borrado a la persona cuando solo
+      // se habia escondido una visita: las demas seguian vivas en el servidor y
+      // el paciente volvia a salir en cada sincronizacion.
+      mostrarToast('Paciente eliminado: se archivó todo su historial.', 'success');
     } catch (err) {
       mostrarToast('No se pudo archivar la consulta: ' + err.message, 'error');
     }

@@ -615,26 +615,59 @@ const archivarConsultaLocalImpl = async consultationId => {
   await setMeta('cedulasArchivadas', [...borrados]);
 
   await localDb.transaction('rw', localDb.consultations, localDb.outbox, localDb.cache, async () => {
-    const consultation = await localDb.consultations.get(idConsulta);
-    if (consultation) {
-      await localDb.consultations.put({ ...consultation, archivedAt: nowIso(), syncStatus: 'pending' });
+    // BUG REAL Y DE FONDO: "Eliminar" solo archivaba UNA consulta, la de la
+    // tarjeta. El paciente de prueba tenia 10 consultas y se archivaba 1: las
+    // otras 9 seguian VIVAS en el servidor, asi que el paciente existia de
+    // verdad y volvia a salir en cada sincronizacion, en cualquier navegador.
+    //
+    // Borrar a una persona no es esconder su ultima visita: es que esa persona
+    // deje de existir. Se archivan TODAS sus consultas, las de este equipo y las
+    // que solo existen en la copia del servidor.
+    const cedulaNormalizada = normalizeCedula(cedula);
+    const idPacienteArchivo = idPaciente || fila.patientId || fila.paciente_id || null;
+
+    const idsAArchivar = new Set([idConsulta]);
+    if (cedulaNormalizada) {
+      const locales = await localDb.consultations.toArray();
+      for (const c of locales) {
+        if (archivada(c)) continue;
+        const mismaCedula = normalizeCedula(c.cedula) === cedulaNormalizada;
+        const mismoPaciente = idPacienteArchivo && String(c.patientId ?? c.paciente_id ?? '') === String(idPacienteArchivo);
+        if (mismaCedula || mismoPaciente) idsAArchivar.add(String(c.id));
+      }
+      // Las que solo viven en la copia del servidor: son las que se dibujan en
+      // el historial y las que el servidor sigue mandando.
+      const remotas = await localDb.cache.toArray();
+      for (const row of remotas) {
+        if (row.kind !== 'historial' || archivada(row)) continue;
+        if (normalizeCedula(row.cedula) === cedulaNormalizada) {
+          idsAArchivar.add(String(row.id).replace(/^remote:/, ''));
+        }
+      }
     }
 
-    // La copia de esta consulta en la tabla `cache` (id "remote:<id>") es la que
-    // se dibuja en el historial. Si no se borra aqui, el paciente eliminado
-    // reaparece en cuanto la app sincroniza. Antes solo se borraba cuando el
-    // servidor volvia a mandar la consulta, demasiado tarde.
-    await localDb.cache.delete(`remote:${idConsulta}`);
+    for (const id of idsAArchivar) {
+      const consultation = await localDb.consultations.get(id);
+      const enCacheFila = await localDb.cache.get(`remote:${id}`);
+      if (consultation) {
+        await localDb.consultations.put({ ...consultation, archivedAt: nowIso(), syncStatus: 'pending' });
+      }
 
-    // Si la consulta NUNCA llego al servidor, no hay nada que archivar alla y el
-    // servidor rechazaria el comando para siempre ("La consulta X no existe"),
-    // dejando una barra roja permanente. Solo se encola si ya vive alli: o lo
-    // confirma syncStatus 'synced', o vino del servidor y esta en la cache.
-    if (consultation?.syncStatus === 'synced' || enCache) {
-      await localDb.outbox.put(createOutboxOperation({
-        type: 'ARCHIVAR_CONSULTA', entityId: idConsulta,
-        payload: { p_consulta_id: idConsulta }
-      }));
+      // La copia de esta consulta en la tabla `cache` (id "remote:<id>") es la que
+      // se dibuja en el historial. Si no se borra aqui, el paciente eliminado
+      // reaparece en cuanto la app sincroniza.
+      await localDb.cache.delete(`remote:${id}`);
+
+      // Si la consulta NUNCA llego al servidor, no hay nada que archivar alla y el
+      // servidor rechazaria el comando para siempre ("La consulta X no existe"),
+      // dejando una barra roja permanente. Solo se encola si ya vive alli: o lo
+      // confirma syncStatus 'synced', o vino del servidor y esta en la cache.
+      if (consultation?.syncStatus === 'synced' || enCacheFila) {
+        await localDb.outbox.put(createOutboxOperation({
+          type: 'ARCHIVAR_CONSULTA', entityId: id,
+          payload: { p_consulta_id: id }
+        }));
+      }
     }
   });
 

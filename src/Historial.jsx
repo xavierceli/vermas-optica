@@ -9,7 +9,8 @@ import BotonComprobante from './BotonComprobante';
 
 export default function Historial({
   historialReciente,
-  enviarWhatsApp, cargarParaEditarClinico, borrarHistoriaClinica, abrirPedido, crearNuevoPaciente
+  enviarWhatsApp, cargarParaEditarClinico, borrarHistoriaClinica, abrirPedido, crearNuevoPaciente,
+  confirmarAccion
 }) {
   const [busquedaTexto, setBusquedaTexto] = useState('');
   const [resultadosBusqueda, setResultadosBusqueda] = useState({ termino: '', datos: [] });
@@ -395,7 +396,21 @@ export default function Historial({
                     </div>
                     
                     <button onClick={() => cargarParaEditarClinico(item)} className="text-sm bg-blue-50 text-blue-600 border border-blue-200 px-3 py-1.5 rounded-lg font-medium shadow-sm hover:bg-blue-100 transition-colors" title="Editar Clínica">✏️</button>
-                    <button onClick={() => borrarHistoriaClinica(item)} className="text-sm bg-red-50 text-red-600 border border-red-200 px-3 py-1.5 rounded-lg font-medium shadow-sm hover:bg-red-100 transition-colors" title="Borrar">🗑️</button>
+                    {/* Eliminar un PACIENTE no puede ser un boton sin confirmar: se archivan TODAS
+                        sus visitas, no solo la de la tarjeta. Antes un toque de más
+                        y sin aviso borraba el historial entero de una persona, y el
+                        mensaje de confirmación era el de un item cualquiera. */}
+                    <button
+                      onClick={() => confirmarAccion(
+                        `¿Eliminar a ${safeString(item.nombre) || 'este paciente'}?\n\n`
+                        + 'Se archivará TODO su historial, no solo la última visita. '
+                        + 'Las ventas y los pagos ya cobrados no se tocan, pero la ficha '
+                        + 'clínica dejará de aparecer en este y en cualquier otro equipo.',
+                        () => borrarHistoriaClinica(item)
+                      )}
+                      className="text-sm bg-red-50 text-red-600 border border-red-200 px-3 py-1.5 rounded-lg font-medium shadow-sm hover:bg-red-100 transition-colors"
+                      title="Eliminar todo el historial de este paciente"
+                    >🗑️</button>
                   </div>
                 </div>
                 

@@ -385,6 +385,36 @@ test('el borrado de un paciente es un hecho del SERVIDOR, no del dispositivo', (
     'el snapshot debe mezclar las archivadas del servidor con las locales');
 });
 
+test('eliminar un paciente archiva TODO su historial, no solo la ultima visita', () => {
+  // BUG DE FONDO, encontrado al mirar los datos del paciente de prueba: 10
+  // consultas, se archivaba 1. Las otras 9 seguian VIVAS en el servidor, asi que
+  // el paciente existia de verdad y volvia a salir en cada sincronizacion. El
+  // boton de la tarjeta solo escondia la visita que se estaba viendo.
+  const fuente = leer('localRepository.js');
+  const i = fuente.indexOf('const idsAArchivar = new Set');
+  const bloque = fuente.slice(i, i + 1400);
+  assert.match(bloque, /localDb\.consultations\.toArray\(\)/,
+    'debe buscar TODAS las consultas del paciente, no solo la de la tarjeta');
+  assert.match(bloque, /normalizeCedula\(c\.cedula\) === cedulaNormalizada/,
+    'y archivarlas todas');
+  assert.match(bloque, /row\.kind !== 'historial'/, 'incluidas las que solo viven en la copia del servidor');
+  assert.match(bloque, /for \(const id of idsAArchivar\)/,
+    'y encolarlas una a una: cada consulta necesita su propio ARCHIVAR_CONSULTA');
+});
+
+test('eliminar un paciente pide confirmacion y dice lo que hace', () => {
+  // Antes era un boton sin confirmar: un toque de más y sin aviso. Y el mensaje
+  // decia "Consulta archivada", que no es lo que hace: archiva todo el historial.
+  const vista = leer('Historial.jsx');
+  assert.match(vista, /confirmarAccion\(/, 'eliminar un paciente debe pedir confirmacion');
+  assert.match(vista, /TODO su historial/, 'y el aviso debe decirlo claro');
+  const gestor = leer('../src/useGestor.js');
+  assert.match(gestor, /se archivó todo su historial/,
+    'el mensaje de exito tambien debe decir que se archivo todo');
+  assert.ok(!/mostrarToast\('Consulta archivada\.'/.test(gestor),
+    '"Consulta archivada" hacia creer que solo se habia escondido una visita');
+});
+
 test('el archivado se reconoce en los dos idiomas', () => {
   // La app escribe `archivedAt` (camelCase) y la base devuelve `archived_at`
   // (snake_case). Mirar solo uno de los dos hacía que un borrado hecho en otro
