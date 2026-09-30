@@ -476,6 +476,38 @@ const descargarHistorialPaginado = async () => {
   return { filas, paginasDescargadas };
 };
 
+// QUE CEDULAS ESTAN BORRADAS, SEGUN EL SERVIDOR.
+//
+// El historial se descarga de `vista_pacientes_unicos`, una vista que se creo
+// antes de que existiera el archivado: ignora `archived_at`. Por eso el borrado de
+// un paciente NUNCA viajaba, y en un navegador nuevo (con la memoria vacia)
+// "PRUEBA" y "PRUEBA2" aparecian como si nadie los hubiera borrado.
+//
+// La vista no se toca: se redefine sin conocer su definicion original y eso es
+// arriesgado. En su lugar se pregunta directamente a la tabla, que si sabe.
+//
+// El borrado es un hecho del NEGOCIO, no del dispositivo: si el optometria
+// borra un paciente en el mostrador, no debe reaparecer en la tablet de la otra
+// punta del mostrador.
+const leerCedulasArchivadasDelServidor = async () => {
+  try {
+    const { data, error } = await supabase
+      .from('consultas_clinicas')
+      .select('cedula')
+      .not('archived_at', 'is', null);
+    if (error) { console.warn('[sync] no se pudieron leer las cedulas archivadas:', error.message); return; }
+    const lista = [...new Set((data || [])
+      .map(row => String(row?.cedula ?? '').trim().toUpperCase())
+      .filter(Boolean))];
+    await localDb.meta.put({ key: 'cedulasArchivadasServidor', value: lista, updatedAt: nowIso() });
+    if (lista.length > 0) console.log(`[sync] el servidor tiene ${lista.length} cedula(s) archivadas.`);
+  } catch (e) {
+    // Si esto falla, el equipo sigue ocultando lo que borro el mismo. Es una red
+    // de seguridad, no un requisito: no puede impedir sincronizar.
+    console.warn('[sync] no se pudieron leer las cedulas archivadas:', e?.message || e);
+  }
+};
+
 const pullServerCache = async () => {
   const { data: sessionData } = await supabase.auth.getSession();
   if (!sessionData.session) return null;
@@ -516,6 +548,7 @@ const pullServerCache = async () => {
   }
 
   await cacheServerHistorial(historialRows);
+  await leerCedulasArchivadasDelServidor();
   await cacheServerCatalog({ inventory: inventoryResult.data || [], prices: pricesResult.data || [] });
   const remoteStats = statsResult.data?.[0] || null;
   const remoteDebts = debtsResult.data || [];

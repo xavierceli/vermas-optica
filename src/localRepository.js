@@ -73,6 +73,11 @@ export const enColaEscritura = (tarea, prioridad = 'alta', nombre = 'tarea') => 
 
 let contadorEscaneosInventario = 0;
 export const normalizeCedula = value => safeString(value).trim().toUpperCase();
+// El archivado llega en DOS Idiomas: la app local escribe `archivedAt` (camelCase)
+// y la base devuelve `archived_at` (snake_case). Mirar solo uno de los dos hacia
+// que un borrado hecho en otro equipo no ocultase nada aqui: era la causa de que
+// los pacientes eliminados volvieran a salir al entrar en un navegador nuevo.
+const archivada = fila => Boolean(fila?.archivedAt || fila?.archived_at);
 // Un id de inventario SIEMPRE es un entero. Esta función se usa para leer
 // valores que vienen de un <input> o de un campo mal formado, y antes devolvía
 // NaN para cualquier cosa que no fuera convertible ("ABC", "12abc", {}).
@@ -825,14 +830,24 @@ export const obtenerSnapshotLocal = async () => {
   // OJO: se archiva una CONSULTA, no un paciente. Solo se oculta cuando el
   // paciente se queda sin ninguna consulta viva, que es cuando ya no existe aqui.
   const cedulasVivas = new Set(
-    consultations.filter(c => !c.archivedAt).map(c => normalizeCedula(c.cedula)).filter(Boolean)
+    consultations.filter(c => !archivada(c)).map(c => normalizeCedula(c.cedula)).filter(Boolean)
   );
   const soloArchivadas = consultations
-    .filter(c => c.archivedAt)
+    .filter(c => archivada(c))
     .map(c => normalizeCedula(c.cedula))
     .filter(cedula => cedula && !cedulasVivas.has(cedula));
+  // El borrado de un paciente tiene que ser un HECHO DEL SERVIDOR, no un
+  // recuerdo de un dispositivo. Antes solo se guardaba en este navegador, asi que
+  // en Edge, al entrar la primera vez, "PRUEBA" y "PRUEBA2" volvian a aparecer
+  // como si nadie los hubiera borrado nunca.
+  //
+  // El pull escribe 'cedulasArchivadasServidor' leyendo archived_at de la base, y
+  // aqui se mezcla con lo local: asi un borrado hecho sin internet (que aun no ha
+  // subido) sigue ocultandose en este equipo, y en cuanto llega a la nube lo
+  // ocultan TODOS los equipos.
   const cedulasArchivadas = new Set([
     ...(await getMeta('cedulasArchivadas', [])).map(normalizeCedula),
+    ...(await getMeta('cedulasArchivadasServidor', [])).map(normalizeCedula),
     ...soloArchivadas
   ].filter(Boolean));
   const patientById = new Map(patients.map(row => [row.id, row]));
@@ -876,9 +891,9 @@ export const obtenerSnapshotLocal = async () => {
   // Consultas ya archivadas en ESTE dispositivo. La copia del servidor (remote:)
   // se filtra tambien por aqui: aunque el pull todavia no haya limpiado la cache,
   // una consulta archivada no puede seguir apareciendo en el historial.
-  const archivadasLocales = new Set(consultations.filter(c => c.archivedAt).map(c => String(c.id)));
+  const archivadasLocales = new Set(consultations.filter(c => archivada(c)).map(c => String(c.id)));
   const remoteHistorial = cache
-    .filter(row => row.kind === 'historial' && !row.archivedAt)
+    .filter(row => row.kind === 'historial' && !archivada(row))
     .filter(row => !archivadasLocales.has(String(row.id).replace(/^remote:/, '')))
     .filter(row => {
       const cedula = normalizeCedula(row.cedula);

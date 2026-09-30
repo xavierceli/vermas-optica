@@ -356,6 +356,36 @@ test('un paciente archivado no se ofrece como coincidencia en Clinica', () => {
     'el gestor debe pasarle la lista a Clinica');
 });
 
+test('el borrado de un paciente es un hecho del SERVIDOR, no del dispositivo', () => {
+  // PREGUNTA DEL OPTOMETRIA: "¿por qué al entrar en otro navegador vuelven a salir
+  // los pacientes que ya había eliminado?" Porque el borrado se guardaba solo en
+  // el equipo que lo hizo. En un navegador nuevo, con la memoria vacía, el
+  // historial se descargaba entero y los pacientes "PRUEBA" volvían a estar ahí.
+  //
+  // El arreglo: el pull PREGUNTA a la base qué cédulas están archivadas, y ese
+  // dato se mezcla con el local. Un borrado pasa a valer en todos los equipos.
+  const motor = leer('syncEngine.js');
+  assert.match(motor, /leerCedulasArchivadasDelServidor/,
+    'el sincronizador debe leer del servidor las cedulas archivadas');
+  assert.match(motor, /from\('consultas_clinicas'\)[\s\S]{0,80}not\('archived_at', 'is', null\)/,
+    'preguntando a la tabla, que si conoce archived_at, y no a la vista, que no');
+
+  const repo = leer('localRepository.js');
+  assert.match(repo, /getMeta\('cedulasArchivadasServidor', \[\]\)/,
+    'el snapshot debe mezclar las archivadas del servidor con las locales');
+});
+
+test('el archivado se reconoce en los dos idiomas', () => {
+  // La app escribe `archivedAt` (camelCase) y la base devuelve `archived_at`
+  // (snake_case). Mirar solo uno de los dos hacía que un borrado hecho en otro
+  // equipo no ocultase nada aquí: la mitad de la causa de este bug.
+  const repo = leer('localRepository.js');
+  assert.match(repo, /archivada = fila => Boolean\(fila\?\.archivedAt \|\| fila\?\.archived_at\)/,
+    'el archivado se debe reconocer en las dos grafias');
+  assert.ok(!/!c\.archivedAt\b/.test(repo),
+    'no se puede filtrar solo por la grafia local');
+});
+
 test('un fallo de red NO se cuenta como rechazo del servidor', () => {
   // BUG REAL, confirmado con una captura: sin internet la barra se ponia roja
   // diciendo "El servidor rechazo 1 operacion(es): Failed to fetch". El servidor
