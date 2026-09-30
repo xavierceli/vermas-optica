@@ -119,7 +119,7 @@ export const descargarCSV = (datos, nombreArchivo) => {
   URL.revokeObjectURL(url);
 };
 
-export const buscarPacientesEnSupabase = async (textoBusqueda) => {
+export const buscarPacientesEnSupabase = async (textoBusqueda, { incluirArchivados = false } = {}) => {
   try {
     const crudo = String(textoBusqueda || '').trim();
     if (crudo.length < 2) return [];
@@ -150,8 +150,20 @@ export const buscarPacientesEnSupabase = async (textoBusqueda) => {
 
     if (error) throw error;
     
-    // Aquí burlamos el caché para traer Alias y Comprobantes en las búsquedas
-    let resultados = data || [];
+    // BUG REAL: la vista no trae `archived_at`, asi que una consulta archivada
+    // seguia saliendo en la busqueda de la nube. El optometria borro al paciente
+    // "PRUEBA", no aparecia en el Historial (ahi si se filtra por cedula) pero al
+    // escribir su nombre en Clinica le ofrecia la coincidencia y le rellenaba
+    // los datos: un paciente borrado que hacia falta el mismo.
+    //
+    // El filtro de verdad lo hace quien llama, que Sabe que cedulas ha archivado
+    // en ESTE dispositivo. Aqui solo se quitan los signos evidentes de una fila
+    // archivada, por si la vista llegara a traerlos.
+    let resultados = (data || []).filter(row => {
+      if (incluirArchivados) return true;
+      if (row.archived_at || row.archivada) return false;
+      return safeString(row.nombre).trim().toUpperCase() !== 'CONSUMIDOR FINAL';
+    });
     const idsPedidos = resultados.map(d => d.pedido_id).filter(id => id);
     const idsPacientes = resultados.map(d => d.paciente_id).filter(id => id);
     

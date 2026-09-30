@@ -30,19 +30,27 @@ import { calcularTotal, calcularSaldo, calcularMontoDescuento } from './reglas';
 const ESPERA_MAX_SIN_LOAD_MS = 2500;
 
 const alCargar = (win, fn) => {
+  // OJO, ORDEN DE DECLARACION. Este bug lo produjo un arreglo anterior: al
+  // escribir "const salvavidas" despues de la funcion, si el documento ya
+  // estaba cargado, `ejecutar()` corria en esa linea y `clearTimeout(salvavidas)`
+  // reventaba con "Cannot access 'salvavidas' before initialization": la
+  // impresion se caia entera con un ReferenceError. Se veia al imprimir desde
+  // OTRO navegador, donde la ventana llega ya cargada.
+  // Se declara primero, se inicializa a null, y se limpia solo si llego a crearse.
+  let salvavidas = null;
+  const imprimir = () => {
+    try { fn(); } catch (e) { console.error(e); }
+    if (salvavidas !== null) { clearTimeout(salvavidas); salvavidas = null; }
+  };
   try {
     // Si el documento ya terminó de cargar, load no volverá a dispararse y la
     // impresión se quedaría en blanco para siempre.
-    if (win.document.readyState === 'complete') { ejecutar(); return; }
-    win.addEventListener('load', ejecutar, { once: true });
-    const salvavidas = setTimeout(() => {
+    if (win.document.readyState === 'complete') { imprimir(); return; }
+    win.addEventListener('load', imprimir, { once: true });
+    salvavidas = setTimeout(() => {
       console.warn('[impresion] la ventana no terminó de cargar a tiempo; se imprime igualmente.');
-      ejecutar();
+      imprimir();
     }, ESPERA_MAX_SIN_LOAD_MS);
-    function ejecutar() {
-      clearTimeout(salvavidas);
-      try { fn(); } catch (e) { console.error(e); }
-    }
   } catch (e) { console.error(e); }
 };
 

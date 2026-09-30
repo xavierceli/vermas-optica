@@ -282,6 +282,53 @@ test('el motor marca offline ante un fallo de red, y vuelve a online al responde
   assert.match(fuente, /status\.online = true;[\s\S]{0,80}status\.phase/, 'un ciclo completo debe devolver la app a online');
 });
 
+test('nunca se envia un item de venta sin inventario resuelto', () => {
+  // BUG REAL: al editar una venta y poner medidas, salia "Item de venta invalido."
+  // El filtro dejaba pasar items con `inventario_id: null` (solo codigo), y el
+  // servidor los rechaza con 22023. El optometria no tenia forma de saber que
+  // el problema era un armazon sin correspondencia en el inventario.
+  const fuente = leer('localRepository.js');
+  const i = fuente.indexOf('items: resolvedItems');
+  const bloque = fuente.slice(i, i + 420);
+  assert.match(bloque, /filter\(item => item\.inventoryId !== null\)/,
+    'solo deben salir los items con id de inventario resuelto');
+  assert.ok(!/inventario_id: item\.inventoryId,[\s\S]{0,120}codigo: item\.inventoryId === null/.test(bloque),
+    'no se debe enviar un item cuyo inventario_id pueda ser null');
+});
+
+test('imprimir no revienta si la ventana ya esta cargada', () => {
+  // BUG REAL, visto en la consola del navegador: "ReferenceError: Cannot access
+  // 'salvavidas' before initialization". Al imprimir desde OTRO navegador la
+  // ventana llega ya cargada, se llamaba a la funcion de inmediato y esta
+  // usaba una `const` declarada justo despues. Consecuencia: la impresion se
+  // caia entera con un error en vez de imprimir.
+  const fuente = leer('impresiones.js');
+  const i = fuente.indexOf('const alCargar');
+  const bloque = fuente.slice(i, i + 1200);
+  assert.match(bloque, /let salvavidas = null/,
+    'el temporizador debe declararse ANTES de poder usarse');
+  const declara = bloque.indexOf('salvavidas = null');
+  const usa = bloque.search(/salvavidas\s*=\s*setTimeout/);
+  assert.ok(declara >= 0 && usa > declara, 'no se puede asignar antes de declarar');
+  assert.match(bloque, /if \(salvavidas !== null\)/,
+    'y debe limpiarse solo si llego a crearse');
+});
+
+test('un paciente archivado no se ofrece como coincidencia en Clinica', () => {
+  // BUG REAL: se borro el paciente "PRUEBA", no aparecia en el Historial, pero al
+  // escribir su cedula en Clinica ofrecia la coincidencia y RELLENABA sus datos:
+  // un paciente borrado que hacia falta el mismo.
+  const clinica = leer('Clinica.jsx');
+  assert.match(clinica, /cedulasArchivadas/,
+    'Clinica debe conocer las cedulas archivadas en este dispositivo');
+  assert.match(clinica, /!borradas\.has\(normalizeCedula\(r\?\.cedula\)\)/,
+    'y filtrar por ellas las sugerencias de la nube');
+  // La nube no sabe que se archivó aqui: la vista no trae archived_at.
+  const app = leer('../src/App.jsx');
+  assert.match(app, /cedulasArchivadas=\{g\.cedulasArchivadas\}/,
+    'el gestor debe pasarle la lista a Clinica');
+});
+
 test('un fallo de red NO se cuenta como rechazo del servidor', () => {
   // BUG REAL, confirmado con una captura: sin internet la barra se ponia roja
   // diciendo "El servidor rechazo 1 operacion(es): Failed to fetch". El servidor

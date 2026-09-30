@@ -81,6 +81,12 @@ export function useGestor() {
 
   const [paciente, setPaciente] = useState(estadoInicial);
   const [historial, setHistorial] = useState([]);
+  // Cedulas que este dispositivo ha archivado. La busqueda en la nube NO puede
+  // saberlo por su cuenta (la vista no trae archived_at), asi que hay que
+  // pasarle esta lista: si no, un paciente borrado reaparece al escribir su
+  // nombre en Clinica y la app le rellena los datos de un paciente que ya no
+  // existe.
+  const [cedulasArchivadas, setCedulasArchivadas] = useState([]);
   const [inventario, setInventario] = useState([]);
   const [listaPrecios, setListaPrecios] = useState([]);
   
@@ -148,6 +154,7 @@ export function useGestor() {
     setHistorial(snapshot.historial || []);
     setInventario(snapshot.inventory || []);
     setListaPrecios(snapshot.prices || []);
+    setCedulasArchivadas(snapshot.cedulasArchivadas || []);
   };
 
   const obtenerDatos = async ({ sync = true } = {}) => {
@@ -948,7 +955,8 @@ if (sync) {
     modoSinConexion, entrarSinConexion, dispositivo, configurarAccesoSinConexion, desactivarAccesoSinConexion,
     toast, confirmDialog, setConfirmDialog, vistaActual, setVistaActual, syncEstado, sincronizarAhora,
     obtenerDetalleCola, reintentarOperacion, descartarOperacion, descartarTodoLoAtascado,
-    historial, inventario, listaPrecios, paciente, setPaciente, estadoInicial, editandoId, setEditandoId, 
+    historial, inventario, listaPrecios, paciente, setPaciente, estadoInicial, editandoId, setEditandoId,
+    cedulasArchivadas, 
     guardarPacienteClinico, manejarCambio, borrarHistoriaClinica, cargarParaEditarClinico, edadActual, claseInputRef,
     busqueda, setBusqueda, pedidosFiltrados, stats, enviarWhatsApp,
     nuevoPrecio, setNuevoPrecio, precioInicial, editandoPrecioId, setEditandoPrecioId,

@@ -246,13 +246,13 @@ const guardarVentaLocalImpl = async ({ patient, consultationId, sale, initialPay
         consulta_id: normalizedSale.consultationId || null,
         consulta: normalizedSale.consultationId ? {} : { fecha: normalizedSale.fecha },
         venta: { ...sale, id: saleId, abono: '0', fecha: normalizedSale.fecha },
+        // BUG REAL: el filtro dejaba pasar un item SIN inventario_id (solo con codigo).
+// El servidor lo rechaza con "Item de venta invalido." (22023), que es un error
+// opaco: el optometria no tiene forma de saber que el problema es un armazon sin
+// correspondencia en el inventario. Aqui solo sale lo que tiene id resuelto.
         items: resolvedItems
-          .filter(item => item.inventoryId !== null || safeString(item.code).trim() !== '')
-          .map(item => ({
-            inventario_id: item.inventoryId,
-            codigo: item.inventoryId === null ? safeString(item.code).trim() || null : null,
-            cantidad: item.quantity
-          }))
+          .filter(item => item.inventoryId !== null)
+          .map(item => ({ inventario_id: item.inventoryId, codigo: null, cantidad: item.quantity }))
       }
     }
   });

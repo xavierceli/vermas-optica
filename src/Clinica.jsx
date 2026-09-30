@@ -155,7 +155,7 @@ const BloqueQueratometria = ({ ojo, label, paciente, manejarCambio }) => {
 
 export default function Clinica({
   paciente, setPaciente, estadoInicial, editandoId, setEditandoId,
-  guardarPacienteClinico, manejarCambio, edadActual, claseInputRef, historial,
+  guardarPacienteClinico, manejarCambio, edadActual, claseInputRef, historial, cedulasArchivadas,
   guardando
 }) {
   const [sugerenciasCedula, setSugerenciasCedula] = useState([]);
@@ -191,7 +191,17 @@ export default function Clinica({
       timerNube.current = setTimeout(async () => {
         try {
           const resultados = await buscarPacientesEnSupabase(val);
-          const nube = (resultados || []).filter(r => safeString(r?.nombre) !== 'CONSUMIDOR FINAL').slice(0, 5);
+          // BUG REAL: un paciente archivado (borrado) seguia apareciendo como
+          // coincidencia al escribir su cedula, y la app le rellenaba los datos
+          // de golpe: el optometria creia que habia resurrecto al borrado. La
+          // nube no sabe que se archivó en ESTE dispositivo, asi que hay que
+          // filtrar aqui con la lista que trae el gestor.
+          const { normalizeCedula } = await import('./localRepository');
+          const borradas = new Set((cedulasArchivadas || []).map(normalizeCedula));
+          const nube = (resultados || [])
+            .filter(r => safeString(r?.nombre) !== 'CONSUMIDOR FINAL')
+            .filter(r => !borradas.has(normalizeCedula(r?.cedula)))
+            .slice(0, 5);
           setSugerenciasNube(nube);
           pintarSugerencias(val, nube);
         } catch { /* silencioso: si falla, las sugerencias locales siguen */ }
