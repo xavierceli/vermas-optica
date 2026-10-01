@@ -1,70 +1,83 @@
 // ---------------------------------------------------------------------------
-// RUTA INTERNA DE UN ARCHIVO EN STORAGE
+// RUTA INTERNA DE UN ARCHIVO EN STORAGE (Supabase Storage Path Normalizer)
 // ---------------------------------------------------------------------------
-// Logica pura, sin dependencias: se separa para poder probarla con node --test
-// (el modulo que firma URLs importa supabaseClient y no se puede cargar en Node).
+// Módulo puro sin dependencias externas para normalizar nombres y rutas
+// de imágenes de armazones y comprobantes de pago.
 //
-// La base guarda la RUTA del archivo, no una URL firmada: las URLs firmadas
-// caducan a la hora y dejarian la foto rota al dia siguiente. Esta funcion
-// convierte lo que haya guardado (ruta simple, ruta con el bucket de sobra, o
-// URL publica/firmada antigua) en la ruta que espera Supabase Storage.
-//
-// Es un normalizador GENERICO: lo usan el bucket del inventario
-// (extraerRutaImagen) y el de comprobantes de pago (extraerRutaArchivo), que
-// sufrian el mismo defecto por tener cada uno su copia de la funcion.
+// Convierte URLs completas, URLs firmadas con tokens caducos o rutas con
+// prefijos repetidos en la ruta relativa limpia requerida por Supabase Storage.
+// ---------------------------------------------------------------------------
+
 const BUCKET = 'inventario_imagenes';
 
-// Prefijos que antepone la API de Storage a la ruta del archivo:
+// Prefijos de la API de Storage de Supabase:
 //   /storage/v1/object/public/<bucket>/foto.jpg
 //   /storage/v1/object/sign/<bucket>/foto.jpg?token=...
 //   /storage/v1/render/image/authenticated/<bucket>/foto.jpg
 const PREFIJO_STORAGE =
   /^\/?(?:storage\/v1\/)?(?:object\/(?:public|sign|authenticated)|render\/image\/(?:public|authenticated))\//i;
 
-/** Quita el nombre del bucket del principio, por veces repetido. */
+/** Elimina el nombre del bucket del inicio si viene redundante */
 const recortarBucket = (ruta, bucket) => {
+  if (!bucket) return ruta;
   let salida = ruta;
-  while (salida.slice(0, bucket.length + 1).toLowerCase() === bucket + '/') {
-    salida = salida.slice(bucket.length + 1);
+  const prefijo = bucket.toLowerCase() + '/';
+  while (salida.toLowerCase().startsWith(prefijo)) {
+    salida = salida.slice(prefijo.length);
   }
   return salida;
 };
 
-export const extraerRutaArchivo = (valor, bucket) => {
+/**
+ * Extrae la ruta relativa de un archivo almacenado dentro de un bucket específico.
+ * @param {string} valor URL o ruta original
+ * @param {string} bucket Nombre del bucket de destino
+ * @returns {string|null} Ruta normalizada o null si es inválida
+ */
+export const extraerRutaArchivo = (valor, bucket = BUCKET) => {
   if (!valor) return null;
   const texto = String(valor).trim();
   if (!texto) return null;
 
   let ruta = texto;
 
+  // 1. Si es una URL absoluta, extraemos únicamente el pathname
   if (/^https?:\/\//i.test(texto)) {
-    let pathname;
     try {
-      pathname = new URL(texto).pathname;
+      const parsedUrl = new URL(texto);
+      ruta = parsedUrl.pathname;
     } catch {
-      // Una URL malformada no debe tumbar el listado de inventario.
       return null;
-    }
-    try {
-      ruta = decodeURIComponent(pathname);
-    } catch {
-      ruta = pathname; // porcentaje mal formado: se deja tal cual
     }
   }
 
-  ruta = ruta
-    .replace(/^\/+/, '')          // barras iniciales
-    .replace(PREFIJO_STORAGE, '') // /storage/v1/object/public/...
-    .replace(/[?#].*$/, '')        // token de URL firmada pegado a una ruta
-    .replace(/\/{2,}/g, '/')      // barras duplicadas
-    .replace(/\/+$/, '');         // barra final
+  // 2. Limpieza de tokens, queries y fragmentos hash
+  ruta = ruta.split(/[?#]/)[0];
 
+  // 3. Decodificación de caracteres especiales (%20, tildes, etc.)
+  try {
+    ruta = decodeURIComponent(ruta);
+  } catch {
+    /* Mantener original si contiene porcentajes malformados */
+  }
+
+  // 4. Limpieza de prefijos de Supabase Storage y barras redundantes
+  ruta = ruta
+    .replace(/^\/+/, '')          // Barras iniciales
+    .replace(PREFIJO_STORAGE, '') // Prefijos de la API de Supabase
+    .replace(/\/{2,}/g, '/')      // Barras repetidas (// -> /)
+    .replace(/\/+$/, '');         // Barra final
+
+  // 5. Eliminamos el nombre del bucket si viene incluido en el path
   ruta = recortarBucket(ruta, bucket);
 
-  // Una ruta que sube de directorio no se firma nunca.
-  if (!ruta || ruta.split('/').some(parte => parte === '..')) return null;
+  // 6. Protección de seguridad contra Directory Traversal (..)
+  if (!ruta || ruta.split('/').some(parte => parte === '..')) {
+    return null;
+  }
+
   return ruta;
 };
 
-/** Atajo para el bucket del inventario. */
+/** Atajo preconfigurado para el bucket de inventario de armazones y accesorios */
 export const extraerRutaImagen = valor => extraerRutaArchivo(valor, BUCKET);
