@@ -1,15 +1,11 @@
 import { safeString, safeNum, calcularCerca, generarDiagnosticos } from './utilidades';
 import { esc } from './escape';
 import { calcularTotal, calcularSaldo, calcularMontoDescuento } from './reglas';
+import { mostrarAviso } from './avisos';
 
-// Todo dato que entra en las plantillas de impresion pasa por txt(): safeString
-// solo convierte a texto, txt() ademas neutraliza < > & " '', de modo que un
-// nombre de paciente no puede inyectar etiquetas ni romper el documento.
 const txt = valor => esc(safeString(valor));
+const pvpFixed = val => Number(val || 0).toFixed(2);
 
-// ---------------------------------------------------------------------------
-// ESPERAR A QUE LA VENTANA ESTE LISTA PARA IMPRIMIR
-// ---------------------------------------------------------------------------
 const ESPERA_MAX_SIN_LOAD_MS = 2500;
 
 const alCargar = (win, fn) => {
@@ -22,7 +18,7 @@ const alCargar = (win, fn) => {
     if (win.document.readyState === 'complete') { imprimir(); return; }
     win.addEventListener('load', imprimir, { once: true });
     salvavidas = setTimeout(() => {
-      console.warn('[impresion] la ventana no terminó de cargar a tiempo; se imprime igualmente.');
+      console.warn('[impresion] La ventana no terminó de cargar a tiempo; se imprime igualmente.');
       imprimir();
     }, ESPERA_MAX_SIN_LOAD_MS);
   } catch (e) { console.error(e); }
@@ -32,7 +28,11 @@ export const imprimirInforme = (item) => {
   try {
     const diagnosticos = generarDiagnosticos(item).join(' - ') || 'Evaluación Optométrica Regular';
     const win = window.open('', '_blank');
-    if (!win) return;
+    if (!win) {
+      mostrarAviso('El navegador bloqueó la ventana de impresión. Habilita las ventanas emergentes para continuar.', 'warning');
+      return;
+    }
+
     win.document.write(`
       <html translate="no">
         <head>
@@ -113,7 +113,11 @@ export const imprimirInforme = (item) => {
 export const imprimirRecetaSimple = (item) => {
   try {
     const win = window.open('', '_blank');
-    if (!win) return;
+    if (!win) {
+      mostrarAviso('El navegador bloqueó la ventana de impresión. Habilita las ventanas emergentes para continuar.', 'warning');
+      return;
+    }
+
     win.document.write(`
       <html translate="no">
         <head>
@@ -161,7 +165,10 @@ export const imprimirRecetaSimple = (item) => {
 export const imprimirOrdenTrabajo = (item) => {
   try {
     const win = window.open('', '_blank');
-    if (!win) return;
+    if (!win) {
+      mostrarAviso('El navegador bloqueó la ventana de impresión. Habilita las ventanas emergentes para continuar.', 'warning');
+      return;
+    }
     
     let tratList = [];
     if (item?.tratam_ninguno === 'SI') tratList.push('NINGUNO / BLANCO');
@@ -267,7 +274,11 @@ export const imprimirRecibo = (item) => {
     const pSaldo = calcularSaldo(pVenta, pDesc, pAbono);
 
     const win = window.open('', '_blank');
-    if (!win) return;
+    if (!win) {
+      mostrarAviso('El navegador bloqueó la ventana de impresión. Habilita las ventanas emergentes para continuar.', 'warning');
+      return;
+    }
+
     win.document.write(`
       <html translate="no">
         <head>
@@ -337,12 +348,13 @@ export const imprimirRecibo = (item) => {
   } catch(e) { console.error(e); }
 };
 
-const pvpFixed = val => Number(val || 0).toFixed(2);
-
 export const imprimirEtiqueta = (item) => {
   try {
     const win = window.open('', '_blank', 'width=500,height=300');
-    if (!win) return;
+    if (!win) {
+      mostrarAviso('El navegador bloqueó la ventana de impresión. Habilita las ventanas emergentes para continuar.', 'warning');
+      return;
+    }
 
     const codigoPlano = safeString(item?.codigo) || '0000';
     const codigo = txt(codigoPlano);
@@ -399,7 +411,7 @@ export const imprimirEtiqueta = (item) => {
     alCargar(win, () => {
       try {
         if (typeof win.JsBarcode !== 'function') {
-          console.warn('[impresion] el generador de código de barras no está disponible; se imprime sin barras.');
+          console.warn('[impresion] El generador de código de barras no está disponible; se imprime sin barras.');
         } else {
           win.JsBarcode('#barcode', codigoPlano, {
             format: 'CODE128',
@@ -410,7 +422,7 @@ export const imprimirEtiqueta = (item) => {
           });
         }
       } catch (e) {
-        console.error('[impresion] no se pudo dibujar el código de barras:', e);
+        console.error('[impresion] No se pudo dibujar el código de barras:', e);
       }
       setTimeout(() => { try { win.print(); } catch (e) { console.error(e); } }, 500);
     });
