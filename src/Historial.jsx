@@ -244,8 +244,8 @@ export default function Historial({
                                 
                                 <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
                                   <h4 className="font-bold text-indigo-900 border-b border-gray-100 pb-1 mb-2">👁 Queratometría</h4>
-                                  <p className="mb-1"><strong className="text-gray-600">OD:</strong> <span className="text-gray-900 font-semibold">K1: {safeString(reg.k1_d_od) || '-'} | K2: {safeString(reg.k2_d_od) || '-'}</span></p>
-                                  <p><strong className="text-gray-600">OI:</strong> <span className="text-gray-900 font-semibold">K1: {safeString(reg.k1_d_oi) || '-'} | K2: {safeString(reg.k2_d_oi) || '-'}</span></p>
+                                  <p className="mb-1"><strong className="text-gray-600">OD:</strong> <span className="text-gray-900 font-semibold">{safeString(reg.k1_d_od) || '-'} | K2: {safeString(reg.k2_d_od) || '-'}</span></p>
+                                  <p><strong className="text-gray-600">OI:</strong> <span className="text-gray-900 font-semibold">{safeString(reg.k1_d_oi) || '-'} | K2: {safeString(reg.k2_d_oi) || '-'}</span></p>
                                 </div>
 
                                 <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
@@ -504,22 +504,39 @@ export default function Historial({
                             )}
                           </div>
 
-                          {/* 2. Método de pago único y comprobante */}
-                          <div className="flex justify-between items-center pt-1 text-[11px]">
-                            <p className="text-gray-700">
-                              <strong>Método de pago:</strong>{' '}
-                              <span className="font-bold text-gray-900 bg-gray-100 px-2 py-0.5 rounded border border-gray-200">
-                                {safeString(item.forma_pago) || 'Efectivo'}
-                              </span>
-                            </p>
-                            {item.comprobante_url && (
-                              <BotonComprobante
-                                ruta={item.comprobante_url}
-                                refId={item.pedido_id || item.id}
-                                className="text-xs bg-indigo-50 text-indigo-700 font-bold px-2 py-0.5 rounded-full border border-indigo-200 hover:bg-indigo-100 flex items-center shadow-sm"
-                              />
-                            )}
-                          </div>
+                          {/* 2. Método de pago con resolución inteligente */}
+                          {(() => {
+                            const notaPago = safeString(item.pago_nota).toLowerCase();
+                            const formaRegistrada = safeString(item.forma_pago);
+                            
+                            // Si tiene comprobante o en el historial de cobros dice transferencia, priorizar Transferencia
+                            let metodoReal = formaRegistrada;
+                            if (item.comprobante_url || notaPago.includes('transferencia')) {
+                              metodoReal = 'Transferencia';
+                            } else if (notaPago.includes('tarjeta')) {
+                              metodoReal = 'Tarjeta';
+                            } else if (!metodoReal) {
+                              metodoReal = 'Efectivo';
+                            }
+
+                            return (
+                              <div className="flex justify-between items-center pt-1 text-[11px]">
+                                <p className="text-gray-700">
+                                  <strong>Método de pago:</strong>{' '}
+                                  <span className="font-bold text-gray-900 bg-gray-100 px-2 py-0.5 rounded border border-gray-200">
+                                    {metodoReal}
+                                  </span>
+                                </p>
+                                {item.comprobante_url && (
+                                  <BotonComprobante
+                                    ruta={item.comprobante_url}
+                                    refId={item.pedido_id || item.id}
+                                    className="text-xs bg-indigo-50 text-indigo-700 font-bold px-2 py-0.5 rounded-full border border-indigo-200 hover:bg-indigo-100 flex items-center shadow-sm"
+                                  />
+                                )}
+                              </div>
+                            );
+                          })()}
 
                           {item.notas && (
                             <p className="text-[11px] text-gray-600 italic">
@@ -538,7 +555,7 @@ export default function Historial({
                         {tienePedido && (
                           <>
                             <span className={`block text-[11px] uppercase font-black tracking-wider mb-0.5 ${tieneDeuda ? 'text-red-700' : 'text-gray-600'}`}>
-                              {tieneDeuda ? '⚠️️ Costo Final (Con Saldo Pendiente)' : 'Costo Final'}
+                              {tieneDeuda ? '⚠ Costo Final (Con Saldo Pendiente)' : 'Costo Final'}
                             </span>
                             <div className="flex items-baseline gap-2">
                               <span className={`text-base sm:text-xl font-black ${tieneDeuda ? 'text-red-600 animate-pulse' : 'text-gray-900'}`}>
@@ -547,7 +564,7 @@ export default function Historial({
                               {desc > 0 && <span className="text-xs text-green-700 font-bold">(-{desc}%)</span>}
                               {tieneDeuda && (
                                 <span className="text-xs font-black text-red-700 bg-red-100 px-2 py-0.5 rounded border border-red-300">
-                                  Resta: ${saldoPendiente.toFixed(2)}
+                                  A pagar: ${saldoPendiente.toFixed(2)}
                                 </span>
                               )}
                             </div>
