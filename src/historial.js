@@ -29,10 +29,12 @@ export const resumenConsulta = (item) => {
   const abono = aNumero(item?.abono);
   const saldo = calcularSaldo(venta, descuento, abono);
 
-  // Solo hay pedido si existe una venta real asociada
+  // Solo hay pedido si existe una venta real asociada o trabajo de óptica
   const tienePedido = Boolean(aTexto(item?.pedido_id).trim())
     || aNumero(item?.venta) > 0
     || aTexto(item?.codigo_armazon).trim() !== ''
+    || aTexto(item?.tipo_lente).trim() !== ''
+    || aTexto(item?.material_lente).trim() !== ''
     || aTexto(item?.accesorio_id).trim() !== '';
 
   return {
@@ -47,21 +49,25 @@ export const resumenConsulta = (item) => {
 };
 
 /**
- * Campos de refracción final. Si al menos uno tiene valor, la consulta es una Rx.
+ * Campos clínicos y de refracción completos para conservar en la fusión del historial.
  */
 const CAMPOS_REFRACCION = [
   'esfera_od', 'esfera_oi', 'cilindro_od', 'cilindro_oi',
-  'eje_od', 'eje_oi', 'adicion_od', 'adicion_oi'
+  'eje_od', 'eje_oi', 'adicion_od', 'adicion_oi',
+  'dnp_od', 'dnp_oi', 'altura_od', 'altura_oi',
+  'avsl_od', 'avsc_od', 'avcl_od', 'avcc_od',
+  'avsl_oi', 'avsc_oi', 'avcl_oi', 'avcc_oi'
 ];
 
 /** ¿Esta consulta tiene refracción, o es una visita sin receta? */
 export const tieneRefraccion = (item) =>
-  CAMPOS_REFRACCION.some(campo => aTexto(item?.[campo]).trim() !== '');
+  ['esfera_od', 'esfera_oi', 'cilindro_od', 'cilindro_oi', 'adicion_od', 'adicion_oi']
+    .some(campo => aTexto(item?.[campo]).trim() !== '');
 
 /**
  * Una sola tarjeta por paciente, de una lista ordenada por fecha descendente.
- * - Lo comercial (pedido, armazón, pago) va de la visita más reciente.
- * - La receta (esfera, cilindro, eje, adición) va de la visita más reciente que tenga refracción.
+ * - Lo comercial (pedido, armazón, abono, saldo) proviene de la visita más reciente.
+ * - La receta clínica completa proviene de la visita más reciente que tenga refracción.
  */
 export const unaTarjetaPorCedula = (filas, claveDe) => {
   const clave = claveDe || (fila => {
@@ -85,7 +91,11 @@ export const unaTarjetaPorCedula = (filas, claveDe) => {
 
     if (!tieneRefraccion(actual) && tieneRefraccion(fila)) {
       const receta = {};
-      for (const campo of CAMPOS_REFRACCION) receta[campo] = fila[campo];
+      for (const campo of CAMPOS_REFRACCION) {
+        if (fila[campo] !== undefined && fila[campo] !== null) {
+          receta[campo] = fila[campo];
+        }
+      }
       elegidas.set(k, {
         ...fila,
         ...actual,
@@ -104,14 +114,14 @@ export const unaTarjetaPorCedula = (filas, claveDe) => {
 };
 
 /**
- * Una sola tarjeta por paciente, saltándose el CONSUMIDOR FINAL.
+ * Una sola tarjeta por paciente, excluyendo el CONSUMIDOR FINAL.
  */
 export const agruparPorCedula = (filas) =>
   unaTarjetaPorCedula(
     (filas || []).filter(item => item && aTexto(item.nombre).trim().toUpperCase() !== NOMBRE_CONSUMIDOR_FINAL)
   );
 
-/** Filtro del buscador sobre el historial local. Menos de 2 letras: nada. */
+/** Filtro del buscador sobre el historial local (mínimo 2 caracteres). */
 export const filtrarPorTermino = (filas, termino) => {
   const busqueda = aTexto(termino).trim().toLowerCase();
   if (busqueda.length < 2) return [];
@@ -123,7 +133,7 @@ export const filtrarPorTermino = (filas, termino) => {
 };
 
 /**
- * Determina qué lista mostrar. Si hay búsqueda activa, valida que los resultados correspondan exactamente al término.
+ * Determina qué lista mostrar según la búsqueda activa.
  */
 export const listaSegunBusqueda = ({ busquedaTexto = '', resultados = null, historial = [] } = {}) => {
   const terminoActual = aTexto(busquedaTexto).trim();
@@ -135,7 +145,7 @@ export const listaSegunBusqueda = ({ busquedaTexto = '', resultados = null, hist
 };
 
 /**
- * Diagnóstico a partir de la refracción final con codificación CIE-10.
+ * Diagnóstico automático a partir de la refracción final con codificación CIE-10.
  */
 export const generarDiagnosticos = (item) => {
   try {
