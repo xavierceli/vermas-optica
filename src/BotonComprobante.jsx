@@ -16,20 +16,33 @@ export default function BotonComprobante({
     if (cargando) return;
     setCargando(true);
 
+    // Preabrimos la ventana dentro del contexto del evento del usuario para burlar el bloqueador de pop-ups
+    const ventanaPrevia = window.open('', '_blank');
+
     try {
       const url = await resolverUrlComprobante(ruta, refId);
+
       if (url) {
-        // En móviles, window.open con rel seguros evita el bloqueo de pop-ups
-        const nuevaVentana = window.open(url, '_blank', 'noopener,noreferrer');
-        if (!nuevaVentana) {
-          // Si el navegador bloqueó la ventana emergente directa, navegamos limpiamente
-          window.location.assign(url);
+        if (ventanaPrevia && !ventanaPrevia.closed) {
+          ventanaPrevia.opener = null;
+          ventanaPrevia.location.href = url;
+        } else {
+          // Si el navegador bloqueó la preapertura, disparamos un enlace temporal seguro en nueva pestaña
+          const link = document.createElement('a');
+          link.href = url;
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
         }
       } else {
-        mostrarAviso('El comprobante no se pudo abrir. Puede que siga pendiente de subir o que no haya conexión.');
+        if (ventanaPrevia && !ventanaPrevia.closed) ventanaPrevia.close();
+        mostrarAviso('El comprobante no se pudo abrir. Puede que siga pendiente de subir o que no haya conexión.', 'warning');
       }
     } catch (err) {
-      mostrarAviso('Error al abrir comprobante: ' + (err?.message || 'Error desconocido'));
+      if (ventanaPrevia && !ventanaPrevia.closed) ventanaPrevia.close();
+      mostrarAviso('Error al abrir comprobante: ' + (err?.message || 'Error desconocido'), 'error');
     } finally {
       setCargando(false);
     }
