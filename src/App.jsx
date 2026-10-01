@@ -5,9 +5,6 @@ import AvisoActualizacion from './AvisoActualizacion'
 import PanelSincronizacion from './PanelSincronizacion'
 import ErrorBoundary from './ErrorBoundary.jsx'
 
-// Las vistas se cargan bajo demanda. Antes todas viajaban en el bundle inicial
-// (mas de 700 kB) aunque el usuario solo mirara el historial: el telefono
-// descargaba clinica, inventario, tarifario y dashboard sin abrirlos nunca.
 const Login = lazy(() => import('./Login'));
 const Historial = lazy(() => import('./Historial'));
 const Clinica = lazy(() => import('./Clinica'));
@@ -17,9 +14,6 @@ const Dashboard = lazy(() => import('./Dashboard'));
 const PedidosLista = lazy(() => import('./PedidosLista'));
 const PedidosForm = lazy(() => import('./PedidosForm'));
 
-// Nombre legible de cada seccion: es lo que muestra el panel de error, para que
-// el usuario sepa QUE le fallo y pueda cambiar de seccion con los botones de
-// arriba en vez de quedarse mirando una pantalla en blanco.
 const ETIQUETAS = {
   dashboard: 'Estadísticas',
   precios: 'Tarifario',
@@ -49,27 +43,21 @@ function App() {
   const sincronizando = faseSync === 'syncing';
   const hayErrorSync = faseSync === 'error' && !!g.syncEstado?.lastError;
   const sesionInvalida = !!g.syncEstado?.sesionInvalida;
-  // El detalle del tooltip explica SIEMPRE el motivo. Un numero suelto ("21
-  // pendientes") sin decir por que deja al usuario sin ningun siguiente paso.
+
   const detalleCola = descartadas > 0
-    ? `${descartadas} se descartaron; revisa la consola (F12)`
-    // Sin conexion va PRIMERO: si no, un "Failed to fetch" sin clasificar se
-    // enseania como "El servidor rechazo..." y el aviso de red no aparecia nunca.
+    ? `${descartadas} se descartaron; revisa el panel de sincronización`
     : esOffline
-    ? (pendientes > 0 ? 'Se subiran al recuperar conexion' : 'Todo guardado aqui')
+    ? (pendientes > 0 ? 'Se subirán al recuperar conexión' : 'Todo guardado aquí')
     : fallos.length > 0
     ? String(fallos[0].motivo || '').slice(0, 100)
     : 'En cola de salida';
-  // El historial se descarga por paginas y con tope: si este equipo lo alcanza,
-  // su lista esta INCOMPLETA. Decirlo es mejor que fingir que es todo: las
-  // consultas mas antiguas se encuentran buscando por cedula o nombre, porque
-  // esa busqueda va a la nube.
+
   const historialParcial = !!g.syncEstado?.historialParcial;
   const descargas = g.syncEstado?.historialDescargadas || 0;
   const tope = g.syncEstado?.historialTope || 0;
 
   const estadoOutbox = sesionInvalida
-    ? { texto: 'Sesion expirada', detalle: 'Vuelve a iniciar sesion', clases: 'bg-red-100 text-red-800 border-red-300', icono: '🔑' }
+    ? { texto: 'Sesión expirada', detalle: 'Vuelve a iniciar sesión', clases: 'bg-red-100 text-red-800 border-red-300', icono: '🔑' }
     : fallos.length > 0
     ? { texto: `Rechazadas (${fallos.length})`, detalle: detalleCola, clases: 'bg-red-100 text-red-800 border-red-300', icono: '⛔' }
     : descartadas > 0
@@ -79,25 +67,20 @@ function App() {
     : conflictos > 0
       ? { texto: 'Conflictos', detalle: `${conflictos} por revisar`, clases: 'bg-amber-100 text-amber-800 border-amber-300', icono: '⚠️' }
       : esOffline
-        ? { texto: 'Sin conexion', detalle: detalleCola, clases: 'bg-slate-800 text-slate-100 border-slate-600', icono: '📴' }
+        ? { texto: 'Sin conexión', detalle: detalleCola, clases: 'bg-slate-800 text-slate-100 border-slate-600', icono: '📴' }
         : sincronizando
           ? { texto: 'Sincronizando...', detalle: pendientes > 0 ? `Pendientes: ${pendientes}` : 'Enviando a la nube', clases: 'bg-blue-100 text-blue-800 border-blue-300', icono: '🔄' }
           : pendientes > 0
             ? { texto: `Pendientes: ${pendientes}`, detalle: detalleCola, clases: 'bg-blue-100 text-blue-800 border-blue-300', icono: '⏳' }
             : historialParcial
-              ? { texto: 'Historial parcial', detalle: `Solo ${descargas} de ${tope} consultas en este equipo`, clases: 'bg-amber-100 text-amber-800 border-amber-300', icono: '⚠️' }
-              : { texto: 'Sincronizado', detalle: 'Nube al dia', clases: 'bg-emerald-100 text-emerald-800 border-emerald-300', icono: '✅' };
-  // La barra de sincronizacion abre este panel cuando hay algo atascado.
-  // Antes resolverlo exigia abrir la consola del navegador.
+              ? { texto: 'Historial parcial', detalle: `Solo ${descargas} de ${tope} consultas`, clases: 'bg-amber-100 text-amber-800 border-amber-300', icono: '⚠️' }
+              : { texto: 'Sincronizado', detalle: 'Nube al día', clases: 'bg-emerald-100 text-emerald-800 border-emerald-300', icono: '✅' };
+
   const [panelSync, setPanelSync] = useState(false);
   const dialogoVisible = g.confirmDialog.visible;
   const refDialogo = useRef(null);
 
-  // Cerrar el diálogo de confirmación con la tecla Escape
   useEffect(() => {
-    // IMPORTANTE: passa por cancelarConfirmacion(), no por setConfirmDialog().
-    // Si el diálogo se cerrara sin resolver la promesa de confirmar(), quien la
-    // espera se quedaria colgado para siempre.
     const cerrarConEscape = (e) => {
       if (e.key === 'Escape') g.cancelarConfirmacion();
     };
@@ -105,19 +88,12 @@ function App() {
       window.addEventListener('keydown', cerrarConEscape);
       return () => window.removeEventListener('keydown', cerrarConEscape);
     }
-    // El gestor se recrea en cada render; depender de el aqui volveria a
-    // registrar el oyente sin parar. Se depende solo de la visibilidad.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dialogoVisible, g.cancelarConfirmacion]);
 
-  // Al abrir, el foco entra en el diálogo. Sin esto el teclado sigue en el body y
-  // un usuario de lector de pantalla no se entera de que hay una pregunta
-  // esperándole (WCAG 2.4.3 Foco en orden).
   useEffect(() => {
     if (dialogoVisible) refDialogo.current?.focus();
-  }, [dialogoVisible, g.cancelarConfirmacion]);
+  }, [dialogoVisible]);
 
-  // Si no está autenticado, mostramos el login de inmediato (evita quedarse congelado cargando)
   if (!g.estaAutenticado) {
     return (
       <Suspense fallback={<Cargando />}>
@@ -130,23 +106,14 @@ function App() {
     );
   }
 
-  return (
-    // El atributo translate="no" se elimino de aqui: no es un prop de React, es
-    // un atributo global de HTML. La regla equivalente vive ahora en index.css
-    // (input, textarea), que es donde realmente se necesita: que el teclado
-    // movil no capitalice los datos medidos de la clinica.
-    <div className={`min-h-screen bg-gray-50 p-6 relative ${esOffline || pendientes > 0 ? 'pt-14' : ''}`}>
+  const tieneAvisoSuperior = esOffline || pendientes > 0 || conflictos > 0 || fallos.length > 0 || g.modoSinConexion;
 
-      {/* Con registerType:'prompt' el service worker espera. Este aviso es quien
-          activa el cambio, y solo cuando el usuario lo decide. */}
+  return (
+    <div className={`min-h-screen bg-gray-50 p-3 sm:p-6 relative touch-manipulation ${tieneAvisoSuperior ? 'pt-12 sm:pt-14' : ''}`}>
+
       <AvisoActualizacion hayTrabajoSinGuardar={pendientes > 0 || g.guardando} confirmar={g.confirmar} />
 
-      {/* Sin conexion tiene PRIORIDAD sobre los fallos. Antes ganaba `fallos`, y
-          como un corte de internet llegaba a la cola como "Failed to fetch", la
-          barra se ponia roja diciendo "El servidor rechazo N operacion(es)" sin
-          que el servidor hubiera rechazado nada, y el aviso de "Sin conexion" no
-          se veia nunca. */}
-      {(() => {
+      {tieneAvisoSuperior && (() => {
         const colorBarra = g.modoSinConexion ? 'bg-purple-800'
           : esOffline ? 'bg-slate-800'
           : fallos.length > 0 ? 'bg-red-700'
@@ -154,48 +121,48 @@ function App() {
           : 'bg-blue-700';
         const iconoBarra = g.modoSinConexion ? '🔓' : esOffline ? '📴' : fallos.length > 0 ? '⛔' : conflictos > 0 ? '⚠️' : '🔄';
         const textoBarra = g.modoSinConexion
-          ? 'Modo sin conexión: entraste con el PIN local. Los cambios se guardan aquí y se subirán al volver a iniciar sesión.'
+          ? 'Modo sin conexión: PIN local activo. Los cambios se sincronizarán al iniciar sesión.'
           : esOffline
-          ? 'Sin conexión a internet. Los datos se guardan en este dispositivo y se subirán solos al volver la red.'
+          ? 'Sin conexión a internet. Los datos se guardan localmente y se subirán al reconectar.'
           : fallos.length > 0
-          ? `El servidor rechazó ${fallos.length} operación(es): ${String(fallos[0].motivo || '').slice(0, 160)}`
+          ? `El servidor rechazó ${fallos.length} operación(es): ${String(fallos[0].motivo || '').slice(0, 140)}`
           : conflictos > 0
           ? `${conflictos} conflictos requieren revisión.`
           : sincronizando
           ? `Sincronizando ${pendientes} operación(es)…`
-          : `${pendientes} operaciones en cola, esperando el próximo intento.`;
-        if (!(esOffline || pendientes > 0 || conflictos > 0 || fallos.length > 0 || g.modoSinConexion)) return null;
+          : `${pendientes} operaciones en cola, esperando envío.`;
+
         return (
-          <div className={`fixed top-0 left-0 w-full text-white text-center py-2 font-black text-xs md:text-sm z-[200] shadow-md flex items-center justify-center gap-3 px-4 ${colorBarra}`}>
+          <aside aria-label="Estado de conexión y sincronización" className={`fixed top-0 left-0 w-full text-white text-center py-2 font-black text-xs md:text-sm z-40 shadow-md flex items-center justify-center gap-2 sm:gap-3 px-3 sm:px-4 ${colorBarra}`}>
             <span>{iconoBarra}</span>
-            <span>{textoBarra}</span>
-            {pendientes > 0 && !esOffline && !g.modoSinConexion && <button onClick={() => g.sincronizarAhora()} className="rounded bg-white/20 px-2 py-1">Sincronizar ahora</button>}
-          </div>
+            <span className="truncate max-w-[85vw]">{textoBarra}</span>
+            {pendientes > 0 && !esOffline && !g.modoSinConexion && (
+              <button onClick={() => g.sincronizarAhora()} className="rounded bg-white/20 hover:bg-white/30 px-2 py-0.5 text-xs font-bold shrink-0 transition-colors">
+                Sincronizar
+              </button>
+            )}
+          </aside>
         );
       })()}
+
       {g.toast && (
-        // role="status" + aria-live: sin esto el lector de pantalla no anuncia
-        // el resultado de la accion. Es el unico canal para confirmar que el
-        // guardado funciono cuando no se ve el mensaje.
         <div
           role="status"
           aria-live="polite"
-          className={`fixed top-20 right-6 z-[300] flex items-center gap-3 px-6 py-4 rounded-xl shadow-2xl transition-all max-w-md ${
-          g.toast.tipo === 'success' ? 'bg-teal-600 text-white' : g.toast.tipo === 'error' ? 'bg-red-600 text-white' : 'bg-amber-500 text-white'
-        }`}
+          className={`fixed top-16 sm:top-20 right-3 sm:right-6 z-50 flex items-center gap-3 px-4 sm:px-6 py-3 sm:py-4 rounded-xl shadow-2xl transition-all max-w-sm sm:max-w-md ${
+            g.toast.tipo === 'success' ? 'bg-teal-600 text-white' : g.toast.tipo === 'error' ? 'bg-red-600 text-white' : 'bg-amber-500 text-white'
+          }`}
         >
-          <span className="text-2xl" aria-hidden="true">{g.toast.tipo === 'success' ? '✅' : g.toast.tipo === 'error' ? '❌' : '⚠️'}</span>
-          <p className="font-bold text-sm whitespace-pre-line leading-snug">{g.toast.mensaje}</p>
+          <span className="text-xl sm:text-2xl" aria-hidden="true">{g.toast.tipo === 'success' ? '✅' : g.toast.tipo === 'error' ? '❌' : '⚠️'}</span>
+          <p className="font-bold text-xs sm:text-sm whitespace-pre-line leading-snug">{g.toast.mensaje}</p>
         </div>
       )}
 
       <PanelSincronizacion abierta={panelSync} cerrar={() => setPanelSync(false)} gestor={g} />
 
       {g.confirmDialog.visible && (
-        // Clic en el fondo oscuro cierra: solo si el destino es el propio fondo,
-        // no el panel, para que un clic dentro no lo cierre por error.
         <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[100] px-4"
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 px-4 isolate"
           onClick={e => e.target === e.currentTarget && g.cancelarConfirmacion()}
         >
           <div
@@ -204,80 +171,69 @@ function App() {
             aria-labelledby="titulo-confirmacion"
             ref={refDialogo}
             tabIndex={-1}
-            className="bg-white p-8 rounded-2xl shadow-2xl max-w-md w-full text-center"
+            className="bg-white p-6 sm:p-8 rounded-2xl shadow-2xl max-w-md w-full text-center"
           >
-            <div className="text-5xl mb-4" aria-hidden="true">⚠️</div>
-            <h3 id="titulo-confirmacion" className="text-xl font-black text-gray-800 mb-6">{g.confirmDialog.mensaje}</h3>
-            <div className="flex gap-4 justify-center">
-              <button onClick={() => g.cancelarConfirmacion()} className="flex-1 px-4 py-3 bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-xl font-bold transition-colors">Cancelar</button>
-              <button onClick={() => g.aceptarConfirmacion()} className="flex-1 px-4 py-3 bg-red-600 text-white hover:bg-red-700 rounded-xl font-bold shadow-lg shadow-red-200 transition-colors">{g.confirmDialog.textoSi || 'Sí, Continuar'}</button>
+            <div className="text-4xl sm:text-5xl mb-4" aria-hidden="true">⚠️</div>
+            <h3 id="titulo-confirmacion" className="text-lg sm:text-xl font-black text-gray-800 mb-6">{g.confirmDialog.mensaje}</h3>
+            <div className="flex gap-3 sm:gap-4 justify-center">
+              <button type="button" onClick={() => g.cancelarConfirmacion()} className="flex-1 px-4 py-2.5 sm:py-3 bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-xl font-bold transition-colors">
+                Cancelar
+              </button>
+              <button type="button" onClick={() => g.aceptarConfirmacion()} className="flex-1 px-4 py-2.5 sm:py-3 bg-red-600 text-white hover:bg-red-700 rounded-xl font-bold shadow-lg shadow-red-200 transition-colors">
+                {g.confirmDialog.textoSi || 'Sí, Continuar'}
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* id="contenido": destino del enlace de salto de index.html. Permite
-          al usuario de teclado saltarse la barra de navegacion. */}
-      <main id="contenido" className="max-w-[1400px] mx-auto space-y-6">
-        {/* VERSION DESPLEGADA
-            Este bloque era un texto de 9px casi invisible y era la unica forma
-            de saber si el navegador esta sirviendo el bundle nuevo o uno viejo
-            desde la cache del service worker. Sin eso, "no funciona" y "esta
-            cargando la version anterior" son indistinguibles.
-            Ahora es clicable, muestra la fecha de compilacion y, si el
-            identificador no llego (bundle viejo servido), lo avisa en rojo. */}
-        <div className="flex items-center justify-between gap-3 bg-gray-900 text-white rounded-xl px-4 py-2.5 shadow-lg">
-          <div className="flex items-center gap-3 min-w-0">
-            <span className="text-xs font-black uppercase tracking-wider text-gray-400 shrink-0">
-              Version desplegada
+      <main id="contenido" className="max-w-[1400px] mx-auto space-y-4 sm:space-y-6">
+        
+        <div className="flex items-center justify-between gap-2 sm:gap-3 bg-gray-900 text-white rounded-xl px-3 sm:px-4 py-2 sm:py-2.5 shadow-lg">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <span className="text-[10px] sm:text-xs font-black uppercase tracking-wider text-gray-400 shrink-0">
+              Versión
             </span>
             <code
-              className={`text-sm font-mono font-black px-2.5 py-1 rounded ${
-                typeof __BUILD_ID__ === 'undefined'
-                  ? 'bg-red-600 text-white'
-                  : 'bg-teal-500 text-white'
+              className={`text-xs sm:text-sm font-mono font-black px-2 sm:px-2.5 py-0.5 sm:py-1 rounded ${
+                typeof __BUILD_ID__ === 'undefined' ? 'bg-red-600 text-white' : 'bg-teal-500 text-white'
               }`}
             >
-              {typeof __BUILD_ID__ === 'undefined' ? 'SIN IDENTIFICAR (bundle viejo)' : __BUILD_ID__}
+              {typeof __BUILD_ID__ === 'undefined' ? 'SIN IDENTIFICAR' : __BUILD_ID__}
             </code>
-            <span className="text-xs text-gray-400 truncate">
+            <span className="text-[11px] sm:text-xs text-gray-400 truncate">
               {typeof __BUILD_ID__ === 'undefined'
-                ? 'El navegador esta sirviendo una copia antigua. Recarga con Ctrl+Shift+R.'
+                ? 'Copia antigua. Recarga con Ctrl+Shift+R.'
                 : `Compilada el ${new Date(Number.parseInt(__BUILD_ID__, 36)).toLocaleString('es-EC', { dateStyle: 'medium', timeStyle: 'short' })}`}
             </span>
           </div>
           <button
             type="button"
             onClick={() => navigator.clipboard?.writeText(String(__BUILD_ID__))}
-            title="Copiar el codigo de version"
+            title="Copiar el código de versión"
             className="text-xs font-bold text-gray-300 hover:text-white hover:bg-white/10 px-2 py-1 rounded transition-colors shrink-0"
           >
             Copiar
           </button>
         </div>
 
-        <div className="bg-white p-4 rounded-xl shadow-sm flex flex-col md:flex-row justify-between items-center border gap-4">
-          <div className="flex items-center gap-3">
-            <h1 className="font-extrabold text-teal-800 text-2xl tracking-wider">VER+ ÓPTICA</h1>
+        <header className="bg-white p-3 sm:p-4 rounded-xl shadow-sm flex flex-col md:flex-row justify-between items-center border border-gray-100 gap-3 sm:gap-4">
+          <div className="flex items-center justify-between w-full md:w-auto gap-3">
+            <h1 className="font-extrabold text-teal-800 text-xl sm:text-2xl tracking-wider">VER+ ÓPTICA</h1>
             <button
               type="button"
               onClick={() => {
-                // Si hay algo atascado, el clic abre el panel con el detalle y las
-                // acciones. Antes había que abrir la consola del navegador, lo
-                // cual dejaba al usuario sin salida si no era desarrollador.
                 if (fallos.length > 0 || descartadas > 0 || conflictos > 0) setPanelSync(true);
                 else g.sincronizarAhora();
               }}
               title={
                 historialParcial
-                  ? `Este equipo tiene ${descargas} de ${tope} consultas descargadas (tope del sincronizador). `
-                    + 'Las más antiguas no salen en la lista, pero se encuentran buscando por cédula o nombre, '
-                    + 'porque esa búsqueda consulta la nube.'
+                  ? `Este equipo tiene ${descargas} de ${tope} consultas descargadas.`
                   : fallos.length > 0 || descartadas > 0 || conflictos > 0
-                  ? 'Hay operaciones con problemas. Clic para verlas y resolverlas.'
-                  : `Cola Outbox: ${pendientes} pendiente(s). Clic para sincronizar ahora.`
+                  ? 'Hay operaciones con problemas. Clic para resolverlas.'
+                  : `Cola Outbox: ${pendientes} pendiente(s). Clic para sincronizar.`
               }
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-black shadow-sm transition-colors ${estadoOutbox.clases} ${sincronizando ? 'animate-pulse' : ''}`}
+              className={`flex items-center gap-2 px-2.5 sm:px-3 py-1.5 rounded-full border text-xs font-black shadow-sm transition-colors ${estadoOutbox.clases} ${sincronizando ? 'animate-pulse' : ''}`}
             >
               <span>{estadoOutbox.icono}</span>
               <span className="leading-tight text-left">
@@ -286,46 +242,41 @@ function App() {
               </span>
             </button>
           </div>
-          {/* Aviso explicito: si hay atascos, no hay que deducir que la barra
-              de arriba es clicable. */}
+
           {(fallos.length > 0 || descartadas > 0 || conflictos > 0) && (
             <button
               type="button"
               onClick={() => setPanelSync(true)}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-red-300 bg-red-100 text-red-800 text-xs font-black shadow-sm hover:bg-red-200 transition-colors"
+              className="flex items-center gap-2 px-3 py-1.5 rounded-full border border-red-300 bg-red-100 text-red-800 text-xs font-black shadow-sm hover:bg-red-200 transition-colors w-full sm:w-auto justify-center"
             >
               <span aria-hidden="true">⚠️</span>
               <span>Resolver problemas ({fallos.length + descartadas + conflictos})</span>
             </button>
           )}
-          <div className="flex flex-wrap gap-2 items-center">
-            <button onClick={() => g.setVistaActual('historial')} className={`px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-all ${g.vistaActual === 'historial' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>📋 Historial</button>
-            <button onClick={() => {g.setVistaActual('nueva_medicion'); g.setEditandoId(null); g.setPaciente(g.estadoInicial)}} className={`px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-all ${g.vistaActual === 'nueva_medicion' ? 'bg-teal-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>🩺 Clínica</button>
-            <button onClick={() => {g.setVistaActual('pedidos_lista'); g.setPedidoSeleccionado(null)}} className={`px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-all ${g.vistaActual.includes('pedido') ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>🛍️ Pedidos</button>
-            <button onClick={() => {g.setVistaActual('inventario'); g.cancelarEdicionInventario();}} className={`px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-all ${g.vistaActual === 'inventario' ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>👓 Inventario</button>
-            <button onClick={() => g.setVistaActual('precios')} className={`px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-all ${g.vistaActual === 'precios' ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>🏷️ Tarifario</button>
-            <button onClick={() => g.setVistaActual('dashboard')} className={`px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-all ${g.vistaActual === 'dashboard' ? 'bg-amber-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>📊 Stats</button>
+
+          <nav aria-label="Secciones principales" className="flex flex-wrap sm:flex-nowrap gap-1.5 sm:gap-2 items-center w-full md:w-auto overflow-x-auto pb-1 sm:pb-0">
+            <button type="button" onClick={() => g.setVistaActual('historial')} className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold shadow-sm transition-all shrink-0 ${g.vistaActual === 'historial' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>📋 Historial</button>
+            <button type="button" onClick={() => {g.setVistaActual('nueva_medicion'); g.setEditandoId(null); g.setPaciente(g.estadoInicial)}} className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold shadow-sm transition-all shrink-0 ${g.vistaActual === 'nueva_medicion' ? 'bg-teal-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>🩺 Clínica</button>
+            <button type="button" onClick={() => {g.setVistaActual('pedidos_lista'); g.setPedidoSeleccionado(null)}} className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold shadow-sm transition-all shrink-0 ${g.vistaActual.includes('pedido') ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>🛍️ Pedidos</button>
+            <button type="button" onClick={() => {g.setVistaActual('inventario'); g.cancelarEdicionInventario();}} className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold shadow-sm transition-all shrink-0 ${g.vistaActual === 'inventario' ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>👓 Inventario</button>
+            <button type="button" onClick={() => g.setVistaActual('precios')} className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold shadow-sm transition-all shrink-0 ${g.vistaActual === 'precios' ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>🏷️ Tarifario</button>
+            <button type="button" onClick={() => g.setVistaActual('dashboard')} className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold shadow-sm transition-all shrink-0 ${g.vistaActual === 'dashboard' ? 'bg-amber-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>📊 Stats</button>
             
-            <div className="border-l-2 border-gray-200 h-8 mx-2 hidden md:block"></div>
-            <button onClick={g.cerrarSesion} className="px-4 py-2 rounded-lg text-sm font-bold shadow-sm bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 transition-all ml-auto">🚪 Salir</button>
-          </div>
-        </div>
+            <div className="border-l-2 border-gray-200 h-6 mx-1 hidden md:block"></div>
+            <button type="button" onClick={g.cerrarSesion} className="px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold shadow-sm bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 transition-all shrink-0 ml-auto">🚪 Salir</button>
+          </nav>
+        </header>
 
-        {/* El borde va FUERA del Suspense: si una vista falla al dibujarse, la
-            barra de navegacion, el aviso de sincronizacion y el boton de salir
-            siguen vivos, y el usuario puede cambiar de seccion. La prop `clave`
-            hace que al cambiar de vista se monte de nuevo y se olvide el error. */}
         <ErrorBoundary etiqueta={ETIQUETAS[g.vistaActual] || g.vistaActual} clave={g.vistaActual}>
-        <Suspense fallback={<Cargando />}>
-
-        {g.vistaActual === 'dashboard' && <Dashboard stats={g.stats} historial={g.historial} inventario={g.inventario} />}
-        {g.vistaActual === 'precios' && <Tarifario nuevoPrecio={g.nuevoPrecio} setNuevoPrecio={g.setNuevoPrecio} precioInicial={g.precioInicial} editandoPrecioId={g.editandoPrecioId} setEditandoPrecioId={g.setEditandoPrecioId} manejarCambioPrecio={g.manejarCambioPrecio} guardarPrecio={g.guardarPrecio} busquedaPrecio={g.busquedaPrecio} setBusquedaPrecio={g.setBusquedaPrecio} listaPreciosFiltrada={g.listaPreciosFiltrada} cargarParaEditarPrecio={g.cargarParaEditarPrecio} eliminarPrecio={g.eliminarPrecio} />}
-        {g.vistaActual === 'inventario' && <Inventario inventario={g.inventario} nuevoItemInv={g.nuevoItemInv} editandoInvId={g.editandoInvId} cargandoImagen={g.cargandoImagen} manejarCambioInv={g.manejarCambioInv} setImagenSeleccionada={g.setImagenSeleccionada} guardarItemInventario={g.guardarItemInventario} cancelarEdicionInventario={g.cancelarEdicionInventario} cargarParaEditarInventario={g.cargarParaEditarInventario} eliminarItemInventario={g.eliminarItemInventario} />}
-        {g.vistaActual === 'historial' && <Historial historialReciente={g.historial} enviarWhatsApp={g.enviarWhatsApp} cargarParaEditarClinico={g.cargarParaEditarClinico} borrarHistoriaClinica={g.borrarHistoriaClinica} abrirPedido={g.abrirPedido} confirmarAccion={g.solicitarConfirmacion} crearNuevoPaciente={() => {g.setVistaActual('nueva_medicion'); g.setEditandoId(null); g.setPaciente(g.estadoInicial)}} />}
-        {g.vistaActual === 'nueva_medicion' && <Clinica paciente={g.paciente} setPaciente={g.setPaciente} estadoInicial={g.estadoInicial} editandoId={g.editandoId} setEditandoId={g.setEditandoId} guardarPacienteClinico={g.guardarPacienteClinico} manejarCambio={g.manejarCambio} edadActual={g.edadActual} claseInputRef={g.claseInputRef} historial={g.historial} cedulasArchivadas={g.cedulasArchivadas} guardando={g.guardando} />}
-        {g.vistaActual === 'pedidos_lista' && <PedidosLista crearVentaDirecta={g.crearVentaDirecta} busqueda={g.busqueda} setBusqueda={g.setBusqueda} pedidosFiltrados={g.pedidosFiltrados} imprimirRecibo={imprimirRecibo} imprimirOrdenTrabajo={imprimirOrdenTrabajo} cancelarPedido={g.cancelarPedido} abrirPedido={g.abrirPedido} refrescarDatos={g.obtenerDatos} />}
-        {g.vistaActual === 'pedidos_form' && g.pedidoSeleccionado && <PedidosForm pedidoSeleccionado={g.pedidoSeleccionado} setPedidoSeleccionado={g.setPedidoSeleccionado} setVistaActual={g.setVistaActual} guardarPedido={g.guardarPedido} manejarCambioPedido={g.manejarCambioPedido} cambiarMedicionPedido={g.cambiarMedicionPedido} medidasPaciente={g.medidasPaciente} inventario={g.inventario} accesorioOriginalId={g.accesorioOriginalId} forzarRecalculo={g.forzarRecalculo} confirmarAccion={g.solicitarConfirmacion} />}
-        </Suspense>
+          <Suspense fallback={<Cargando />}>
+            {g.vistaActual === 'dashboard' && <Dashboard stats={g.stats} historial={g.historial} inventario={g.inventario} />}
+            {g.vistaActual === 'precios' && <Tarifario nuevoPrecio={g.nuevoPrecio} setNuevoPrecio={g.setNuevoPrecio} precioInicial={g.precioInicial} editandoPrecioId={g.editandoPrecioId} setEditandoPrecioId={g.setEditandoPrecioId} manejarCambioPrecio={g.manejarCambioPrecio} guardarPrecio={g.guardarPrecio} busquedaPrecio={g.busquedaPrecio} setBusquedaPrecio={g.setBusquedaPrecio} listaPreciosFiltrada={g.listaPreciosFiltrada} cargarParaEditarPrecio={g.cargarParaEditarPrecio} eliminarPrecio={g.eliminarPrecio} />}
+            {g.vistaActual === 'inventario' && <Inventario inventario={g.inventario} nuevoItemInv={g.nuevoItemInv} editandoInvId={g.editandoInvId} cargandoImagen={g.cargandoImagen} manejarCambioInv={g.manejarCambioInv} setImagenSeleccionada={g.setImagenSeleccionada} guardarItemInventario={g.guardarItemInventario} cancelarEdicionInventario={g.cancelarEdicionInventario} cargarParaEditarInventario={g.cargarParaEditarInventario} eliminarItemInventario={g.eliminarItemInventario} />}
+            {g.vistaActual === 'historial' && <Historial historialReciente={g.historial} enviarWhatsApp={g.enviarWhatsApp} cargarParaEditarClinico={g.cargarParaEditarClinico} borrarHistoriaClinica={g.borrarHistoriaClinica} abrirPedido={g.abrirPedido} confirmarAccion={g.solicitarConfirmacion} crearNuevoPaciente={() => {g.setVistaActual('nueva_medicion'); g.setEditandoId(null); g.setPaciente(g.estadoInicial)}} />}
+            {g.vistaActual === 'nueva_medicion' && <Clinica paciente={g.paciente} setPaciente={g.setPaciente} estadoInicial={g.estadoInicial} editandoId={g.editandoId} setEditandoId={g.setEditandoId} guardarPacienteClinico={g.guardarPacienteClinico} manejarCambio={g.manejarCambio} edadActual={g.edadActual} claseInputRef={g.claseInputRef} historial={g.historial} cedulasArchivadas={g.cedulasArchivadas} guardando={g.guardando} />}
+            {g.vistaActual === 'pedidos_lista' && <PedidosLista crearVentaDirecta={g.crearVentaDirecta} busqueda={g.busqueda} setBusqueda={g.setBusqueda} pedidosFiltrados={g.pedidosFiltrados} imprimirRecibo={imprimirRecibo} imprimirOrdenTrabajo={imprimirOrdenTrabajo} cancelarPedido={g.cancelarPedido} abrirPedido={g.abrirPedido} refrescarDatos={g.obtenerDatos} />}
+            {g.vistaActual === 'pedidos_form' && g.pedidoSeleccionado && <PedidosForm pedidoSeleccionado={g.pedidoSeleccionado} setPedidoSeleccionado={g.setPedidoSeleccionado} setVistaActual={g.setVistaActual} guardarPedido={g.guardarPedido} manejarCambioPedido={g.manejarCambioPedido} cambiarMedicionPedido={g.cambiarMedicionPedido} medidasPaciente={g.medidasPaciente} inventario={g.inventario} accesorioOriginalId={g.accesorioOriginalId} forzarRecalculo={g.forzarRecalculo} confirmarAccion={g.solicitarConfirmacion} />}
+          </Suspense>
         </ErrorBoundary>
 
       </main>
