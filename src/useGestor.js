@@ -936,7 +936,7 @@ export function useGestor() {
       const fechaActual = new Date();
       const anio = fechaActual.getFullYear();
       const mes = String(fechaActual.getMonth() + 1).padStart(2, '0');
-      const inicioMes = `${anio}-${mes}-01`;
+      const prefijoMesActual = `${anio}-${mes}`; // Ej: "2026-10"
 
       let ventasMes = 0;
       let gastosMes = 0;
@@ -945,17 +945,17 @@ export function useGestor() {
       let abonosPendientes = 0;
       const cedulasUnicas = new Set();
 
-      // Calculamos exactamente sobre las ventas unificadas reales
+      // Recorremos las ventas unificadas
       todosLosPedidosUnificados.forEach(p => {
         if (!p) return;
         const estado = safeString(p.estado).trim().toLowerCase();
         if (estado === 'anulado') return;
 
-        const vFinal = calcularTotal(p.venta || 0, p.descuento || 0);
+        const vFinal = calcularTotal(p.venta || p.total || 0, p.descuento || 0);
         const abonoReal = safeNum(p.abono);
-        const saldo = calcularSaldo(p.venta || 0, p.descuento || 0, abonoReal);
+        const saldo = calcularSaldo(p.venta || p.total || 0, p.descuento || 0, abonoReal);
 
-        // Abonos pendientes reales
+        // Los saldos pendientes siempre son los que están por cobrar a la fecha
         if (saldo > 0) {
           abonosPendientes += saldo;
         }
@@ -966,13 +966,13 @@ export function useGestor() {
                           safeNum(p.costo_tratamientos_int) + 
                           safeNum(p.costo_varios_int);
 
-        // Histórico Total acumulado
+        // Histórico Total Acumulado (todo lo vendido históricamente)
         ventasTotal += vFinal;
         gastosTotal += gastoFila;
 
-        // Mes actual en curso
-        const fecha = safeString(p.fecha_venta || p.fecha || '').slice(0, 10);
-        if (fecha && fecha >= inicioMes) {
+        // Filtro estricto del mes actual: toma fecha_venta, fecha o created_at
+        const fechaRegistro = safeString(p.fecha_venta || p.fecha || p.created_at || '').slice(0, 7);
+        if (fechaRegistro === prefijoMesActual) {
           ventasMes += vFinal;
           gastosMes += gastoFila;
         }
@@ -983,7 +983,7 @@ export function useGestor() {
         }
       });
 
-      // Aseguramos conteo de todos los pacientes del historial médico
+      // Total de pacientes únicos del historial clínico
       (historial || []).forEach(h => {
         const c = safeString(h?.cedula).trim().toUpperCase();
         if (c && c !== '9999999999' && safeString(h?.nombre).trim().toUpperCase() !== 'CONSUMIDOR FINAL') {
@@ -991,18 +991,18 @@ export function useGestor() {
         }
       });
 
-      // Si el mes arrancó hoy y no tiene ventas aún, muestra el histórico total para evitar la pantalla vacía
-      const mostrarVentasMes = ventasMes > 0 ? ventasMes : ventasTotal;
-      const mostrarGastosMes = ventasMes > 0 ? gastosMes : gastosTotal;
-      const mostrarUtilidadMes = mostrarVentasMes - mostrarGastosMes;
-
       return {
-        ventasMes: Number(mostrarVentasMes.toFixed(2)),
-        gastosMes: Number(mostrarGastosMes.toFixed(2)),
-        utilidadNeta: Number(mostrarUtilidadMes.toFixed(2)),
+        // Métricas estrictas del mes en curso (si en octubre no hay ventas, reporta 0.00 con precisión)
+        ventasMes: Number(ventasMes.toFixed(2)),
+        gastosMes: Number(gastosMes.toFixed(2)),
+        utilidadNeta: Number((ventasMes - gastosMes).toFixed(2)),
+
+        // Métricas del histórico total (acumulado de agosto, septiembre, etc.)
         ventasTotal: Number(ventasTotal.toFixed(2)),
         gastosTotal: Number(gastosTotal.toFixed(2)),
         utilidadTotal: Number((ventasTotal - gastosTotal).toFixed(2)),
+
+        // Saldo total pendiente de cobro en caja
         abonosPendientes: Number(abonosPendientes.toFixed(2)),
         totalPacientes: cedulasUnicas.size,
         total: (historial || []).length
