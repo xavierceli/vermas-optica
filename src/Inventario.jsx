@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { safeString, safeNum } from './utilidades';
 import { resolverUrlImagenInventario } from './imagenesInventario';
 import { imprimirEtiqueta } from './impresiones';
@@ -12,27 +12,58 @@ export default function Inventario({
   const [imagenAmpliada, setImagenAmpliada] = useState(null);
   const [urlsImagenes, setUrlsImagenes] = useState({});
   const [imagenesFallidas, setImagenesFallidas] = useState({});
+  const imagenesProcesadas = useRef(new Set());
+  const inputFotoRef = useRef(null);
 
+  // Cierre de imagen ampliada con tecla Escape
   useEffect(() => {
-    const conFoto = (inventario || []).filter(item => item && item.imagen_url);
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && imagenAmpliada) {
+        setImagenAmpliada(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [imagenAmpliada]);
+
+  // Resolución controlada de URLs de Storage sin bucles de re-render
+  useEffect(() => {
+    const conFoto = (inventario || []).filter(item => item?.id && item?.imagen_url && !imagenesProcesadas.current.has(item.id));
     if (conFoto.length === 0) return;
+
     let vigente = true;
+    conFoto.forEach(item => imagenesProcesadas.current.add(item.id));
+
     void Promise.all(conFoto.map(async item => {
-      if (urlsImagenes[item.id]) return null;
       const url = await resolverUrlImagenInventario(item.imagen_url);
       return url ? [item.id, url] : null;
     })).then(resultados => {
       if (!vigente) return;
       const nuevos = {};
-      for (const par of resultados) if (par) nuevos[par[0]] = par[1];
-      if (Object.keys(nuevos).length > 0) setUrlsImagenes(prev => ({ ...prev, ...nuevos }));
+      for (const par of resultados) {
+        if (par) nuevos[par[0]] = par[1];
+      }
+      if (Object.keys(nuevos).length > 0) {
+        setUrlsImagenes(prev => ({ ...prev, ...nuevos }));
+      }
     });
+
     return () => { vigente = false; };
-  }, [inventario, urlsImagenes]);
+  }, [inventario]);
 
   const fotoDe = item => {
     if (!item || !item.imagen_url || imagenesFallidas[item.id]) return null;
     return urlsImagenes[item.id] || null;
+  };
+
+  const handleCancelarEdicion = () => {
+    if (inputFotoRef.current) inputFotoRef.current.value = '';
+    cancelarEdicionInventario();
+  };
+
+  const handleGuardar = async () => {
+    await guardarItemInventario();
+    if (inputFotoRef.current) inputFotoRef.current.value = '';
   };
 
   const itemsFiltrados = (inventario || []).filter(item => {
@@ -145,11 +176,11 @@ export default function Inventario({
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 border-t border-purple-200 pt-4 mt-2">
           <div>
             <label htmlFor="inv-costo" className="block text-xs font-bold text-gray-800 mb-1">Costo Compra ($)</label>
-            <input id="inv-costo" type="number" name="costo_compra" aria-label="Costo de compra" value={safeString(nuevoItemInv.costo_compra)} onChange={manejarCambioInv} className="w-full p-2 border border-gray-300 rounded-lg outline-none text-sm text-red-700 font-bold bg-white" />
+            <input id="inv-costo" type="number" step="0.01" name="costo_compra" aria-label="Costo de compra" value={safeString(nuevoItemInv.costo_compra)} onChange={manejarCambioInv} className="w-full p-2 border border-gray-300 rounded-lg outline-none text-sm text-red-700 font-bold bg-white" />
           </div>
           <div>
             <label htmlFor="inv-precio" className="block text-xs font-bold text-gray-800 mb-1">PVP Sugerido ($)</label>
-            <input id="inv-precio" type="number" name="precio" aria-label="Precio de venta" value={safeString(nuevoItemInv.precio)} onChange={manejarCambioInv} className="w-full p-2 border border-gray-300 rounded-lg outline-none text-sm text-green-700 font-bold bg-white" />
+            <input id="inv-precio" type="number" step="0.01" name="precio" aria-label="Precio de venta" value={safeString(nuevoItemInv.precio)} onChange={manejarCambioInv} className="w-full p-2 border border-gray-300 rounded-lg outline-none text-sm text-green-700 font-bold bg-white" />
           </div>
           <div>
             <label htmlFor="inv-stock" className="block text-xs font-bold text-gray-800 mb-1">Unidades en Stock</label>
@@ -157,17 +188,17 @@ export default function Inventario({
           </div>
           <div>
             <label htmlFor="inv-foto" className="block text-xs font-bold text-gray-800 mb-1">Fotografía (Opcional)</label>
-            <input id="inv-foto" type="file" accept="image/*" aria-label="Seleccionar foto del producto" onChange={(e) => setImagenSeleccionada(e.target.files[0])} className="w-full text-xs text-gray-700 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-purple-200 file:text-purple-900 hover:file:bg-purple-300" />
+            <input id="inv-foto" ref={inputFotoRef} type="file" accept="image/*" aria-label="Seleccionar foto del producto" onChange={(e) => setImagenSeleccionada(e.target.files[0] || null)} className="w-full text-xs text-gray-700 file:mr-2 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-purple-200 file:text-purple-900 hover:file:bg-purple-300" />
           </div>
         </div>
 
         <div className="mt-6 flex flex-col sm:flex-row justify-end gap-3">
           {editandoInvId && (
-            <button type="button" onClick={cancelarEdicionInventario} className="px-5 py-2.5 bg-gray-500 hover:bg-gray-600 text-white rounded-lg font-bold transition-colors">
+            <button type="button" onClick={handleCancelarEdicion} className="px-5 py-2.5 bg-gray-500 hover:bg-gray-600 text-white rounded-lg font-bold transition-colors">
               Cancelar
             </button>
           )}
-          <button type="button" onClick={guardarItemInventario} disabled={cargandoImagen} className={`px-8 py-2.5 rounded-lg font-bold text-white shadow-md transition-all ${cargandoImagen ? 'bg-gray-400 cursor-not-allowed' : 'bg-purple-600 hover:bg-purple-700 active:scale-95'}`}>
+          <button type="button" onClick={handleGuardar} disabled={cargandoImagen} className={`px-8 py-2.5 rounded-lg font-bold text-white shadow-md transition-all ${cargandoImagen ? 'bg-gray-400 cursor-not-allowed' : 'bg-purple-600 hover:bg-purple-700 active:scale-95'}`}>
             {cargandoImagen ? 'Subiendo Imagen...' : 'Guardar Producto'}
           </button>
         </div>
