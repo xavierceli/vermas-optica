@@ -27,7 +27,7 @@ export const documentoValido = doc => {
   const str = String(doc ?? '').trim().toUpperCase();
   if (!str) return false;
   if (str === '9999999999') return true;          // Consumidor final
-  if (/^\d{10}$/.test(str) \vert{}\vert{} /^\d{13}$/.test(str)) return true;
+  if (/^\d{10}$/.test(str) || /^\d{13}$/.test(str)) return true;
   // Pasaporte: 5 a 20 caracteres con letras y dígitos
   if (/^[A-Z0-9]{5,20}$/.test(str) && /[A-Z]/.test(str) && /\d/.test(str)) return true;
   return false;
