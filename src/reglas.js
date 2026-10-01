@@ -1,13 +1,10 @@
 // ---------------------------------------------------------------------------
 // REGLAS DE NEGOCIO COMPARTIDAS
-// Fuente unica de verdad para las reglas clinicas y de pricing. Antes estas
-// formulas estaban duplicadas en Clinica, useGestor, PedidosForm, PedidosLista,
-// impresiones y localRepository; cualquier divergencia producia saldos
-// distintos entre la pantalla, el recibo y el servidor.
-// El servidor (migracion 001) calcula: round(venta - venta * descuento / 100, 2)
+// Fuente única de verdad para las reglas clínicas y de pricing.
+// El servidor (PostgreSQL) calcula: round(venta - venta * descuento / 100, 2)
 // ---------------------------------------------------------------------------
 
-// A partir de 47.00 D se considera queratometria alta (limite inclusivo).
+// A partir de 47.00 D se considera queratometría alta (límite inclusivo).
 export const LIMITE_QUERATOMETRIA = 47;
 export const AVISO_QUERATOMETRIA = 'QUERATOMETRIAS ALTAS';
 
@@ -16,9 +13,9 @@ const aNumero = valor => {
   return Number(String(valor).trim().replace(',', '.'));
 };
 
-// --- Clinica ---------------------------------------------------------------
+// --- Clínica ---------------------------------------------------------------
 
-/** ¿El valor indicado en un campo de queratometria supera el limite? */
+/** ¿El valor indicado en un campo de queratometría supera el límite? */
 export const esQueratometriaAlta = (registro, campo) => {
   const valor = aNumero(registro?.[campo]);
   return Number.isFinite(valor) && valor >= LIMITE_QUERATOMETRIA;
@@ -30,9 +27,9 @@ export const ojoConQueratometriaAlta = (registro, ojo) => ['k1_d_', 'k2_d_']
 
 /**
  * Devuelve una copia del registro con el aviso agregado en las observaciones
- * del ojo, sin borrar lo que el especialista ya escribio. No duplica el aviso.
- * Si el valor vuelve a rango normal y el texto era solo el aviso automatico,
- * lo retira para no dejar una observacion falsa.
+ * del ojo, sin borrar lo que el especialista ya escribió. No duplica el aviso.
+ * Si el valor vuelve al rango normal y el texto era solo el aviso automático,
+ * lo limpia limpiamente sin romper los inputs controlados de React.
  */
 export const aplicarAvisoQueratometria = (registro, ojo) => {
   const claveObs = `obs_k_${ojo}`;
@@ -48,7 +45,7 @@ export const aplicarAvisoQueratometria = (registro, ojo) => {
 
   if (tieneAviso && textoActual === AVISO_QUERATOMETRIA) {
     const siguiente = { ...registro };
-    delete siguiente[claveObs];
+    siguiente[claveObs] = '';
     return siguiente;
   }
   return registro;
@@ -56,28 +53,28 @@ export const aplicarAvisoQueratometria = (registro, ojo) => {
 
 // --- Pricing ---------------------------------------------------------------
 
-const ESCALA = 1000000n; // 6 decimales de precision intermedia
+const ESCALA = 1000000n; // 6 decimales de precisión intermedia
 
-/** Convierte a numero devolviendo 0 ante valores vacios o no numericos. */
+/** Convierte a número devolviendo 0 ante valores vacíos o no numéricos. */
 export const aMonto = valor => {
   const parsed = aNumero(valor);
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
-/** Acota el descuento al rango que valida el servidor (0 a 100). */
+/** Acota el descuento al rango válido (0 a 100). */
 export const normalizarDescuento = descuento => {
   const base = aMonto(descuento);
   return Math.min(100, Math.max(0, base));
 };
 
-/** Escala un monto a entero de 6 decimales para evitar error de punto flotante. */
+/** Escala un monto a entero de 6 decimales para evitar errores de punto flotante. */
 const aEscala = valor => {
   const numero = aMonto(valor);
   if (!Number.isFinite(numero)) return 0n;
   return BigInt(Math.round(numero * 1e6));
 };
 
-/** Division entera redondeando como PostgreSQL: .5 siempre hacia arriba. */
+/** División entera redondeando como PostgreSQL: .5 siempre hacia arriba. */
 const dividirRedondeando = (dividendo, divisor) => {
   const entero = dividendo / divisor;
   const resto = dividendo % divisor;
@@ -95,10 +92,8 @@ const redondearSql = valorEscalado => {
 
 /**
  * Costo final = venta - venta * descuento / 100.
- * Se calcula con enteros escalados (no con float) para producir EXACTAMENTE el
- * mismo centavo que round(venta - venta * descuento / 100, 2) en PostgreSQL.
- * Con float, 250.50 @ 13% daba 217.93 y el servidor 217.94: esa diferencia de
- * un centavo hacia que el cobro local rechazara pagos que el servidor acepta.
+ * Calcula con enteros escalados para producir exactamente el mismo centavo
+ * que round(venta - venta * descuento / 100, 2) en PostgreSQL.
  */
 export const calcularTotal = (venta, descuento) => {
   const base = aEscala(venta);
@@ -118,19 +113,11 @@ export const calcularSaldo = (venta, descuento, abono) =>
   Number((calcularTotal(venta, descuento) - aMonto(abono)).toFixed(2));
 
 /**
- * ¿Este error significa que NO HAY RED, o que el servidor ha contestado?
- *
- * Importa porque navigator.onLine no sirve para saber si hay internet: con el
- * wifi del negocio conectado a un router sin salida, onLine sigue diciendo
- * true. El sincronizador fallaba, la app se creia al dia y no avisaba de nada:
- * el optometria guardinga creyendo que estaba en la nube.
- *
- * No es un error de "servidor que dice que no": eso es un rechazo y hay que
- * enseñarselo tal cual.
+ * Determina si el error corresponde a una pérdida de red o a un rechazo del servidor.
  */
 export const esFalloDeRed = (error) => {
   const texto = String(error?.message || error || '').toLowerCase();
   if (/rechaz|rechazo|violat|constraint|duplicate key|401|403|409|400/.test(texto)) return false;
-  return /failed to fetch|network|load failed|aborted|tiempo agotado|timeout|conexion|conexión|dns|socket/.test(texto)
+  return /failed to fetch|network|load failed|aborted|tiempo agotado|timeout|conexion|conexión|dns|socket|502|503|504|offline|err_/.test(texto)
     || error?.name === 'TypeError';
 };
