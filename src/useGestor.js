@@ -16,30 +16,20 @@ export function useGestor() {
   const [cargandoAuth, setCargandoAuth] = useState(true);
   const [guardando, setGuardando] = useState(false);
 
-  // El aviso en pantalla vive en el almacen global (avisos.js) para que
-  // CUALQUIER modulo pueda avisar, incluso los que no usan React (el boton del
-  // comprobante, las descargas). Aqui solo se refleja en el estado.
   const [toast, setToast] = useState(() => leerAviso());
   useEffect(() => suscribirAvisos(setToast), []);
 
-  // `duracion` permite que los mensajes de validacion, que son largos y listan
-  // varios campos, permanezcan mas tiempo en pantalla que un ok simple.
   const mostrarToast = (mensaje, tipo = 'success', duracion = 3500) =>
     mostrarAviso(mensaje, tipo, duracion);
 
   const [confirmDialog, setConfirmDialog] = useState({ visible: false, mensaje: '', onConfirm: null, onCancel: null });
 
-  // Cancelar (boton o clic en el fondo). Se extrae para no repetir la logica y
-  // para que el dialogo quede SIEMPRE cerrado, llegue como llegue el clic.
   const cancelarConfirmacion = () => {
     const pendiente = confirmDialog.onCancel;
     setConfirmDialog({ visible: false, mensaje: '', onConfirm: null, onCancel: null });
     if (typeof pendiente === 'function') pendiente();
   };
 
-  // Aceptar. Cierra SIEMPRE y despues lanza lo que hubiera: asi sirve tanto para
-  // la confirmacion por promesa (que ya se resuelve sola) como para la antigua
-  // por callback (que no cierra nada por su cuenta).
   const aceptarConfirmacion = () => {
     const pendiente = confirmDialog.onConfirm;
     setConfirmDialog({ visible: false, mensaje: '', onConfirm: null, onCancel: null });
@@ -50,14 +40,6 @@ export function useGestor() {
     setConfirmDialog({ visible: true, mensaje, onConfirm: onConfirmCallback, onCancel: null });
   };
 
-  /**
-   * Confirmacion como PROMESA. Sustituye a window.confirm, que congela la pagina
-   * y corta el flujo a mitad de una venta.
-   *
-   * IMPORTANTE: todas las salidas (Sí, Cancelar y el clic en el fondo) resuelven
-   * la promesa, y solo la primera vez. Una promesa que se queda colgada
-   * reproduce justo el bug de "Actualizando..." infinito que ya arrastramos.
-   */
   const confirmar = (mensaje, textoSi = 'Sí, Continuar') => new Promise(resolve => {
     let respondido = false;
     const responder = valor => {
@@ -72,8 +54,6 @@ export function useGestor() {
     });
   });
 
-  // El formulario de consulta, el de inventario y el de tarifas viven ahora en
-  // fichaClinica.js: son puro dato, sin React, y se pueden probar de verdad.
   const hoy = hoyISO();
   const estadoInicial = crearEstadoPaciente(hoy);
   const invInicial = INV_INICIAL;
@@ -81,16 +61,7 @@ export function useGestor() {
 
   const [paciente, setPaciente] = useState(estadoInicial);
   const [historial, setHistorial] = useState([]);
-  // Cedulas que este dispositivo ha archivado. La busqueda en la nube NO puede
-  // saberlo por su cuenta (la vista no trae archived_at), asi que hay que
-  // pasarle esta lista: si no, un paciente borrado reaparece al escribir su
-  // nombre en Clinica y la app le rellena los datos de un paciente que ya no
-  // existe.
   const [cedulasArchivadas, setCedulasArchivadas] = useState([]);
-  // Ventas de pacientes que ya no estan en el historial clinico, pero que siguen
-  // vivas y sujetando stock. Si desaparecieran de Pedidos, el optometria no
-  // podria anularlas y ese stock no volveria nunca al inventario. Solo se
-  // esconden del historial, no de la lista de ventas.
   const [ventasArchivadas, setVentasArchivadas] = useState([]);
   const [inventario, setInventario] = useState([]);
   const [listaPrecios, setListaPrecios] = useState([]);
@@ -111,10 +82,8 @@ export function useGestor() {
   const [accesorioOriginalId, setAccesorioOriginalId] = useState('');
   const [medidasPaciente, setMedidasPaciente] = useState([]);
 
-  // LOTE 6: números oficiales calculados por el servidor (exactos sobre TODA la base)
   const [statsRemotos, setStatsRemotos] = useState(null);
   const [syncEstado, setSyncEstado] = useState({ phase: 'idle', online: true, pending: 0, conflicts: 0, lastSync: null, lastError: null });
-  // Entrada con PIN local: hay datos en el dispositivo pero no sesion del servidor.
   const [modoSinConexion, setModoSinConexion] = useState(false);
   const [dispositivo, setDispositivo] = useState({ enrolado: false, cargando: true, identidad: null });
 
@@ -140,8 +109,6 @@ export function useGestor() {
     mostrarToast('Acceso sin conexión desactivado.', 'success');
   };
 
-
-
   const cerrarSesion = () => {
     const estabaSinConexion = modoSinConexion;
     const aviso = estabaSinConexion
@@ -164,11 +131,6 @@ export function useGestor() {
   };
 
   const obtenerDatos = async ({ sync = true } = {}) => {
-    // La migracion del cache legacy es una tarea OPCIONAL: sirve para no perder
-    // datos de una version vieja de la app, pero si falla no puede impedir que
-    // la app cargue. Antes su error se propagaba, abortaba obtenerSnapshotLocal
-    // y dejaba la pantalla vacia, y ademas se reintentaba en bucle porque la
-    // bandera de "ya migre" solo se escribia al final del exito.
     try {
       await importLegacyCache();
     } catch (error) {
@@ -178,7 +140,8 @@ export function useGestor() {
     aplicarSnapshotLocal(snapshot);
     const remoteStats = (await localDb.meta.get('remoteStats'))?.value || null;
     if (remoteStats) setStatsRemotos(remoteStats);
-if (sync) {
+
+    if (sync) {
       void sincronizarAhora({ pull: true }).then(async () => {
         aplicarSnapshotLocal(await obtenerSnapshotLocal());
         const statsFrescos = (await localDb.meta.get('remoteStats'))?.value || null;
@@ -187,19 +150,12 @@ if (sync) {
     }
     return snapshot;
   };
+
   useEffect(() => {
     iniciarMotorSync();
     return suscribirSync(setSyncEstado);
   }, []);
-  // BUG REAL: las estadisticas se quedaban congeladas al hacer una venta.
-  // El motor escribe 'remoteStats' en la base local en cada pull, pero ese valor
-  // solo se copiaba a la pantalla al ENTRAR (obtenerDatos). El sincronizador, sin
-  // embargo, corre solo cada 30 s: la venta se subia, el servidor recalculaba sus
-  // totales, y el panel seguia enseñando los de antes. Por eso "cuando hay una
-  // venta no cambia nada en Stats".
-  //
-  // Se relee cuando cambia lastSync, que es la marca de "el pull termino bien".
-  // Sin esto habia que recargar la app a mano para ver un euro nuevo.
+
   const ultimaSync = syncEstado?.lastSync;
   useEffect(() => {
     if (!ultimaSync) return;
@@ -209,6 +165,7 @@ if (sync) {
       .catch(() => {});
     return () => { vigente = false; };
   }, [ultimaSync]);
+
   useEffect(() => {
     let vigente = true;
     leerEnrolamiento(localDb.meta).then(enrolamiento => {
@@ -216,18 +173,12 @@ if (sync) {
     });
     return () => { vigente = false; };
   }, []);
-  // Desbloqueo con PIN local: abre los datos YA guardados en este dispositivo.
-  // No genera ningun token del servidor, por lo que la sincronizacion queda
-  // suspendida hasta que se vuelva a entrar con correo y contrasena.
+
   const entrarSinConexion = async pin => {
     const resultado = await intentarDesbloqueo({
       pin,
       meta: localDb.meta,
       alBloquear: async () => {
-        // Antes aqui se llamaba a resetLocalDatabase(), y el quinto PIN
-        // equivocado destruia TODA la informacion pendiente de subir. Bloquear
-        // el acceso ya frena la fuerza bruta; perder la semana de trabajo del
-        // optometra no anadeia nada a la seguridad.
         mostrarToast('Demasiados intentos. Espera 15 minutos antes de volver a intentar.', 'error');
       }
     });
@@ -249,7 +200,6 @@ if (sync) {
       if (montado) setCargandoAuth(false);
     }, 1000);
 
-    // Si viene de un enlace de recuperación, bloquear el acceso hasta crear la nueva clave
     const cambioClavePendiente = sessionStorage.getItem('vermas_cambio_clave') === '1';
 
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -275,9 +225,6 @@ if (sync) {
       if (montado) {
         if (event === 'PASSWORD_RECOVERY') {
           sessionStorage.setItem('vermas_cambio_clave', '1');
-          // Un restablecimiento de contrasena nunca debe coexistir con el acceso
-          // por PIN: si alguien esta cambiando la clave, el dispositivo no puede
-          // quedarse abierto con el desbloqueo local.
           setModoSinConexion(false);
           fijarSesionAusente(false);
           setEstaAutenticado(false);
@@ -296,8 +243,6 @@ if (sync) {
       clearTimeout(timerSeguridad);
       subscription?.unsubscribe();
     };
-    // La suscripción de auth debe vivir una sola vez.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const manejarCambio = (e) => {
@@ -307,15 +252,11 @@ if (sync) {
     
     let nuevoPaciente = { ...paciente, [name]: value };
 
-    // REGLA CLÍNICA: cualquier queratometría alta deja constancia en observaciones.
     const campoQueratometria = /^(k1_d|k2_d)_(od|oi)$/.exec(name);
     if (campoQueratometria) {
       nuevoPaciente = aplicarAvisoQueratometria(nuevoPaciente, campoQueratometria[2]);
     }
     if (name === 'cedula') {
-      // La regla vive en fichaClinica.js porque es la que decide si se trae la
-      // ficha de un paciente que ya existe: una cedula a medias NUNCA puede
-      // borrar el formulario que el optometria lleva media hora llenando.
       nuevoPaciente = aplicarCedula({ paciente, value, historial, hoy }).ficha;
     }
     setPaciente(nuevoPaciente);
@@ -375,9 +316,6 @@ if (sync) {
       if (imagenSeleccionada) {
         const archivoComprimido = await comprimirImagen(imagenSeleccionada);
         const nombreArchivo = `producto_${Date.now()}_${generarId().substring(0, 8)}.jpg`;
-        // Se intenta subir; si no hay red o el bucket falla, la foto se guarda
-        // como Blob en el dispositivo y sube sola al recuperar conexion. Antes
-        // se perdia en silencio pese a que el aviso prometia lo contrario.
         let subido = false;
         if (navigator.onLine) {
           try {
@@ -385,14 +323,10 @@ if (sync) {
               .from('inventario_imagenes')
               .upload(nombreArchivo, archivoComprimido, { contentType: 'image/jpeg', upsert: true });
             if (errSubida) throw new Error(errSubida.message);
-            // BUG: antes se guardaba getPublicUrl, pero el bucket es PRIVADO
-            // (migraciones 006 y 008), asi que esa URL responde 400 y la foto salia
-            // rota. En la base se guarda solo la RUTA del archivo; la URL firmada
-            // se genera en el momento de mostrarla (ver imagenesInventario.js).
             urlImagen = nombreArchivo;
             subido = true;
           } catch (errImg) {
-            console.warn('No se pudo subir la foto ahora, se guardara localmente:', errImg);
+            console.warn('No se pudo subir la foto ahora, se guardará localmente:', errImg);
           }
         }
         if (!subido) {
@@ -409,12 +343,6 @@ if (sync) {
         }
       }
 
-      // BUG: se enviaba el objeto completo con TODOS los campos y los vacios se
-      // convertian en null. Como el formulario oculta campos segun la categoria,
-      // al editar un armazon se mandaban vacios nombre_accesorio, caracteristica y
-      // material_nota, y al editar un accesorio se mandaban vacios codigo, tipo,
-      // material y medidas: el servidor los guardaba como NULL y se perdian.
-      // Aqui se arma SOLO con los campos que apply de la categoria actual.
       const esArmazon = nuevoItemInv.categoria === 'Armazon';
       const datosAGuardar = {
         categoria: nuevoItemInv.categoria,
@@ -439,8 +367,7 @@ if (sync) {
               caracteristica: nuevoItemInv.caracteristica
             })
       };
-      // La foto solo se manda si hay una nueva: si no, se omite la clave para no
-      // borrar la que ya tiene en el servidor.
+
       if (urlImagen !== null) datosAGuardar.imagen_url = urlImagen;
       Object.keys(datosAGuardar).forEach(key => { if (datosAGuardar[key] === '') datosAGuardar[key] = null; });
       await guardarInventarioLocal({ id: editandoInvId || undefined, ...datosAGuardar });
@@ -480,10 +407,6 @@ if (sync) {
     if (guardando) return;
 
     try {
-      // Una sola validacion que reporta TODO lo que falta, no solo el primer
-      // problema. Antes decia "FALTAN DATOS" sin decir que campo, y el nombre
-      // no se validaba: se podia guardar una ficha sin nombre que despues
-      // rompia la venta ("El nombre del paciente es obligatorio").
       const validacion = validarFichaClinica(paciente);
       if (!validacion.ok) {
         setIntentadoGuardar(true);
@@ -506,7 +429,6 @@ if (sync) {
 
       const idConsulta = editandoId || safeString(paciente.id) || generarId();
 
-      // Conservar el ID antes del envío permite reintentar sin duplicar la evaluación.
       if (!editandoId && !paciente.id) {
         setPaciente(prev => ({ ...prev, id: idConsulta }));
       }
@@ -516,9 +438,6 @@ if (sync) {
         consultation: { ...clinicaData, id: idConsulta }
       });
 
-      // El mensaje era "guardado en el dispositivo" y el usuario no sabia si
-      // habia llegado a la nube. Ahora se intenta subir ANTES de avisar, y el
-      // aviso dice con claridad que paso en cada caso.
       await terminarGuardado();
       const estadoSync = await sincronizarAhora({ pull: false });
       const subio = estadoSync?.phase === 'synced' || (estadoSync?.pending || 0) === 0;
@@ -550,21 +469,24 @@ if (sync) {
     }
     try {
       const resultado = await archivarConsultaLocal(item.id);
-      // Si ya estaba archivada se dice con claridad en vez de mostrar un error
-      // rojo: para el usuario el resultado pedido (que desaparezca) ya ocurrio.
       if (resultado?.yaArchivada) {
         mostrarToast(resultado.motivo || 'La consulta ya estaba archivada.', 'warning');
         await obtenerDatos({ sync: false });
         return;
       }
+      
       await obtenerDatos({ sync: false });
-      void sincronizarAhora({ pull: false });
-      // Se dice "historial completo" y no "consulta": el boton archiva TODAS las
-      // visitas del paciente, no solo la de la tarjeta. Antes decia "Consulta
-      // archivada" y el optometria creia haber borrado a la persona cuando solo
-      // se habia escondido una visita: las demas seguian vivas en el servidor y
-      // el paciente volvia a salir en cada sincronizacion.
-      mostrarToast('Paciente eliminado: se archivó todo su historial.', 'success');
+      
+      // Sincronización explícita y esperada: sube el archivado a Supabase de inmediato
+      const estadoSync = await sincronizarAhora({ pull: true });
+      const subio = (estadoSync?.pending || 0) === 0;
+
+      mostrarToast(
+        subio 
+          ? 'Paciente eliminado y archivado en todos los dispositivos.' 
+          : 'Paciente eliminado localmente. Se sincronizará con la nube al reconectar.', 
+        subio ? 'success' : 'warning'
+      );
     } catch (err) {
       mostrarToast('No se pudo archivar la consulta: ' + err.message, 'error');
     }
@@ -587,16 +509,6 @@ if (sync) {
     itemFormateado._nueva_venta = esVentaNueva;
     if (esVentaNueva) {
       itemFormateado.pedido_id = generarId();
-      // BUG REAL: al crear una venta NUEVA para un paciente que ya tenia otra,
-      // se arrastraba el armazon, el tipo de lente y los tratamientos de la
-      // VENTA ANTERIOR. El optometria abria el formulario de una segunda venta y
-      // el armazon de la primera ya estaba puesto: si no lo cambiaba, se vendia
-      // el armazon equivocado y el precio se calculaba sobre el, en silencio.
-      //
-      // Una venta nueva arranca en blanco. Lo que si se conserva son los DATOS
-      // CLINICOS del paciente (esfera, cilindro...): son suyos, no de la venta.
-      // Cada campo se limpia SOLO si viene de la venta anterior, nunca un dato
-      // clinico que el optometria haya escrito.
       const CAMPOS_DE_LA_VENTA = [
         'codigo_armazon', 'tipo_armazon', 'param_horizontal', 'param_puente',
         'param_vertical', 'param_diagonal', 'tipo_lente', 'material_lente',
@@ -640,7 +552,6 @@ if (sync) {
     if (!pedidoActual) return 0;
     let total = 0;
 
-    // ARMAZÓN (busca su precio en el inventario por código)
     if (pedidoActual.codigo_armazon) {
       const armazonEncontrado = (inventario || []).find(
         item => String(item.codigo).trim().toUpperCase() === String(pedidoActual.codigo_armazon).trim().toUpperCase()
@@ -650,7 +561,6 @@ if (sync) {
       }
     }
 
-    // ACCESORIO (busca su precio en el inventario por id)
     if (pedidoActual.accesorio_id) {
       const accesorioEncontrado = (inventario || []).find(
         item => String(item.id) === String(pedidoActual.accesorio_id)
@@ -660,16 +570,11 @@ if (sync) {
       }
     }
 
-    // MATERIALES Y TRATAMIENTOS: leídos de TU TARIFARIO (tipo_lente='CALCULO', rango='BASE')
-    // Si no existe la fila, NO se inventa un precio en el cliente: se cobra 0 y se
-    // avisa. Antes habia una tabla de respaldo fija en este archivo, que se
-    // desincronizaba en silencio del tarifario real cada vez que alguien cambiaba
-    // un precio, y nadie se enteraba hasta que la caja no cuadraba.
     const bases = (listaPrecios || []).filter(p => safeString(p.tipo_lente) === 'CALCULO' && safeString(p.rango_medida) === 'BASE');
     const precioDe = (material) => {
       const fila = bases.find(b => safeString(b.material).trim().toUpperCase() === String(material).trim().toUpperCase());
       if (fila) return safeNum(fila.precio_sugerido);
-      console.warn(`[precio] "${material}" no tiene fila BASE en el tarifario; se cobrara $0. Agregala en la pantalla Tarifario.`);
+      console.warn(`[precio] "${material}" no tiene fila BASE en el tarifario; se cobrara $0.`);
       return 0;
     };
 
@@ -732,12 +637,10 @@ if (sync) {
         return false;
       }
 
-      // El nombre se valida ANTES que nada se escriba en la base. Antes se
-      // comprobaba mas abajo y el error salia como excepcion interna.
       const cedulaPedido = safeString(pedidoSeleccionado.cedula).trim().toUpperCase();
       const nombrePedido = safeString(pedidoSeleccionado.nombre).trim() || (cedulaPedido === '9999999999' ? 'CONSUMIDOR FINAL' : '');
       if (!nombrePedido) {
-        mostrarToast('Falta el nombre del paciente. Sin nombre no se puede emitir el recibo ni identificar la venta.', 'warning', 7000);
+        mostrarToast('Falta el nombre del paciente. Sin nombre no se puede emitir el recibo.', 'warning', 7000);
         return false;
       }
 
@@ -791,14 +694,9 @@ if (sync) {
         initialPayment
       });
 
-      // El guardado local ya quedo persistido: navegamos y refrescamos en segundo
-      // plano para que el boton no espere un snapshot completo de IndexedDB.
       setPedidoSeleccionado(null);
       setVistaActual('pedidos_lista');
       mostrarToast('Venta guardada en este dispositivo.', 'success');
-      // Se espera a la sincronizacion para poder decir con certeza si la venta
-      // llego a la nube. Antes solo decia "guardada en el dispositivo", que no
-      // aclaraba nada y hacia dudar de si la venta estaba a salvo.
       void obtenerDatos({ sync: true });
       const estadoSync = await sincronizarAhora({ pull: false });
       const subio = (estadoSync?.pending || 0) === 0;
@@ -809,19 +707,16 @@ if (sync) {
         subio ? 'success' : 'warning'
       );
       return true;
-} catch (e) {
+    } catch (e) {
       mostrarToast('Error al guardar pedido: ' + e.message, 'error');
       return false;
     } finally {
       guardandoPedidoRef.current = false;
     }
   };
+
   const cancelarPedido = (item) => {
     if (!item.pedido_id) {
-      // No es un aviso genérico: este registro viene del historial cacheado del
-      // servidor y nunca tuvo una venta creada en ESTE dispositivo, así que no
-      // hay nada que anular aquí. Se explica el porque para que el usuario sepa
-      // que no es un fallo temporal.
       return mostrarToast(
         'Este registro no tiene venta local, solo la consulta clínica. No hay nada que anular aquí.',
         'warning'
@@ -829,9 +724,6 @@ if (sync) {
     }
 
     const abono = Number(safeNum(item.abono).toFixed(2));
-    // El servidor prohibe anular una venta con dinero abonado. La salida
-    // correcta para la optica es devolver ese dinero de forma explicita y
-    // trazable, no anular en silencio.
     const mensaje = abono > 0
       ? `¿Anular la venta? Tiene $${abono.toFixed(2)} abonado: primero se le devolverá ese dinero y luego se devolverá el stock.`
       : '¿Anular la venta y devolver el stock local?';
@@ -842,8 +734,6 @@ if (sync) {
           ? await anularVentaConReembolso({ saleId: item.pedido_id, method: 'Efectivo' })
           : await anularVentaLocal(item.pedido_id);
         await obtenerDatos({ sync: false });
-        // Sin esta llamada la anulacion se queda solo en este dispositivo: el
-        // servidor nunca se entera y la venta sigue viva alli.
         const estado = await sincronizarAhora({ pull: true });
         const falloServidor = estado?.phase === 'error' ? estado.lastError : null;
         if (falloServidor) {
@@ -873,27 +763,17 @@ if (sync) {
     window.open(`https://wa.me/${telf}?text=${encodeURIComponent(msj)}`, '_blank');
   };
 
-  // Los dos filtros siguientes recorren listas enteras en cada render del hook.
-  // useGestor se vuelve a renderizar con cualquier pulsación de tecla de la
-  // clínica, así que aquí se filtraba miles de filas para un resultado idéntico.
   const queryGlobal = safeString(busqueda).toLowerCase();
   const pedidosFiltrados = useMemo(() => {
-    // Pedidos se alimenta del historial clinico MAS las ventas de pacientes ya
-    // archivados. Sin estas ultimas, archivar un paciente dejaba su venta viva
-    // sujetando el stock y sin ninguna forma de anularla desde la app: el
-    // inventario se comia el producto para siempre.
     const base = [...(historial || []), ...(ventasArchivadas || [])];
     return base.filter(item => {
-    if (!item) return false;
-    const matchSearch = safeString(item.nombre).toLowerCase().includes(queryGlobal) || safeString(item.cedula).includes(queryGlobal);
-    // Mismo criterio que PedidosLista: sin venta real (pedido_id) no hay pedido.
-    // El historial del servidor marca 'En laboratorio' en consultas que nunca
-    // tuvieron venta, y eso las hacia aparecer en Pedidos con monto $0.
-    const tienePedido = Boolean(safeString(item.pedido_id).trim())
-      || safeNum(item.venta) > 0
-      || safeString(item.codigo_armazon).trim() !== ''
-      || safeString(item.accesorio_id).trim() !== '';
-    return queryGlobal ? matchSearch : tienePedido;
+      if (!item) return false;
+      const matchSearch = safeString(item.nombre).toLowerCase().includes(queryGlobal) || safeString(item.cedula).includes(queryGlobal);
+      const tienePedido = Boolean(safeString(item.pedido_id).trim())
+        || safeNum(item.venta) > 0
+        || safeString(item.codigo_armazon).trim() !== ''
+        || safeString(item.accesorio_id).trim() !== '';
+      return queryGlobal ? matchSearch : tienePedido;
     });
   }, [historial, ventasArchivadas, queryGlobal]);
 
@@ -907,13 +787,6 @@ if (sync) {
     });
   }, [listaPrecios, busquedaPrecio]);
 
-  // LOTE 6: stats con doble fuente — servidor (exacto sobre TODA la base) o local (plan B sin internet)
-  // Envuelto en useMemo: antes era una IIFE que recorria el historial entero en
-  // CADA render, con miles de filas y escribiendose cualquier tecla de la
-  // clinica. Ahora solo recalcula si cambian los datos.
-  // Los totales salen de calcularTotal(), NO de una resta con float: reglas.js
-  // documenta que 250.50 @ 13% da 217.93 con float y 217.94 en PostgreSQL, y
-  // ese centavo de diferencia hacia que el dashboard contradijera al recibo.
   const stats = useMemo(() => {
     if (statsRemotos && !modoSinConexion) {
       return {
@@ -931,15 +804,14 @@ if (sync) {
       const cedulasUnicas = new Set();
       (historial || []).forEach(p => {
         if (!p) return;
-        // Una venta anulada no cuenta en las estadisticas: el dinero se devolvio.
         if (safeString(p.estado) === 'Anulado') return;
         const vFinal = calcularTotal(p.venta, p.descuento);
         const fechaVentas = (safeNum(p.venta) > 0 && p.fecha_venta) ? p.fecha_venta : p.fecha;
         if (fechaVentas && fechaVentas >= inicioMes) {  
           ventasMes += vFinal;
           gastosMes += (safeNum(p.costo_lunas_int) + safeNum(p.costo_armazon_int) + 
-                       safeNum(p.costo_accesorio_int) + safeNum(p.costo_tratamientos_int) + 
-                       safeNum(p.costo_varios_int));
+                         safeNum(p.costo_accesorio_int) + safeNum(p.costo_tratamientos_int) + 
+                         safeNum(p.costo_varios_int));
         }
         const abonoRedondeado = safeNum(p.abono);
         if (vFinal - abonoRedondeado > 0) abonosPendientes += (vFinal - abonoRedondeado);
