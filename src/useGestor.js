@@ -1,15 +1,27 @@
-import { useState, useEffect, useRef, useMemo } from 'react'
-import { supabase } from './supabaseClient'
-import { safeString, safeNum, comprimirImagen, calcularEdad } from './utilidades'
-import { localDb, createUuid as generarId } from './localDb'
-import { archivarConsultaLocal, guardarConsultaLocal, guardarInventarioLocal, guardarPrecioLocal, guardarVentaLocal, obtenerSnapshotLocal, importLegacyCache, anularVentaLocal, eliminarInventarioLocal, eliminarPrecioLocal, guardarAdjuntoLocal, anularVentaConReembolso } from './localRepository'
-import { iniciarMotorSync, suscribirSync, sincronizarAhora, fijarSesionAusente, obtenerDetalleCola, reintentarOperacion, descartarOperacion, descartarTodoLoAtascado } from './syncEngine'
-import { enrolarDispositivo, leerEnrolamiento, intentarDesbloqueo, revocarEnrolamiento, pinValido } from './seguridad'
-import { aplicarAvisoQueratometria, calcularTotal } from './reglas'
-import { limpiarHtml } from './escape'
-import { validarFichaClinica, motivoDocumentoInvalido } from './validacion'
-import { aplicarCedula, crearEstadoPaciente, hoyISO, INV_INICIAL, PRECIO_INICIAL } from './fichaClinica'
-import { leerAviso, mostrarAviso, suscribirAvisos } from './avisos'
+import { useState, useEffect, useRef, useMemo } from 'react';
+import { supabase } from './supabaseClient';
+import { safeString, safeNum, comprimirImagen, calcularEdad } from './utilidades';
+import { localDb, createUuid as generarId } from './localDb';
+import { 
+  archivarConsultaLocal, guardarConsultaLocal, guardarInventarioLocal, 
+  guardarPrecioLocal, guardarVentaLocal, obtenerSnapshotLocal, 
+  importLegacyCache, anularVentaLocal, eliminarInventarioLocal, 
+  eliminarPrecioLocal, guardarAdjuntoLocal, anularVentaConReembolso 
+} from './localRepository';
+import { 
+  iniciarMotorSync, suscribirSync, sincronizarAhora, 
+  fijarSesionAusente, obtenerDetalleCola, reintentarOperacion, 
+  descartarOperacion, descartarTodoLoAtascado 
+} from './syncEngine';
+import { 
+  enrolarDispositivo, leerEnrolamiento, intentarDesbloqueo, 
+  revocarEnrolamiento, pinValido 
+} from './seguridad';
+import { aplicarAvisoQueratometria, calcularTotal } from './reglas';
+import { limpiarHtml } from './escape';
+import { validarFichaClinica, motivoDocumentoInvalido } from './validacion';
+import { aplicarCedula, crearEstadoPaciente, hoyISO, INV_INICIAL, PRECIO_INICIAL } from './fichaClinica';
+import { leerAviso, mostrarAviso, suscribirAvisos } from './avisos';
 
 export function useGestor() {
   const [estaAutenticado, setEstaAutenticado] = useState(false);
@@ -134,7 +146,7 @@ export function useGestor() {
     try {
       await importLegacyCache();
     } catch (error) {
-      console.warn('[datos] no se pudo migrar el cache antiguo; se sigue con los datos locales:', error);
+      console.warn('[datos] No se pudo migrar el caché antiguo:', error);
     }
     const snapshot = await obtenerSnapshotLocal();
     aplicarSnapshotLocal(snapshot);
@@ -288,9 +300,14 @@ export function useGestor() {
     }
   };
 
-  const cargarParaEditarPrecio = (item) => { setNuevoPrecio({ ...item }); setEditandoPrecioId(item.id); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+  const cargarParaEditarPrecio = (item) => { 
+    setNuevoPrecio({ ...item }); 
+    setEditandoPrecioId(item.id); 
+    window.scrollTo({ top: 0, behavior: 'smooth' }); 
+  };
+
   const eliminarPrecio = (id) => {
-    solicitarConfirmacion('¿Seguro que deseas eliminar?', async () => {
+    solicitarConfirmacion('¿Seguro que deseas eliminar esta tarifa?', async () => {
       try {
         await eliminarPrecioLocal(id);
         await obtenerDatos({ sync: false });
@@ -387,11 +404,19 @@ export function useGestor() {
   const cargarParaEditarInventario = (item) => {
     let itemFormateado = { ...item };
     Object.keys(itemFormateado).forEach(key => { if (itemFormateado[key] === null) itemFormateado[key] = ''; });
-    setNuevoItemInv(itemFormateado); setEditandoInvId(item.id); window.scrollTo({ top: 0, behavior: 'smooth' });
+    setNuevoItemInv(itemFormateado); 
+    setEditandoInvId(item.id); 
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
-  const cancelarEdicionInventario = () => { setNuevoItemInv(invInicial); setEditandoInvId(null); setImagenSeleccionada(null); };
+
+  const cancelarEdicionInventario = () => { 
+    setNuevoItemInv(invInicial); 
+    setEditandoInvId(null); 
+    setImagenSeleccionada(null); 
+  };
+
   const eliminarItemInventario = (id) => {
-    solicitarConfirmacion('¿Eliminar ítem?', async () => {
+    solicitarConfirmacion('¿Eliminar ítem del inventario?', async () => {
       try {
         await eliminarInventarioLocal(id);
         await obtenerDatos({ sync: false });
@@ -401,6 +426,14 @@ export function useGestor() {
         mostrarToast('Error al eliminar: ' + err.message, 'error');
       }
     });
+  };
+
+  const terminarGuardado = async () => {
+    setPaciente(estadoInicial);
+    setEditandoId(null);
+    setIntentadoGuardar(false);
+    setVistaActual('historial');
+    await obtenerDatos({ sync: false });
   };
 
   const guardarPacienteClinico = async () => {
@@ -416,16 +449,41 @@ export function useGestor() {
       if (editandoId) {
         const original = (historial || []).find(h => String(h?.id) === String(editandoId));
         if (original && safeString(original.cedula).trim().toUpperCase() !== safeString(paciente.cedula).trim().toUpperCase()) {
-          return mostrarToast('No se puede cambiar la cédula de una evaluación guardada. Si es otro paciente, registralo desde Historial.', 'warning');
+          return mostrarToast('No se puede cambiar la cédula de una evaluación guardada. Si es otro paciente, regístralo desde Historial.', 'warning');
         }
       }
 
-      const perfilData = { cedula: safeString(paciente.cedula), nombre: safeString(paciente.nombre), alias: safeString(paciente.alias), telefono: safeString(paciente.telefono), correo: safeString(paciente.correo), fecha_nacimiento: safeString(paciente.fecha_nacimiento), antecedentes: safeString(paciente.antecedentes) };
+      setGuardando(true);
+
+      const perfilData = { 
+        cedula: safeString(paciente.cedula), 
+        nombre: safeString(paciente.nombre), 
+        alias: safeString(paciente.alias), 
+        telefono: safeString(paciente.telefono), 
+        correo: safeString(paciente.correo), 
+        fecha_nacimiento: safeString(paciente.fecha_nacimiento), 
+        antecedentes: safeString(paciente.antecedentes) 
+      };
       Object.keys(perfilData).forEach(k => { if (perfilData[k] === '') perfilData[k] = null; });
 
-      const camposClinica = ['fecha', 'notas_clinicas', 'avsl_od', 'avsc_od', 'esfera_od', 'cilindro_od', 'eje_od', 'adicion_od', 'dnp_od', 'altura_od', 'avcl_od', 'avcc_od', 'avsl_oi', 'avsc_oi', 'esfera_oi', 'cilindro_oi', 'eje_oi', 'adicion_oi', 'dnp_oi', 'altura_oi', 'avcl_oi', 'avcc_oi', 'k1_d_od', 'k2_d_od', 'k1_mm_od', 'k2_mm_od', 'eje_k1_od', 'eje_k2_od', 'astig_corneal_od', 'eje_astig_od', 'obs_k_od', 'k1_d_oi', 'k2_d_oi', 'k1_mm_oi', 'k2_mm_oi', 'eje_k1_oi', 'eje_k2_oi', 'astig_corneal_oi', 'eje_astig_oi', 'obs_k_oi', 'auto_esf_od', 'auto_cil_od', 'auto_eje_od', 'auto_esf_oi', 'auto_cil_oi', 'auto_eje_oi', 'auto_esf_od_2', 'auto_cil_od_2', 'auto_eje_od_2', 'auto_esf_oi_2', 'auto_cil_oi_2', 'auto_eje_oi_2', 'lenso_esf_od', 'lenso_cil_od', 'lenso_eje_od', 'lenso_add_od', 'lenso_avl_od', 'lenso_avc_od', 'lenso_esf_oi', 'lenso_cil_oi', 'lenso_eje_oi', 'lenso_add_oi', 'lenso_avl_oi', 'lenso_avc_oi'];
+      const camposClinica = [
+        'fecha', 'notas_clinicas', 'avsl_od', 'avsc_od', 'esfera_od', 'cilindro_od', 
+        'eje_od', 'adicion_od', 'dnp_od', 'altura_od', 'avcl_od', 'avcc_od', 
+        'avsl_oi', 'avsc_oi', 'esfera_oi', 'cilindro_oi', 'eje_oi', 'adicion_oi', 
+        'dnp_oi', 'altura_oi', 'avcl_oi', 'avcc_oi', 'k1_d_od', 'k2_d_od', 
+        'k1_mm_od', 'k2_mm_od', 'eje_k1_od', 'eje_k2_od', 'astig_corneal_od', 
+        'eje_astig_od', 'obs_k_od', 'k1_d_oi', 'k2_d_oi', 'k1_mm_oi', 'k2_mm_oi', 
+        'eje_k1_oi', 'eje_k2_oi', 'astig_corneal_oi', 'eje_astig_oi', 'obs_k_oi', 
+        'auto_esf_od', 'auto_cil_od', 'auto_eje_od', 'auto_esf_oi', 'auto_cil_oi', 
+        'auto_eje_oi', 'auto_esf_od_2', 'auto_cil_od_2', 'auto_eje_od_2', 
+        'auto_esf_oi_2', 'auto_cil_oi_2', 'auto_eje_oi_2', 'lenso_esf_od', 
+        'lenso_cil_od', 'lenso_eje_od', 'lenso_add_od', 'lenso_avl_od', 
+        'lenso_avc_od', 'lenso_esf_oi', 'lenso_cil_oi', 'lenso_eje_oi', 
+        'lenso_add_oi', 'lenso_avl_oi', 'lenso_avc_oi'
+      ];
+      
       let clinicaData = {};
-      camposClinica.forEach(k => clinicaData[k] = paciente[k] === '' ? null : paciente[k]);
+      camposClinica.forEach(k => { clinicaData[k] = paciente[k] === '' ? null : paciente[k]; });
 
       const idConsulta = editandoId || safeString(paciente.id) || generarId();
 
@@ -441,26 +499,18 @@ export function useGestor() {
       await terminarGuardado();
       const estadoSync = await sincronizarAhora({ pull: false });
       const subio = estadoSync?.phase === 'synced' || (estadoSync?.pending || 0) === 0;
+      
       mostrarToast(
         subio
           ? 'Consulta guardada y sincronizada con la nube.'
           : 'Consulta guardada en este dispositivo. Se subirá a la nube en unos segundos.',
         subio ? 'success' : 'warning'
       );
-      return;
     } catch(e) { 
       mostrarToast("Error: " + e.message, "error"); 
     } finally {
       setGuardando(false);
     }
-  };
-
-  const terminarGuardado = async () => {
-    setPaciente(estadoInicial);
-    setEditandoId(null);
-    setIntentadoGuardar(false);
-    setVistaActual('historial');
-    await obtenerDatos({ sync: false });
   };
 
   const borrarHistoriaClinica = async (item) => {
@@ -477,7 +527,6 @@ export function useGestor() {
       
       await obtenerDatos({ sync: false });
       
-      // Sincronización explícita y esperada: sube el archivado a Supabase de inmediato
       const estadoSync = await sincronizarAhora({ pull: true });
       const subio = (estadoSync?.pending || 0) === 0;
 
@@ -495,13 +544,18 @@ export function useGestor() {
   const cargarParaEditarClinico = (item) => {
     let itemFormateado = { ...item };
     Object.keys(itemFormateado).forEach(key => { if (itemFormateado[key] === null) itemFormateado[key] = ''; });
-    setPaciente({ ...estadoInicial, ...itemFormateado }); setEditandoId(item.id); setVistaActual('nueva_medicion'); window.scrollTo({ top: 0, behavior: 'smooth' });
+    setPaciente({ ...estadoInicial, ...itemFormateado }); 
+    setEditandoId(item.id); 
+    setVistaActual('nueva_medicion'); 
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const abrirPedido = (item) => {
     let itemFormateado = { ...item };
     Object.keys(itemFormateado).forEach(key => { if (itemFormateado[key] === null) itemFormateado[key] = ''; });
-    ['tratam_ar', 'tratam_ar_azul', 'tratam_azul', 'tratam_tinturado', 'tratam_foto', 'tratam_trans', 'tratam_ninguno'].forEach(k => { if(!itemFormateado[k]) itemFormateado[k] = 'NO'; });
+    ['tratam_ar', 'tratam_ar_azul', 'tratam_azul', 'tratam_tinturado', 'tratam_foto', 'tratam_trans', 'tratam_ninguno'].forEach(k => { 
+      if(!itemFormateado[k]) itemFormateado[k] = 'NO'; 
+    });
     if(!itemFormateado.descuento) itemFormateado.descuento = '0';
     if(!itemFormateado.forma_pago) itemFormateado.forma_pago = 'Efectivo';
 
@@ -528,7 +582,10 @@ export function useGestor() {
     }
 
     const visitas = (historial || []).filter(h => safeString(h?.cedula) === safeString(item.cedula) && safeString(h?.nombre) !== 'CONSUMIDOR FINAL');
-    setMedidasPaciente(visitas); setPedidoSeleccionado(itemFormateado); setAccesorioOriginalId(itemFormateado.accesorio_id || ''); setVistaActual('pedidos_form');
+    setMedidasPaciente(visitas); 
+    setPedidoSeleccionado(itemFormateado); 
+    setAccesorioOriginalId(itemFormateado.accesorio_id || ''); 
+    setVistaActual('pedidos_form');
   };
 
   const crearVentaDirecta = () => {
@@ -540,12 +597,24 @@ export function useGestor() {
       cedula: '9999999999',
       estado: 'Entregado'
     };
-    setMedidasPaciente([]); setPedidoSeleccionado(ventaNueva); setAccesorioOriginalId(''); setVistaActual('pedidos_form');
+    setMedidasPaciente([]); 
+    setPedidoSeleccionado(ventaNueva); 
+    setAccesorioOriginalId(''); 
+    setVistaActual('pedidos_form');
   };
 
   const cambiarMedicionPedido = (e) => {
-    const idVisit = e.target.value; const visit = (historial || []).find(h => String(h?.id) === String(idVisit));
-    if (visit) setPedidoSeleccionado(prev => ({ ...prev, esfera_od: visit.esfera_od, cilindro_od: visit.cilindro_od, eje_od: visit.eje_od, adicion_od: visit.adicion_od, dnp_od: visit.dnp_od, altura_od: visit.altura_od, esfera_oi: visit.esfera_oi, cilindro_oi: visit.cilindro_oi, eje_oi: visit.eje_oi, adicion_oi: visit.adicion_oi, dnp_oi: visit.dnp_oi, altura_oi: visit.altura_oi }));
+    const idVisit = e.target.value; 
+    const visit = (historial || []).find(h => String(h?.id) === String(idVisit));
+    if (visit) {
+      setPedidoSeleccionado(prev => ({ 
+        ...prev, 
+        esfera_od: visit.esfera_od, cilindro_od: visit.cilindro_od, eje_od: visit.eje_od, 
+        adicion_od: visit.adicion_od, dnp_od: visit.dnp_od, altura_od: visit.altura_od, 
+        esfera_oi: visit.esfera_oi, cilindro_oi: visit.cilindro_oi, eje_oi: visit.eje_oi, 
+        adicion_oi: visit.adicion_oi, dnp_oi: visit.dnp_oi, altura_oi: visit.altura_oi 
+      }));
+    }
   };
 
   const autoCalcularPrecio = (pedidoActual) => {
@@ -574,7 +643,6 @@ export function useGestor() {
     const precioDe = (material) => {
       const fila = bases.find(b => safeString(b.material).trim().toUpperCase() === String(material).trim().toUpperCase());
       if (fila) return safeNum(fila.precio_sugerido);
-      console.warn(`[precio] "${material}" no tiene fila BASE en el tarifario; se cobrara $0.`);
       return 0;
     };
 
@@ -610,11 +678,16 @@ export function useGestor() {
 
     setPedidoSeleccionado(prev => {
       const nuevo = { ...prev, [name]: val };
-      const camposQueAfectanPrecio = ['codigo_armazon', 'material_lente', 'accesorio_id', 'tratam_ar', 'tratam_ar_azul', 'tratam_azul', 'tratam_tinturado', 'tratam_foto', 'tratam_trans', 'tratam_ninguno'];
+      const camposQueAfectanPrecio = [
+        'codigo_armazon', 'material_lente', 'accesorio_id', 'tratam_ar', 
+        'tratam_ar_azul', 'tratam_azul', 'tratam_tinturado', 'tratam_foto', 
+        'tratam_trans', 'tratam_ninguno'
+      ];
 
       if (camposQueAfectanPrecio.includes(name)) {
         if (name === 'tratam_ninguno' && val === 'SI') {
-          nuevo.tratam_ar = 'NO'; nuevo.tratam_ar_azul = 'NO'; nuevo.tratam_azul = 'NO'; nuevo.tratam_tinturado = 'NO'; nuevo.tratam_foto = 'NO'; nuevo.tratam_trans = 'NO';
+          nuevo.tratam_ar = 'NO'; nuevo.tratam_ar_azul = 'NO'; nuevo.tratam_azul = 'NO'; 
+          nuevo.tratam_tinturado = 'NO'; nuevo.tratam_foto = 'NO'; nuevo.tratam_trans = 'NO';
         } else if (name.startsWith('tratam_') && name !== 'tratam_ninguno' && val === 'SI') {
           nuevo.tratam_ninguno = 'NO';
         }
@@ -650,7 +723,18 @@ export function useGestor() {
       const nombrePaciente = nombrePedido;
 
       const patientId = pedidoSeleccionado.patient_id || pedidoSeleccionado.paciente_id || generarId();
-      const camposPedido = ['venta', 'abono', 'descuento', 'forma_pago', 'pago_nota', 'estado', 'notas', 'comprobante_url', 'codigo_armazon', 'tipo_armazon', 'param_horizontal', 'param_puente', 'param_vertical', 'param_diagonal', 'tipo_lente', 'material_lente', 'material_nota', 'accesorio_id', 'tratam_ninguno', 'tratam_ar', 'tratam_ar_azul', 'tratam_azul', 'tratam_tinturado', 'tratam_tinturado_nota', 'tratam_foto', 'tratam_foto_nota', 'tratam_trans', 'tratam_trans_nota', 'costo_armazon_int', 'costo_lunas_int', 'costo_accesorio_int', 'costo_tratamientos_int', 'costo_varios_int'];
+      const camposPedido = [
+        'venta', 'abono', 'descuento', 'forma_pago', 'pago_nota', 'estado', 
+        'notas', 'comprobante_url', 'codigo_armazon', 'tipo_armazon', 
+        'param_horizontal', 'param_puente', 'param_vertical', 'param_diagonal', 
+        'tipo_lente', 'material_lente', 'material_nota', 'accesorio_id', 
+        'tratam_ninguno', 'tratam_ar', 'tratam_ar_azul', 'tratam_azul', 
+        'tratam_tinturado', 'tratam_tinturado_nota', 'tratam_foto', 
+        'tratam_foto_nota', 'tratam_trans', 'tratam_trans_nota', 
+        'costo_armazon_int', 'costo_lunas_int', 'costo_accesorio_int', 
+        'costo_tratamientos_int', 'costo_varios_int'
+      ];
+      
       const venta = {};
       camposPedido.forEach(k => { venta[k] = pedidoSeleccionado[k] === '' ? null : pedidoSeleccionado[k]; });
       venta.id = idPedido;
@@ -667,6 +751,7 @@ export function useGestor() {
       const montoAPagar = pedidoSeleccionado._nueva_venta
         ? Number(safeNum(pedidoSeleccionado.abono).toFixed(2))
         : Number(safeNum(montoAdicional).toFixed(2));
+        
       const initialPayment = montoAPagar > 0
         ? {
             monto: montoAPagar,
@@ -696,10 +781,11 @@ export function useGestor() {
 
       setPedidoSeleccionado(null);
       setVistaActual('pedidos_lista');
-      mostrarToast('Venta guardada en este dispositivo.', 'success');
+      
       void obtenerDatos({ sync: true });
       const estadoSync = await sincronizarAhora({ pull: false });
       const subio = (estadoSync?.pending || 0) === 0;
+      
       mostrarToast(
         subio
           ? 'Venta guardada y sincronizada con la nube.'
@@ -733,13 +819,16 @@ export function useGestor() {
         const resultado = abono > 0
           ? await anularVentaConReembolso({ saleId: item.pedido_id, method: 'Efectivo' })
           : await anularVentaLocal(item.pedido_id);
+          
         await obtenerDatos({ sync: false });
         const estado = await sincronizarAhora({ pull: true });
         const falloServidor = estado?.phase === 'error' ? estado.lastError : null;
+        
         if (falloServidor) {
           mostrarToast('Hecho en este dispositivo, pero el servidor lo rechazó: ' + falloServidor, 'error');
           return;
         }
+        
         if (resultado?.productosAusentes?.length) {
           mostrarToast(
             'Venta anulada. El stock de ' + resultado.productosAusentes.length +
@@ -799,9 +888,15 @@ export function useGestor() {
       };
     }
     try {
-      const inicioMes = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
-      let ventasMes = 0; let abonosPendientes = 0; let gastosMes = 0;
+      const fechaActual = new Date();
+      const mesStr = String(fechaActual.getMonth() + 1).padStart(2, '0');
+      const inicioMes = `${fechaActual.getFullYear()}-${mesStr}-01`;
+
+      let ventasMes = 0; 
+      let abonosPendientes = 0; 
+      let gastosMes = 0;
       const cedulasUnicas = new Set();
+
       (historial || []).forEach(p => {
         if (!p) return;
         if (safeString(p.estado) === 'Anulado') return;
@@ -810,8 +905,8 @@ export function useGestor() {
         if (fechaVentas && fechaVentas >= inicioMes) {  
           ventasMes += vFinal;
           gastosMes += (safeNum(p.costo_lunas_int) + safeNum(p.costo_armazon_int) + 
-                         safeNum(p.costo_accesorio_int) + safeNum(p.costo_tratamientos_int) + 
-                         safeNum(p.costo_varios_int));
+                        safeNum(p.costo_accesorio_int) + safeNum(p.costo_tratamientos_int) + 
+                        safeNum(p.costo_varios_int));
         }
         const abonoRedondeado = safeNum(p.abono);
         if (vFinal - abonoRedondeado > 0) abonosPendientes += (vFinal - abonoRedondeado);
@@ -819,6 +914,7 @@ export function useGestor() {
           cedulasUnicas.add(safeString(p.cedula));
         }
       });
+
       return { 
         ventasMes: Number(ventasMes.toFixed(2)), 
         abonosPendientes: Number(abonosPendientes.toFixed(2)),
@@ -835,7 +931,9 @@ export function useGestor() {
   const edadActual = calcularEdad(paciente?.fecha_nacimiento);
   const claseInputRef = (campo, clasesExtra) => {
     const estaVacio = safeString(paciente[campo]).trim() === '';
-    return (intentadoGuardar && estaVacio) ? `w-full p-2 text-center outline-none transition-all border-2 border-red-500 bg-red-100 ${clasesExtra}` : `w-full p-2 text-center outline-none ${clasesExtra}`;
+    return (intentadoGuardar && estaVacio) 
+      ? `w-full p-2 text-center outline-none transition-all border-2 border-red-500 bg-red-100 ${clasesExtra}` 
+      : `w-full p-2 text-center outline-none ${clasesExtra}`;
   };
 
   return {
