@@ -26,6 +26,10 @@ export default function Historial({
   const [aliasVisibles, setAliasVisibles] = useState({});
 
   useEffect(() => {
+    setVisibles(50);
+  }, [busquedaTexto]);
+
+  useEffect(() => {
     const termino = busquedaTexto.trim();
     if (termino.length < 2) return;
 
@@ -83,7 +87,7 @@ export default function Historial({
       const snapshot = await obtenerSnapshotLocal();
       const histLocal = snapshot?.historial || historialReciente || [];
       const registrosLocales = histLocal.filter(r => safeString(r.cedula) === safeString(paciente.cedula));
-      registrosLocales.sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+      registrosLocales.sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')));
       
       if (registrosLocales.length > 0) {
         setRegistrosPaciente(registrosLocales);
@@ -119,6 +123,16 @@ export default function Historial({
 
   const toggleAlias = (id) => {
     setAliasVisibles(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const eliminarRegistroDeExpediente = async (reg) => {
+    confirmarAccion(
+      `¿Deseas eliminar la consulta del ${safeString(reg.fecha)}?`,
+      async () => {
+        await borrarHistoriaClinica(reg);
+        setRegistrosPaciente(prev => prev.filter(r => r.id !== reg.id));
+      }
+    );
   };
 
   if (expedienteActivo) {
@@ -201,8 +215,8 @@ export default function Historial({
                           
                           <td className="p-2 border-l text-center bg-red-50/20">
                             <button 
-                              type="button"
-                              onClick={() => borrarHistoriaClinica(reg, () => setRegistrosPaciente(prev => prev.filter(r => r.id !== reg.id)))} 
+                              type="button" 
+                              onClick={() => eliminarRegistroDeExpediente(reg)} 
                               className="text-xs bg-red-100 text-red-700 hover:bg-red-200 p-1.5 rounded font-bold transition-colors shadow-sm" 
                               title="Eliminar esta consulta clínica"
                             >
@@ -229,7 +243,7 @@ export default function Historial({
                                 </div>
                                 
                                 <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
-                                  <h4 className="font-bold text-indigo-900 border-b border-gray-100 pb-1 mb-2">👁️ Queratometría</h4>
+                                  <h4 className="font-bold text-indigo-900 border-b border-gray-100 pb-1 mb-2">👁️️ Queratometría</h4>
                                   <p className="mb-1"><strong className="text-gray-600">OD:</strong> <span className="text-gray-900 font-semibold">K1: {safeString(reg.k1_d_od) || '-'} | K2: {safeString(reg.k2_d_od) || '-'}</span></p>
                                   <p><strong className="text-gray-600">OI:</strong> <span className="text-gray-900 font-semibold">K1: {safeString(reg.k1_d_oi) || '-'} | K2: {safeString(reg.k2_d_oi) || '-'}</span></p>
                                 </div>
@@ -357,7 +371,7 @@ export default function Historial({
                       {safeString(item.alias) && (
                         <div className="mt-1 flex items-center">
                           <button 
-                            type="button"
+                            type="button" 
                             onClick={() => toggleAlias(item.id)} 
                             className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold transition-all shadow-sm border ${aliasVisibles[item.id] ? 'bg-teal-50 text-teal-800 border-teal-300' : 'bg-gray-100 text-gray-700 border-gray-200 hover:bg-teal-50 hover:text-teal-700'}`}
                             title="Clic para ver u ocultar Alias"
@@ -395,8 +409,8 @@ export default function Historial({
                     <button type="button" onClick={() => cargarParaEditarClinico(item)} className="text-xs sm:text-sm bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-1.5 rounded-lg font-bold shadow-sm hover:bg-blue-100 transition-colors" title="Editar Clínica">
                       ✏️
                     </button>
-                    <button
-                      type="button"
+                    <button 
+                      type="button" 
                       onClick={() => confirmarAccion(
                         `¿Eliminar a ${safeString(item.nombre) || 'este paciente'}?\n\n`
                         + 'Se archivará TODO su historial, no solo la última visita. '
