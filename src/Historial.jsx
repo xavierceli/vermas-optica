@@ -112,7 +112,6 @@ export default function Historial({
         .select('*')
         .eq('cedula', paciente.cedula);
 
-      // Si la columna archived_at existe en la vista, se excluyen los borrados
       try {
         query = query.is('archived_at', null);
       } catch {}
@@ -121,10 +120,8 @@ export default function Historial({
         
       if (error) throw error;
       if (data && data.length > 0) {
-        // Exclusión defensiva de cualquier fila marcada con archived_at
         const filtradosNube = data.filter(d => !d.archived_at);
         
-        // Si el paciente actual tiene patient_id asignado, priorizamos solo sus registros
         const porPaciente = paciente.patient_id || paciente.id
           ? filtradosNube.filter(d => !d.patient_id || String(d.patient_id) === String(paciente.patient_id || paciente.id))
           : filtradosNube;
@@ -196,7 +193,7 @@ export default function Historial({
             
             {safeString(expedienteActivo.antecedentes) && (
               <div className="bg-red-50 border border-red-200 p-4 rounded-lg">
-                <h3 className="font-bold text-red-900 text-xs sm:text-sm uppercase mb-1">⚠️️ Antecedentes Médicos / Personales:</h3>
+                <h3 className="font-bold text-red-900 text-xs sm:text-sm uppercase mb-1">⚠️ Antecedentes Médicos / Personales:</h3>
                 <p className="text-red-950 text-xs sm:text-sm leading-relaxed">{safeString(expedienteActivo.antecedentes)}</p>
               </div>
             )}
@@ -473,7 +470,7 @@ export default function Historial({
                     </div>
                   </div>
 
-                  {/* Detalle Comercial / Pedido */}
+                  {/* Detalle Comercial / Pedido Actualizado */}
                   <div className={`p-3 sm:p-4 rounded-xl border shadow-inner flex flex-col justify-between transition-colors ${tieneDeuda ? 'bg-red-50/40 border-red-200' : 'bg-gray-50 border-gray-100'}`}>
                     <div>
                       <div className="flex justify-between items-center mb-2">
@@ -525,27 +522,34 @@ export default function Historial({
                             )}
                           </div>
 
-                          {/* 2. Método de pago con resolución inteligente */}
+                          {/* 2. Métodos de pago en orden cronológico */}
                           {(() => {
-                            const notaPago = safeString(item.pago_nota).toLowerCase();
-                            const formaRegistrada = safeString(item.forma_pago);
-                            
-                            // Si tiene comprobante o en el historial de cobros dice transferencia, priorizar Transferencia
-                            let metodoReal = formaRegistrada;
-                            if (item.comprobante_url || notaPago.includes('transferencia')) {
-                              metodoReal = 'Transferencia';
-                            } else if (notaPago.includes('tarjeta')) {
-                              metodoReal = 'Tarjeta';
-                            } else if (!metodoReal) {
-                              metodoReal = 'Efectivo';
+                            const metodos = [];
+                            const inicial = safeString(item.forma_pago).trim();
+                            if (inicial) metodos.push(inicial);
+
+                            // Extraemos métodos de pago registrados en las notas de abono (ej: "[01/10] +$20.00 Transferencia")
+                            const notaCompleta = safeString(item.pago_nota);
+                            const regexAbonos = /\+\s*\$?\s*[\d.]+\s+(Efectivo|Transferencia|Tarjeta)/gi;
+                            let match;
+                            while ((match = regexAbonos.exec(notaCompleta)) !== null) {
+                              const metodoDetectado = match[1].charAt(0).toUpperCase() + match[1].slice(1).toLowerCase();
+                              metodos.push(metodoDetectado);
                             }
 
+                            // Si tiene comprobante adjunto y no se detectó transferencia, la agregamos
+                            if (item.comprobante_url && !metodos.some(m => m.toLowerCase().includes('transferencia'))) {
+                              metodos.push('Transferencia');
+                            }
+
+                            const listaFinal = metodos.length > 0 ? metodos : ['Efectivo'];
+
                             return (
-                              <div className="flex justify-between items-center pt-1 text-[11px]">
-                                <p className="text-gray-700">
-                                  <strong>Método de pago:</strong>{' '}
+                              <div className="flex justify-between items-center pt-1 text-[11px] flex-wrap gap-1">
+                                <p className="text-gray-700 flex items-center gap-1.5 flex-wrap">
+                                  <strong>Método(s) de pago:</strong>{' '}
                                   <span className="font-bold text-gray-900 bg-gray-100 px-2 py-0.5 rounded border border-gray-200">
-                                    {metodoReal}
+                                    {listaFinal.join(', ')}
                                   </span>
                                 </p>
                                 {item.comprobante_url && (
