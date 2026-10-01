@@ -1,7 +1,9 @@
 // ---------------------------------------------------------------------------
 // REGLAS DE NEGOCIO COMPARTIDAS
-// Fuente única de verdad para las reglas clínicas y de pricing.
-// El servidor (PostgreSQL) calcula: round(venta - venta * descuento / 100, 2)
+// ---------------------------------------------------------------------------
+// Fuente única de verdad para las reglas clínicas, financieras y de pricing.
+// El cálculo comercial replica con exactitud de centavo la función de PostgreSQL:
+// round(venta - venta * descuento / 100, 2)
 // ---------------------------------------------------------------------------
 
 // A partir de 47.00 D se considera queratometría alta (límite inclusivo).
@@ -15,21 +17,19 @@ const aNumero = valor => {
 
 // --- Clínica ---------------------------------------------------------------
 
-/** ¿El valor indicado en un campo de queratometría supera el límite? */
+/** ¿El valor indicado en un campo de queratometría supera el límite clínico? */
 export const esQueratometriaAlta = (registro, campo) => {
   const valor = aNumero(registro?.[campo]);
   return Number.isFinite(valor) && valor >= LIMITE_QUERATOMETRIA;
 };
 
-/** ¿Alguno de los meridianos (K1/K2) del ojo indicado es alto? */
+/** ¿Alguno de los meridianos principales (K1/K2) del ojo indicado es alto? */
 export const ojoConQueratometriaAlta = (registro, ojo) => ['k1_d_', 'k2_d_']
   .some(campo => esQueratometriaAlta(registro, `${campo}${ojo}`));
 
 /**
  * Devuelve una copia del registro con el aviso agregado en las observaciones
- * del ojo, sin borrar lo que el especialista ya escribió. No duplica el aviso.
- * Si el valor vuelve al rango normal y el texto era solo el aviso automático,
- * lo limpia limpiamente sin romper los inputs controlados de React.
+ * del ojo sin sobreescribir lo escrito por el especialista.
  */
 export const aplicarAvisoQueratometria = (registro, ojo) => {
   const claveObs = `obs_k_${ojo}`;
@@ -51,7 +51,7 @@ export const aplicarAvisoQueratometria = (registro, ojo) => {
   return registro;
 };
 
-// --- Pricing ---------------------------------------------------------------
+// --- Pricing y Finanzas ----------------------------------------------------
 
 const ESCALA = 1000000n; // 6 decimales de precisión intermedia
 
@@ -61,27 +61,27 @@ export const aMonto = valor => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
-/** Acota el descuento al rango válido (0 a 100). */
+/** Acota el porcentaje de descuento al rango válido (0 a 100). */
 export const normalizarDescuento = descuento => {
   const base = aMonto(descuento);
   return Math.min(100, Math.max(0, base));
 };
 
-/** Escala un monto a entero de 6 decimales para evitar errores de punto flotante. */
+/** Escala un monto a entero de 6 decimales para evitar imprecisión de coma flotante. */
 const aEscala = valor => {
   const numero = aMonto(valor);
   if (!Number.isFinite(numero)) return 0n;
   return BigInt(Math.round(numero * 1e6));
 };
 
-/** División entera redondeando como PostgreSQL: .5 siempre hacia arriba. */
+/** División entera redondeando como PostgreSQL: .5 hacia arriba. */
 const dividirRedondeando = (dividendo, divisor) => {
   const entero = dividendo / divisor;
   const resto = dividendo % divisor;
   return resto * 2n >= divisor ? entero + 1n : entero;
 };
 
-/** Redondea a 2 decimales igual que round(numeric, 2) de PostgreSQL. */
+/** Redondea a 2 decimales emulando round(numeric, 2) de PostgreSQL. */
 const redondearSql = valorEscalado => {
   const negativo = valorEscalado < 0n;
   const absoluto = negativo ? -valorEscalado : valorEscalado;
@@ -91,9 +91,8 @@ const redondearSql = valorEscalado => {
 };
 
 /**
- * Costo final = venta - venta * descuento / 100.
- * Calcula con enteros escalados para producir exactamente el mismo centavo
- * que round(venta - venta * descuento / 100, 2) en PostgreSQL.
+ * Total a pagar = venta - venta * descuento / 100.
+ * Utiliza enteros escalados (BigInt) para evitar desajustes de centavos con la base de datos.
  */
 export const calcularTotal = (venta, descuento) => {
   const base = aEscala(venta);
@@ -102,22 +101,34 @@ export const calcularTotal = (venta, descuento) => {
   return redondearSql(base - descuentoEscalado);
 };
 
-/** Monto del descuento aplicado, para mostrarlo desglosado. */
+/** Monto líquido del descuento otorgado. */
 export const calcularMontoDescuento = (venta, descuento) => {
   const total = calcularTotal(venta, descuento);
-  return Number((aMonto(venta) - total).toFixed(2));
+  const monto = Number((aMonto(venta) - total).toFixed(2));
+  return monto > 0 ? monto : 0;
 };
 
-/** Saldo pendiente = total - abono. */
-export const calcularSaldo = (venta, descuento, abono) =>
-  Number((calcularTotal(venta, descuento) - aMonto(abono)).toFixed(2));
+/**
+ * Saldo pendiente = total - abono.
+ * Evita que imprecisiones de coma flotante devuelvan -0.00.
+ */
+export const calcularSaldo = (venta, descuento, abono) => {
+  const saldo = Number((calcularTotal(venta, descuento) - aMonto(abono)).toFixed(2));
+  return Math.abs(saldo) < 0.0001 ? 0 : saldo;
+};
 
 /**
- * Determina si el error corresponde a una pérdida de red o a un rechazo del servidor.
+ * Determina si un error corresponde a pérdida de conectividad o rechazo de servidor.
  */
 export const esFalloDeRed = (error) => {
   const texto = String(error?.message || error || '').toLowerCase();
-  if (/rechaz|rechazo|violat|constraint|duplicate key|401|403|409|400/.test(texto)) return false;
-  return /failed to fetch|network|load failed|aborted|tiempo agotado|timeout|conexion|conexión|dns|socket|502|503|504|offline|err_/.test(texto)
+  
+  // Errores de lógica de negocio, autenticación o restricciones del servidor
+  if (/rechaz|rechazo|violat|constraint|duplicate key|foreign key|401|403|409|400|42501|pgrst/.test(texto)) {
+    return false;
+  }
+
+  // Pérdida física de conectividad, caídas de DNS o timeouts
+  return /failed to fetch|network|load failed|aborted|tiempo agotado|timeout|conexion|conexión|dns|socket|502|503|504|offline|err_|internet connection/i.test(texto)
     || error?.name === 'TypeError';
 };
