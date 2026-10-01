@@ -1,42 +1,75 @@
 // ---------------------------------------------------------------------------
 // REGLAS DEL COBRO
 // ---------------------------------------------------------------------------
-// Modulo puro, sin React ni Supabase, para poder probarlo con node --test.
+// Módulo puro, sin React ni Supabase, para poder probarlo con node --test.
 //
-// Estas reglas estaban escritas DOS VECES, una en cada pantalla de cobro
-// (PedidosLista y PedidosForm), y las dos segun cambiaban en motores. El monto
-// del cobro es dinero: que se acepte 0, o 10.999 cuando solo caben dos
-// decimales, se traduce en una caja que no cuadra. Modulo puro, un solo sitio y
-// tests.
+// Centraliza las validaciones de dinero en caja y cobros:
+//  - Rechaza montos <= 0 o con más de dos decimales.
+//  - Valida que la venta exista y no esté en estado 'Anulado'.
+//  - Admite comas o puntos como separador decimal.
+// ---------------------------------------------------------------------------
 
-/** Devuelve el mensaje si el monto no es valido, o null si lo es. */
+/**
+ * Devuelve un mensaje de error si el monto no es válido o null si es correcto.
+ * @param {number|string} monto
+ * @returns {string|null}
+ */
 export const validarMontoCobro = (monto) => {
-  const valor = Number(monto);
+  if (monto === null || monto === undefined || String(monto).trim() === '') {
+    return 'Por favor, ingrese un monto válido mayor a 0.';
+  }
+
+  const texto = String(monto).trim().replace(',', '.');
+  const valor = Number(texto);
+
   if (!Number.isFinite(valor) || valor <= 0) {
     return 'Por favor, ingrese un monto válido mayor a 0.';
   }
-  // Mas de dos decimales. La tolerancia es por la coma flotante: 0.1 + 0.2.
+
+  // Validación estricta de decimales: máximo 2 dígitos tras el separador
+  const partes = texto.split('.');
+  if (partes.length === 2 && partes[1].length > 2) {
+    return 'El monto debe tener como máximo dos decimales.';
+  }
+
+  // Tolerancia flotante de respaldo
   if (Math.abs(valor * 100 - Math.round(valor * 100)) > 0.000001) {
     return 'El monto debe tener como máximo dos decimales.';
   }
+
   return null;
 };
 
 /**
- * Un cobro solo existe si hay una venta. Sin ella no hay a que abonarle, y antes
- * se intentaba igualmente.
- * El orden de las comprobaciones es el que ve el optometria hoy: primero el
- * monto y despues la venta.
+ * Valida si un cobro puede aplicarse sobre un registro de venta.
+ * @param {{ item: Object, monto: number|string }} param0
+ * @returns {string|null}
  */
 export const validarCobroSobreVenta = ({ item, monto } = {}) => {
   const problemaMonto = validarMontoCobro(monto);
   if (problemaMonto) return problemaMonto;
-  if (!String(item?.pedido_id || '').trim()) {
+
+  const pedidoId = String(item?.pedido_id || item?.id || '').trim();
+  if (!pedidoId) {
+    return 'Este registro todavía no tiene una venta local.';
+  }
+
+  if (String(item?.estado || '').trim().toLowerCase() === 'anulado') {
+    return 'No se pueden registrar cobros sobre una venta anulada.';
+  }
+
+  return null;
+};
+
+/**
+ * Cambiar el estado (en laboratorio, listo para entrega...) exige una venta existente.
+ * @param {Object} item
+ * @returns {string|null}
+ */
+export const validarVentaParaCambiarEstado = (item) => {
+  const pedidoId = String(item?.pedido_id || item?.id || '').trim();
+  if (!pedidoId) {
     return 'Este registro todavía no tiene una venta local.';
   }
   return null;
 };
-
-/** Cambiar el estado (anular, marcar en laborator io...) tambien exige venta. */
-export const validarVentaParaCambiarEstado = (item) =>
-  (String(item?.pedido_id || '').trim() ? null : 'Este registro todavía no tiene una venta local.');
