@@ -1,12 +1,12 @@
-import { useState } from 'react'
-import { safeString, safeNum, comprimirImagen } from './utilidades'
-import { mostrarAviso } from './avisos'
-import { validarCobroSobreVenta, validarVentaParaCambiarEstado } from './cobros'
-import { supabase } from './supabaseClient'
-import { createUuid as generarId } from './localDb'
-import { cambiarEstadoVentaLocal, registrarPagoLocal } from './localRepository'
-import { calcularTotal, calcularSaldo } from './reglas'
-import BotonComprobante from './BotonComprobante'
+import { useState } from 'react';
+import { safeString, safeNum, comprimirImagen } from './utilidades';
+import { mostrarAviso } from './avisos';
+import { validarCobroSobreVenta, validarVentaParaCambiarEstado } from './cobros';
+import { supabase } from './supabaseClient';
+import { createUuid as generarId } from './localDb';
+import { cambiarEstadoVentaLocal, registrarPagoLocal, guardarAdjuntoLocal } from './localRepository';
+import { calcularTotal, calcularSaldo } from './reglas';
+import BotonComprobante from './BotonComprobante';
 
 export default function PedidosLista({
   crearVentaDirecta, busqueda, setBusqueda, pedidosFiltrados,
@@ -29,20 +29,26 @@ export default function PedidosLista({
 
   const cambiarEstadoRapido = async (item, nuevoEstado) => {
     const problema = validarVentaParaCambiarEstado(item);
-    if (problema) return mostrarAviso(problema);
+    if (problema) return mostrarAviso(problema, 'warning');
     try {
       await cambiarEstadoVentaLocal({ saleId: item.pedido_id, estado: nuevoEstado });
       await refrescarDatos({ sync: false });
     } catch (err) {
-      mostrarAviso('Error actualizando estado: ' + err.message);
+      mostrarAviso('Error actualizando estado: ' + err.message, 'error');
     }
-  }
+  };
 
   const ejecutarCobro = async (item) => {
     const monto = safeNum(abonosRapidos[item.id]);
     const problema = validarCobroSobreVenta({ item, monto });
-    if (problema) return mostrarAviso(problema);
+    if (problema) return mostrarAviso(problema, 'warning');
     if (procesandoCobroId === item.id) return;
+
+    const pVenta = safeNum(item.venta);
+    const pSaldo = calcularSaldo(pVenta, item.descuento, safeNum(item.abono));
+    if (monto > pSaldo + 0.005) {
+      return mostrarAviso(`El abono ($${monto.toFixed(2)}) supera el saldo pendiente ($${pSaldo.toFixed(2)}).`, 'warning');
+    }
 
     const formaPago = formasPagoRapidas[item.id] || 'Efectivo';
     let urlComprobanteFinal = item.comprobante_url || '';
@@ -50,19 +56,35 @@ export default function PedidosLista({
 
     try {
       const archivoFoto = comprobantesRapidos[item.id];
-      if (formaPago === 'Transferencia' && archivoFoto && navigator.onLine) {
-        try {
-          setSubiendoId(item.id);
-          const archivoComprimido = await comprimirImagen(archivoFoto);
-          const nombreArchivo = `comprobante_${Date.now()}_${archivoFoto.name.replace(/[^a-zA-Z0-9.]/g, '')}`;
-          const { data, error } = await supabase.storage.from('comprobantes_pagos').upload(nombreArchivo, archivoComprimido);
-          if (error) throw error;
-          urlComprobanteFinal = data.path;
-        } catch (err) {
-          console.error('Error subiendo comprobante:', err);
-        } finally {
-          setSubiendoId(null);
+      if (formaPago === 'Transferencia' && archivoFoto) {
+        setSubiendoId(item.id);
+        const archivoComprimido = await comprimirImagen(archivoFoto);
+        const nombreArchivo = `comprobante_${Date.now()}_${archivoFoto.name.replace(/[^a-zA-Z0-9.]/g, '')}`;
+
+        let subido = false;
+        if (navigator.onLine) {
+          try {
+            const { data, error } = await supabase.storage.from('comprobantes_pagos').upload(nombreArchivo, archivoComprimido, { upsert: true });
+            if (error) throw error;
+            urlComprobanteFinal = data.path;
+            subido = true;
+          } catch (err) {
+            console.warn('[cobros] No se pudo subir a storage ahora; guardando localmente:', err);
+          }
         }
+
+        if (!subido) {
+          const adjunto = await guardarAdjuntoLocal({
+            blob: archivoComprimido,
+            nombre: nombreArchivo,
+            mime: 'image/jpeg',
+            bucket: 'comprobantes_pagos',
+            refType: 'pago',
+            refId: item.pedido_id || item.id
+          });
+          urlComprobanteFinal = adjunto.ruta;
+        }
+        setSubiendoId(null);
       }
 
       const firmaPago = `${monto.toFixed(2)}:${formaPago}`;
@@ -91,11 +113,12 @@ export default function PedidosLista({
       setComprobantesRapidos(prev => ({ ...prev, [item.id]: null }));
       await refrescarDatos({ sync: false });
     } catch (e) {
-      mostrarAviso('Error al registrar el cobro rápido: ' + e.message);
+      mostrarAviso('Error al registrar el cobro rápido: ' + e.message, 'error');
     } finally {
       setProcesandoCobroId(null);
+      setSubiendoId(null);
     }
-  }
+  };
 
   const pedidosParaMostrar = pedidosFiltrados.filter(item => {
     if (!item) return false;
@@ -259,6 +282,7 @@ export default function PedidosLista({
                         <span className="text-gray-800 font-bold">$</span>
                         <input 
                           type="number" 
+                          step="0.01"
                           aria-label="Monto de abono rápido"
                           placeholder="Monto" 
                           value={abonosRapidos[item.id] || ''} 
@@ -303,9 +327,9 @@ export default function PedidosLista({
                 </div>
 
               </div>
-            )
+            );
           } catch {
-            return <div key={`error-${item.id}`} className="bg-red-50 p-4 rounded-xl text-red-700 font-bold border border-red-200">Error visual en pedido.</div>
+            return <div key={`error-${item.id}`} className="bg-red-50 p-4 rounded-xl text-red-700 font-bold border border-red-200">Error visual en pedido.</div>;
           }
         })}
         {pedidosParaMostrar.length === 0 && (
@@ -316,5 +340,5 @@ export default function PedidosLista({
         )}
       </div>
     </div>
-  )
+  );
 }
