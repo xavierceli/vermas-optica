@@ -27,8 +27,11 @@ const drenarCola = () => {
   const nombre = elemento.nombre || 'tarea';
   const inicio = Date.now();
   const token = ++tokenCola;
+  let liberado = false;
 
   const liberar = () => {
+    if (liberado) return;
+    liberado = true;
     clearTimeout(vigilante);
     if (token !== tokenCola) return;
     procesandoCola = false;
@@ -145,7 +148,7 @@ const patientPayload = patient => ({
 
 const consultationPayload = consultation => {
   const payload = { ...consultation };
-  ['id', 'patientId', 'syncStatus', 'updatedAt', 'archivedAt'].forEach(key => delete payload[key]);
+  ['id', 'patientId', 'syncStatus', 'updatedAt', 'archivedAt', 'archived_at'].forEach(key => delete payload[key]);
   return payload;
 };
 
@@ -183,7 +186,7 @@ const guardarConsultaLocalImpl = async ({ patient, consultation }) => {
 const adjustLocalStock = async (table, item, delta) => {
   const product = await table.get(item.inventoryId);
   if (!product) throw new Error(`No existe el producto local ${item.inventoryId}`);
-  const nextStock = Number(product.stock || 0) + delta;
+  const nextStock = safeNum(product.stock) + safeNum(delta);
   if (nextStock < 0) throw new Error(`Stock insuficiente para ${product.codigo || product.id}`);
   await table.put({ ...product, stock: nextStock, updatedAt: nowIso(), syncStatus: product.syncStatus || 'synced' });
   return { product, nextStock };
@@ -461,7 +464,7 @@ const anularVentaLocalImpl = async saleId => {
           continue;
         }
         await localDb.inventory.put({
-          ...product, stock: Number(product.stock || 0) + Number(item.quantity || 0),
+          ...product, stock: safeNum(product.stock) + safeNum(item.quantity),
           updatedAt: nowIso(), syncStatus: 'pending'
         });
         await localDb.inventoryMovements.put(movementRecord({
@@ -539,7 +542,7 @@ const archivarConsultaLocalImpl = async consultationId => {
   const enCache = await localDb.cache.get(`remote:${idConsulta}`);
   const fila = actual || enCache;
   if (!fila) return { yaArchivada: true, motivo: 'La consulta ya no existe en este dispositivo.' };
-  if (fila.archivedAt) return { yaArchivada: true, motivo: 'La consulta ya estaba archivada.' };
+  if (archivada(fila)) return { yaArchivada: true, motivo: 'La consulta ya estaba archivada.' };
 
   const idPaciente = fila.patientId ?? fila.paciente_id;
   let cedula = safeString(fila.cedula);
@@ -584,7 +587,12 @@ const archivarConsultaLocalImpl = async consultationId => {
       const consultation = await localDb.consultations.get(id);
       const enCacheFila = await localDb.cache.get(`remote:${id}`);
       if (consultation) {
-        await localDb.consultations.put({ ...consultation, archivedAt: nowIso(), syncStatus: 'pending' });
+        await localDb.consultations.put({ 
+          ...consultation, 
+          archivedAt: nowIso(), 
+          archived_at: nowIso(),
+          syncStatus: 'pending' 
+        });
       }
 
       await localDb.cache.delete(`remote:${id}`);
@@ -597,11 +605,15 @@ const archivarConsultaLocalImpl = async consultationId => {
       }
     }
 
-    // Marca o depura al paciente local para que no quede huerfano en patients
     if (idPacienteArchivo) {
       const p = await localDb.patients.get(idPacienteArchivo);
       if (p) {
-        await localDb.patients.put({ ...p, archivedAt: nowIso(), syncStatus: 'synced' });
+        await localDb.patients.put({ 
+          ...p, 
+          archivedAt: nowIso(), 
+          archived_at: nowIso(),
+          syncStatus: 'synced' 
+        });
       }
     }
   });
@@ -618,7 +630,6 @@ const cacheServerHistorialImpl = async rows => {
     getMeta('cedulasArchivadasServidor', [])
   ]);
 
-  // Lista negra activa de cedulas archivadas
   const cedulasBloqueadas = new Set([
     ...(cedulasLocales || []).map(normalizeCedula),
     ...(cedulasServidor || []).map(normalizeCedula)
@@ -637,7 +648,6 @@ const cacheServerHistorialImpl = async rows => {
     const consultationId = row.id;
     const cedulaFila = normalizeCedula(row.cedula);
 
-    // FILTRO ESTRICTO: si el paciente o la consulta esta archivada, NUNCA entra
     if (archivada(row) || (cedulaFila && cedulasBloqueadas.has(cedulaFila))) {
       archivedRemoteIds.push(`remote:${consultationId}`);
       continue;
@@ -824,7 +834,7 @@ export const obtenerSnapshotLocal = async () => {
   payments.forEach(payment => paymentsBySale.set(payment.saleId, [...(paymentsBySale.get(payment.saleId) || []), payment]));
 
   const localHistorial = consultations
-    .filter(row => !row.archivedAt)
+    .filter(row => !row.archivedAt && !row.archived_at)
     .filter(row => {
       const cedula = normalizeCedula(row.cedula);
       return !(cedula && cedulasArchivadas.has(cedula));
@@ -834,10 +844,11 @@ export const obtenerSnapshotLocal = async () => {
       const sale = saleByConsultation.get(consultation.id) || null;
       const salePayments = sale ? (paymentsBySale.get(sale.id) || []) : [];
       const ventaAnulada = Boolean(sale) && safeString(sale.estado).trim() === 'Anulado';
-      const abonoReal = sale ? safeNum(sale.abono || salePayments.reduce((sum, payment) => sum + safeNum(payment.monto), 0)) : 0;
-      const abono = ventaAnulada
-        ? calcularSaldo(safeNum(sale.venta ?? consultation.venta), safeNum(sale.descuento ?? consultation.descuento), 0)
-        : abonoReal;
+      const abonoCalculado = sale 
+        ? safeNum(sale.abono || salePayments.reduce((sum, payment) => sum + safeNum(payment.monto), 0)) 
+        : 0;
+      const abono = ventaAnulada ? 0 : abonoCalculado;
+
       return {
         ...patient, ...consultation, ...(sale || {}),
         id: consultation.id, patient_id: patient.id, paciente_id: patient.id,
