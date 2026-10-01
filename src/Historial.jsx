@@ -83,14 +83,21 @@ export default function Historial({
     setFilasExpandidas({});
     setCargandoExpediente(true);
     
+    let borradas = new Set();
     try {
       const snapshot = await obtenerSnapshotLocal();
+      borradas = new Set((snapshot?.cedulasArchivadas || []).map(normalizeCedula));
       const histLocal = snapshot?.historial || historialReciente || [];
-      const registrosLocales = histLocal.filter(r => safeString(r.cedula) === safeString(paciente.cedula));
-      registrosLocales.sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')));
+
+      // Filtro local estricto: solo consultas del paciente que NO estén archivadas
+      const registrosLocales = histLocal
+        .filter(r => safeString(r.cedula) === safeString(paciente.cedula))
+        .filter(r => !r.archived_at)
+        .filter(r => !paciente.id || !r.patient_id || String(r.patient_id) === String(paciente.patient_id || paciente.id))
+        .sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')));
       
+      setRegistrosPaciente(registrosLocales);
       if (registrosLocales.length > 0) {
-        setRegistrosPaciente(registrosLocales);
         setCargandoExpediente(false);
       }
     } catch {
@@ -100,15 +107,29 @@ export default function Historial({
     try {
       if (!navigator.onLine) return;
 
-      const { data, error } = await supabase
+      let query = supabase
         .from('vista_pacientes')
         .select('*')
-        .eq('cedula', paciente.cedula)
-        .order('fecha', { ascending: false });
+        .eq('cedula', paciente.cedula);
+
+      // Si la columna archived_at existe en la vista, se excluyen los borrados
+      try {
+        query = query.is('archived_at', null);
+      } catch {}
+
+      const { data, error } = await query.order('fecha', { ascending: false });
         
       if (error) throw error;
       if (data && data.length > 0) {
-        setRegistrosPaciente(data);
+        // Exclusión defensiva de cualquier fila marcada con archived_at
+        const filtradosNube = data.filter(d => !d.archived_at);
+        
+        // Si el paciente actual tiene patient_id asignado, priorizamos solo sus registros
+        const porPaciente = paciente.patient_id || paciente.id
+          ? filtradosNube.filter(d => !d.patient_id || String(d.patient_id) === String(paciente.patient_id || paciente.id))
+          : filtradosNube;
+
+        setRegistrosPaciente(porPaciente.length > 0 ? porPaciente : filtradosNube);
       }
     } catch (e) { 
       console.warn("Supabase no respondió a tiempo para el expediente:", e);
@@ -175,7 +196,7 @@ export default function Historial({
             
             {safeString(expedienteActivo.antecedentes) && (
               <div className="bg-red-50 border border-red-200 p-4 rounded-lg">
-                <h3 className="font-bold text-red-900 text-xs sm:text-sm uppercase mb-1">⚠️ Antecedentes Médicos / Personales:</h3>
+                <h3 className="font-bold text-red-900 text-xs sm:text-sm uppercase mb-1">⚠️️ Antecedentes Médicos / Personales:</h3>
                 <p className="text-red-950 text-xs sm:text-sm leading-relaxed">{safeString(expedienteActivo.antecedentes)}</p>
               </div>
             )}
@@ -244,8 +265,8 @@ export default function Historial({
                                 
                                 <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
                                   <h4 className="font-bold text-indigo-900 border-b border-gray-100 pb-1 mb-2">👁 Queratometría</h4>
-                                  <p className="mb-1"><strong className="text-gray-600">OD:</strong> <span className="text-gray-900 font-semibold">{safeString(reg.k1_d_od) || '-'} | K2: {safeString(reg.k2_d_od) || '-'}</span></p>
-                                  <p><strong className="text-gray-600">OI:</strong> <span className="text-gray-900 font-semibold">{safeString(reg.k1_d_oi) || '-'} | K2: {safeString(reg.k2_d_oi) || '-'}</span></p>
+                                  <p className="mb-1"><strong className="text-gray-600">OD:</strong> <span className="text-gray-900 font-semibold">K1: {safeString(reg.k1_d_od) || '-'} | K2: {safeString(reg.k2_d_od) || '-'}</span></p>
+                                  <p><strong className="text-gray-600">OI:</strong> <span className="text-gray-900 font-semibold">K1: {safeString(reg.k1_d_oi) || '-'} | K2: {safeString(reg.k2_d_oi) || '-'}</span></p>
                                 </div>
 
                                 <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
@@ -452,7 +473,7 @@ export default function Historial({
                     </div>
                   </div>
 
-                  {/* Detalle Comercial / Pedido Actualizado */}
+                  {/* Detalle Comercial / Pedido */}
                   <div className={`p-3 sm:p-4 rounded-xl border shadow-inner flex flex-col justify-between transition-colors ${tieneDeuda ? 'bg-red-50/40 border-red-200' : 'bg-gray-50 border-gray-100'}`}>
                     <div>
                       <div className="flex justify-between items-center mb-2">
