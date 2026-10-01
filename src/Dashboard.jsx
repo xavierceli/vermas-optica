@@ -1,8 +1,9 @@
-import { useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { safeNum, safeString } from './utilidades';
 
 export default function Dashboard({ stats, historial, inventario }) {
-  
+  const [periodo, setPeriodo] = useState('mes'); // 'mes' o 'total'
+
   const { topArmazones, topLentes, topTratamientos, alertasStock } = useMemo(() => {
     const armazonesVendidos = {};
     const lentesVendidos = {};
@@ -13,7 +14,8 @@ export default function Dashboard({ stats, historial, inventario }) {
 
     for (const item of (historial || [])) {
       if (!item) continue;
-      const tieneVenta = safeString(item.estado) !== 'Ninguno' || safeNum(item.venta) > 0;
+      if (safeString(item.estado) === 'Anulado') continue;
+      const tieneVenta = safeString(item.estado) !== 'Ninguno' || safeNum(item.venta) > 0 || safeString(item.pedido_id);
       if (!tieneVenta) continue;
 
       const codArmazon = safeString(item.codigo_armazon).toUpperCase().trim();
@@ -42,15 +44,46 @@ export default function Dashboard({ stats, historial, inventario }) {
     };
   }, [historial, inventario]);
 
+  const ingresos = periodo === 'mes' ? (stats?.ventasMes || 0) : (stats?.ventasTotal || 0);
+  const costos = periodo === 'mes' ? (stats?.gastosMes || 0) : (stats?.gastosTotal || 0);
+  const utilidad = periodo === 'mes' ? (stats?.utilidadNeta || 0) : (stats?.utilidadTotal || 0);
+  const abonosPend = stats?.abonosPendientes || 0;
+
   return (
     <div className="bg-white rounded-xl shadow-lg p-4 sm:p-6 border-t-4 border-amber-500">
       
-      <div className="mb-6 sm:mb-8 border-b pb-4">
-        <h2 className="text-xl sm:text-2xl font-bold text-gray-900">📊 Panel de Inteligencia de Negocios</h2>
-        <p className="text-gray-600 text-xs sm:text-sm">Resumen financiero mensual y métricas de ventas históricas.</p>
+      <div className="mb-6 sm:mb-8 border-b pb-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h2 className="text-xl sm:text-2xl font-bold text-gray-900">📊 Panel de Inteligencia de Negocios</h2>
+          <p className="text-gray-600 text-xs sm:text-sm">Métricas financieras y analítica operativa de la óptica.</p>
+        </div>
+
+        {/* Selector de Periodo */}
+        <div className="flex bg-gray-100 p-1 rounded-xl border border-gray-200">
+          <button
+            type="button"
+            onClick={() => setPeriodo('mes')}
+            className={`px-3 sm:px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              periodo === 'mes' ? 'bg-white text-indigo-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            📅 Mes Actual
+          </button>
+          <button
+            type="button"
+            onClick={() => setPeriodo('total')}
+            className={`px-3 sm:px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              periodo === 'total' ? 'bg-white text-indigo-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            🏦 Histórico Total
+          </button>
+        </div>
       </div>
 
-      <h3 className="font-bold text-amber-900 mb-3 sm:mb-4 uppercase tracking-wider text-xs sm:text-sm">Resumen Estratégico</h3>
+      <h3 className="font-bold text-amber-900 mb-3 sm:mb-4 uppercase tracking-wider text-xs sm:text-sm">
+        Resumen Estratégico {periodo === 'mes' ? '(Mes Actual)' : '(Histórico Acumulado)'}
+      </h3>
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4 mb-8 sm:mb-10">
         
         <div className="col-span-2 lg:col-span-1 bg-gradient-to-br from-indigo-50 to-indigo-100 p-4 sm:p-5 rounded-xl border border-indigo-200 shadow-sm flex flex-col justify-between">
@@ -59,23 +92,27 @@ export default function Dashboard({ stats, historial, inventario }) {
         </div>
 
         <div className="bg-gradient-to-br from-green-50 to-green-100 p-4 sm:p-5 rounded-xl border border-green-200 shadow-sm flex flex-col justify-between">
-          <p className="text-emerald-900 font-bold text-xs uppercase tracking-tight">Ingresos Mes</p>
-          <p className="text-2xl sm:text-3xl font-black text-emerald-950 mt-2">${(stats?.ventasMes || 0).toFixed(2)}</p>
+          <p className="text-emerald-900 font-bold text-xs uppercase tracking-tight">
+            {periodo === 'mes' ? 'Ingresos Mes' : 'Ingresos Totales'}
+          </p>
+          <p className="text-2xl sm:text-3xl font-black text-emerald-950 mt-2">${ingresos.toFixed(2)}</p>
         </div>
         
         <div className="bg-gradient-to-br from-red-50 to-red-100 p-4 sm:p-5 rounded-xl border border-red-200 shadow-sm flex flex-col justify-between">
-          <p className="text-red-900 font-bold text-xs uppercase tracking-tight">Costos Lab.</p>
-          <p className="text-2xl sm:text-3xl font-black text-red-950 mt-2">${(stats?.gastosMes || 0).toFixed(2)}</p>
+          <p className="text-red-900 font-bold text-xs uppercase tracking-tight">
+            {periodo === 'mes' ? 'Costos Lab.' : 'Costos Totales'}
+          </p>
+          <p className="text-2xl sm:text-3xl font-black text-red-950 mt-2">${costos.toFixed(2)}</p>
         </div>
         
         <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-4 sm:p-5 rounded-xl border border-blue-200 shadow-sm flex flex-col justify-between">
           <p className="text-blue-900 font-bold text-xs uppercase tracking-tight">Utilidad Neta</p>
-          <p className="text-2xl sm:text-3xl font-black text-blue-950 mt-2">${(stats?.utilidadNeta || 0).toFixed(2)}</p>
+          <p className="text-2xl sm:text-3xl font-black text-blue-950 mt-2">${utilidad.toFixed(2)}</p>
         </div>
         
         <div className="bg-gradient-to-br from-amber-50 to-amber-100 p-4 sm:p-5 rounded-xl border border-amber-200 shadow-sm flex flex-col justify-between">
           <p className="text-amber-900 font-bold text-xs uppercase tracking-tight">Abonos Pend.</p>
-          <p className="text-2xl sm:text-3xl font-black text-amber-950 mt-2">${(stats?.abonosPendientes || 0).toFixed(2)}</p>
+          <p className="text-2xl sm:text-3xl font-black text-amber-950 mt-2">${abonosPend.toFixed(2)}</p>
         </div>
       </div>
 
