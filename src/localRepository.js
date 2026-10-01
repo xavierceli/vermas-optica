@@ -10,22 +10,11 @@ const safeNum = value => {
 
 // ---------------------------------------------------------------------------
 // COLA DE ESCRITURA LOCAL CON PRIORIDAD
-// IndexedDB serializa las transacciones 'rw' que tocan las mismas tablas. Por eso
-// un guardado del usuario puede quedarse esperando a un pull de sincronizacion y
-// la UI aparenta quedar congelada en "Guardando...". En vez de competir por el
-// lock, todo pasa por una sola cola con DOS carriles:
-//   - prioritario: acciones del usuario (guardar venta, pago, inventario).
-//   - fondo: tareas automaticas del motor de sincronizacion.
-// Si hay trabajo prioritario pendiente, el motor espera: el usuario nunca
-// bloquea su propia app por una tarea de fondo.
 // ---------------------------------------------------------------------------
 const colaEscrituras = [];
 let procesandoCola = false;
 let tokenCola = 0;
-// Si una tarea se queda colgada (una llamada de red que nunca responde, un
-// bloqueo de IndexedDB), el hueco se libera pasado este tiempo. Sin esto, un
-// solo atasco dejaba la app entera sin poder guardar nada.
-const LIBERAR_HUEGO_MS = 15000;
+const LIBERAR_HUECO_MS = 15000;
 
 const drenarCola = () => {
   if (procesandoCola || colaEscrituras.length === 0) return;
@@ -47,9 +36,9 @@ const drenarCola = () => {
   };
 
   const vigilante = setTimeout(() => {
-    console.error(`[cola] "${nombre}" no ha terminado en ${LIBERAR_HUEGO_MS / 1000}s. Se libera el hueco para no bloquear el resto de escrituras.`);
+    console.error(`[cola] "${nombre}" no ha terminado en ${LIBERAR_HUECO_MS / 1000}s. Se libera el hueco.`);
     liberar();
-  }, LIBERAR_HUEGO_MS);
+  }, LIBERAR_HUECO_MS);
 
   Promise.resolve()
     .then(() => {
@@ -73,18 +62,9 @@ export const enColaEscritura = (tarea, prioridad = 'alta', nombre = 'tarea') => 
 
 let contadorEscaneosInventario = 0;
 export const normalizeCedula = value => safeString(value).trim().toUpperCase();
-// El archivado llega en DOS Idiomas: la app local escribe `archivedAt` (camelCase)
-// y la base devuelve `archived_at` (snake_case). Mirar solo uno de los dos hacia
-// que un borrado hecho en otro equipo no ocultase nada aqui: era la causa de que
-// los pacientes eliminados volvieran a salir al entrar en un navegador nuevo.
+
 const archivada = fila => Boolean(fila?.archivedAt || fila?.archived_at);
-// Un id de inventario SIEMPRE es un entero. Esta función se usa para leer
-// valores que vienen de un <input> o de un campo mal formado, y antes devolvía
-// NaN para cualquier cosa que no fuera convertible ("ABC", "12abc", {}).
-// NaN no es un null: al serializar a JSON se convierte en null sin avisar, y el
-// servidor rechazaba la venta con "Cada item necesita inventario_id o codigo"
-// (sqlstate 22023) sin señalar cuál de los dos campos venía mal. Un id que no es
-// un número es, sencillamente, la ausencia de id.
+
 const numericId = value => {
   if (value === null || value === undefined || value === '') return null;
   const n = Number(value);
@@ -103,9 +83,6 @@ const findInventoryByCode = (code, index) => {
   return localDb.inventory.toArray().then(rows => rows.find(row => safeString(row.codigo).trim().toUpperCase() === safeString(code).trim().toUpperCase()));
 };
 
-// Cuenta los escaneos completos de la tabla de inventario. Sirve para detectar
-// regresiones de rendimiento: un escaneo por venta hace que el pull del servidor
-// retenga los locks de Dexie durante segundos y el guardado del usuario espere.
 export const obtenerContadorEscaneosInventario = () => contadorEscaneosInventario;
 
 const buildInventoryIndex = rows => ({
@@ -220,7 +197,6 @@ const guardarVentaLocalImpl = async ({ patient, consultationId, sale, initialPay
   const previousItems = isEdit ? await localDb.saleItems.where('saleId').equals(saleId).toArray() : [];
   const items = await deriveItems({ ...sale, items: sale.items });
   const resolvedItems = [];
-  // Una sola lectura del inventario para resolver todos los items de la venta.
   const inventoryIndex = buildInventoryIndex(await localDb.inventory.toArray());
 
   for (const item of items) {
@@ -251,10 +227,6 @@ const guardarVentaLocalImpl = async ({ patient, consultationId, sale, initialPay
         consulta_id: normalizedSale.consultationId || null,
         consulta: normalizedSale.consultationId ? {} : { fecha: normalizedSale.fecha },
         venta: { ...sale, id: saleId, abono: '0', fecha: normalizedSale.fecha },
-        // BUG REAL: el filtro dejaba pasar un item SIN inventario_id (solo con codigo).
-// El servidor lo rechaza con "Item de venta invalido." (22023), que es un error
-// opaco: el optometria no tiene forma de saber que el problema es un armazon sin
-// correspondencia en el inventario. Aqui solo sale lo que tiene id resuelto.
         items: resolvedItems
           .filter(item => item.inventoryId !== null)
           .map(item => ({ inventario_id: item.inventoryId, codigo: null, cantidad: item.quantity }))
@@ -307,10 +279,6 @@ const guardarVentaLocalImpl = async ({ patient, consultationId, sale, initialPay
 
       const paymentAmount = Number(safeNum(initialPayment?.monto).toFixed(2));
       if (paymentAmount > 0) {
-        // El id de la venta se usa como clave de idempotencia cuando no viene una.
-        // ANTES: se consultaba payments por paymentKey ANTES de declararla (6 lineas mas
-        // abajo), lo que lanzaba ReferenceError y hacia IMPOSIBLE guardar cualquier
-        // venta con abono inicial. El pago tampoco se registraba nunca.
         const paymentKey = initialPayment.idempotencyKey || saleId;
         const yaRegistrado = await localDb.payments.where('idempotencyKey').equals(paymentKey).first();
         if (!yaRegistrado) {
@@ -389,8 +357,6 @@ const registrarPagoLocalImpl = async ({ saleId, amount, method = 'Efectivo', ref
   return result;
 };
 
-// El servidor nunca anula una venta con abono. El reembolso es la unica salida
-// y debe ser tan atomica e idempotente como el cobro.
 const registrarReembolsoLocalImpl = async ({ saleId, amount, method = 'Efectivo', reference = null, idempotencyKey = createUuid() }) => {
   const refundAmount = Number(safeNum(amount).toFixed(2));
   if (refundAmount <= 0) throw new Error('El monto del reembolso debe ser mayor que cero.');
@@ -444,8 +410,6 @@ const anularVentaConReembolsoImpl = async ({ saleId, method = 'Efectivo', refere
   const sale = await localDb.sales.get(saleId);
   if (!sale) throw new Error('La venta no existe en este dispositivo.');
   const abono = Number(safeNum(sale.abono).toFixed(2));
-  // Primero devolver el dinero, despues anular: el servidor rechaza anular
-  // una venta con saldo, y el orden inverso dejaria el pedido a medias.
   if (abono > 0) {
     await registrarReembolsoLocalImpl({ saleId, amount: abono, method, reference });
   }
@@ -474,8 +438,6 @@ const anularVentaLocalImpl = async saleId => {
     type: 'ANULAR_VENTA', entityId: saleId,
     payload: { p_venta_id: saleId }
   });
-  // Productos que no existen en este dispositivo: no se puede devolver su stock
-  // aqui, pero el servidor es la fuente de verdad y lo hara al sincronizar.
   const productosAusentes = [];
 
   await localDb.transaction(
@@ -484,9 +446,6 @@ const anularVentaLocalImpl = async saleId => {
       const sale = await localDb.sales.get(saleId);
       if (!sale) throw new Error('La venta no existe en este dispositivo.');
       if (sale.estado === 'Anulado') {
-        // Ya estaba anulada pero el servidor aun no lo sabe: hay que encolar la
-        // operacion igual, o la venta se quedaria anulada solo en este equipo para
-        // siempre y el usuario veria que "Cancelar" no hace nada.
         await localDb.outbox.put(operation);
         return;
       }
@@ -575,55 +534,32 @@ const eliminarPrecioLocalImpl = async priceId => {
 };
 
 const archivarConsultaLocalImpl = async consultationId => {
-  // Archivar es idempotente: pulsar "Eliminar" dos veces no puede fallar ni
-  // mostrar un error. Antes la segunda pulsacion reintentaba sobre una consulta
-  // ya archivada y devolvia un fallo, dando a pensar que la app se habia roto.
-  // El historial dibuja las filas que vienen del servidor con el id ya
-  // prefijado ("remote:<id>"). Si se busca tal cual, la consulta se perdia: se
-  // buscaba "remote:remote:<id>" y no habia nada que archivar, con lo que el
-  // boton Eliminar no hacia NADA. Se normaliza siempre al id real.
   const idConsulta = String(consultationId || '').replace(/^remote:/, '');
   const actual = await localDb.consultations.get(idConsulta);
-
-  // La consulta puede no tener fila propia y vivir SOLO en la cache del servidor
-  // (id "remote:<id>"): es exactamente lo que se dibuja en el historial. Antes se
-  // contestaba "no existe en este dispositivo" y NO se encolaba nada, de modo que
-  // el servidor nunca se enteraba del archivo y el paciente reaparecia en cada
-  // sincronizacion. Era un bucle sin salida: no se podia eliminar nunca.
   const enCache = await localDb.cache.get(`remote:${idConsulta}`);
   const fila = actual || enCache;
   if (!fila) return { yaArchivada: true, motivo: 'La consulta ya no existe en este dispositivo.' };
   if (fila.archivedAt) return { yaArchivada: true, motivo: 'La consulta ya estaba archivada.' };
 
-  // Registro de cedulas eliminadas en ESTE dispositivo. El servidor puede tardar
-  // en aplicar el archivo y, mientras tanto, devolveria la consulta en el pull:
-  // el paciente "eliminado" reaparecia al sincronizar o al actualizar la app.
-  // Esta lista filtra siempre, por mucho que el servidor la mande de vuelta.
-  // La cedula vive en el PACIENTE, no en la consulta. Leerla de la consulta daba
-  // cadena vacia, con lo que el registro de "cedulas eliminadas" se quedaba
-  // vacio y el paciente seguia apareciendo en el historial por mucho que su
-  // consulta ya estuviera archivada. Ese era el motivo de que "Eliminar" no
-  // quitara nada: la app creia haberlo hecho, pero no habia filtrado nada.
   const idPaciente = fila.patientId ?? fila.paciente_id;
   let cedula = safeString(fila.cedula);
   if (!cedula && idPaciente) {
     const paciente = await localDb.patients.get(idPaciente);
     cedula = safeString(paciente?.cedula);
   }
-  const borrados = new Set(await getMeta('cedulasArchivadas', []));
-  if (normalizeCedula(cedula)) borrados.add(normalizeCedula(cedula));
-  await setMeta('cedulasArchivadas', [...borrados]);
+  const cedulaNormalizada = normalizeCedula(cedula);
 
-  await localDb.transaction('rw', localDb.consultations, localDb.outbox, localDb.cache, async () => {
-    // BUG REAL Y DE FONDO: "Eliminar" solo archivaba UNA consulta, la de la
-    // tarjeta. El paciente de prueba tenia 10 consultas y se archivaba 1: las
-    // otras 9 seguian VIVAS en el servidor, asi que el paciente existia de
-    // verdad y volvia a salir en cada sincronizacion, en cualquier navegador.
-    //
-    // Borrar a una persona no es esconder su ultima visita: es que esa persona
-    // deje de existir. Se archivan TODAS sus consultas, las de este equipo y las
-    // que solo existen en la copia del servidor.
-    const cedulaNormalizada = normalizeCedula(cedula);
+  // Registro inmediato en ambas claves de meta para blindaje local
+  const borrados = new Set(await getMeta('cedulasArchivadas', []));
+  const borradosServidor = new Set(await getMeta('cedulasArchivadasServidor', []));
+  if (cedulaNormalizada) {
+    borrados.add(cedulaNormalizada);
+    borradosServidor.add(cedulaNormalizada);
+  }
+  await setMeta('cedulasArchivadas', [...borrados]);
+  await setMeta('cedulasArchivadasServidor', [...borradosServidor]);
+
+  await localDb.transaction('rw', localDb.consultations, localDb.patients, localDb.outbox, localDb.cache, async () => {
     const idPacienteArchivo = idPaciente || fila.patientId || fila.paciente_id || null;
 
     const idsAArchivar = new Set([idConsulta]);
@@ -635,8 +571,6 @@ const archivarConsultaLocalImpl = async consultationId => {
         const mismoPaciente = idPacienteArchivo && String(c.patientId ?? c.paciente_id ?? '') === String(idPacienteArchivo);
         if (mismaCedula || mismoPaciente) idsAArchivar.add(String(c.id));
       }
-      // Las que solo viven en la copia del servidor: son las que se dibujan en
-      // el historial y las que el servidor sigue mandando.
       const remotas = await localDb.cache.toArray();
       for (const row of remotas) {
         if (row.kind !== 'historial' || archivada(row)) continue;
@@ -653,20 +587,21 @@ const archivarConsultaLocalImpl = async consultationId => {
         await localDb.consultations.put({ ...consultation, archivedAt: nowIso(), syncStatus: 'pending' });
       }
 
-      // La copia de esta consulta en la tabla `cache` (id "remote:<id>") es la que
-      // se dibuja en el historial. Si no se borra aqui, el paciente eliminado
-      // reaparece en cuanto la app sincroniza.
       await localDb.cache.delete(`remote:${id}`);
 
-      // Si la consulta NUNCA llego al servidor, no hay nada que archivar alla y el
-      // servidor rechazaria el comando para siempre ("La consulta X no existe"),
-      // dejando una barra roja permanente. Solo se encola si ya vive alli: o lo
-      // confirma syncStatus 'synced', o vino del servidor y esta en la cache.
       if (consultation?.syncStatus === 'synced' || enCacheFila) {
         await localDb.outbox.put(createOutboxOperation({
           type: 'ARCHIVAR_CONSULTA', entityId: id,
           payload: { p_consulta_id: id }
         }));
+      }
+    }
+
+    // Marca o depura al paciente local para que no quede huerfano en patients
+    if (idPacienteArchivo) {
+      const p = await localDb.patients.get(idPacienteArchivo);
+      if (p) {
+        await localDb.patients.put({ ...p, archivedAt: nowIso(), syncStatus: 'synced' });
       }
     }
   });
@@ -675,11 +610,20 @@ const archivarConsultaLocalImpl = async consultationId => {
 };
 
 const cacheServerHistorialImpl = async rows => {
-  const [localPatients, localConsultations, localSales] = await Promise.all([
+  const [localPatients, localConsultations, localSales, cedulasLocales, cedulasServidor] = await Promise.all([
     localDb.patients.toArray(),
     localDb.consultations.toArray(),
-    localDb.sales.toArray()
+    localDb.sales.toArray(),
+    getMeta('cedulasArchivadas', []),
+    getMeta('cedulasArchivadasServidor', [])
   ]);
+
+  // Lista negra activa de cedulas archivadas
+  const cedulasBloqueadas = new Set([
+    ...(cedulasLocales || []).map(normalizeCedula),
+    ...(cedulasServidor || []).map(normalizeCedula)
+  ].filter(Boolean));
+
   const patientMap = new Map(localPatients.map(row => [row.id, row]));
   const consultationMap = new Map(localConsultations.map(row => [row.id, row]));
   const saleMap = new Map(localSales.map(row => [row.id, row]));
@@ -690,10 +634,23 @@ const cacheServerHistorialImpl = async rows => {
   const archivedRemoteIds = [];
 
   for (const row of rows || []) {
-    const patientId = row.paciente_id || row.patient_id;
     const consultationId = row.id;
+    const cedulaFila = normalizeCedula(row.cedula);
+
+    // FILTRO ESTRICTO: si el paciente o la consulta esta archivada, NUNCA entra
+    if (archivada(row) || (cedulaFila && cedulasBloqueadas.has(cedulaFila))) {
+      archivedRemoteIds.push(`remote:${consultationId}`);
+      continue;
+    }
+
+    const patientId = row.paciente_id || row.patient_id;
     const localPatient = patientMap.get(patientId);
     const localConsultation = consultationMap.get(consultationId);
+
+    if (localConsultation && archivada(localConsultation)) {
+      archivedRemoteIds.push(`remote:${consultationId}`);
+      continue;
+    }
 
     if (patientId && (!localPatient || localPatient.syncStatus !== 'pending')) {
       nextPatients.push({
@@ -703,16 +660,14 @@ const cacheServerHistorialImpl = async rows => {
         syncStatus: 'synced', updatedAt: nowIso()
       });
     }
-    if (localConsultation?.archivedAt) {
-      archivedRemoteIds.push(`remote:${consultationId}`);
-      continue;
-    }
+
     if (!localConsultation || localConsultation.syncStatus !== 'pending') {
       nextConsultations.push({
         ...row, id: consultationId, patientId, fecha: row.fecha,
         syncStatus: 'synced', updatedAt: nowIso()
       });
     }
+
     if (row.pedido_id) {
       const localSale = saleMap.get(row.pedido_id);
       if (!localSale || localSale.syncStatus !== 'pending') {
@@ -735,11 +690,8 @@ const cacheServerHistorialImpl = async rows => {
     if (nextSales.length > 0) await localDb.sales.bulkPut(nextSales);
   });
 };
+
 const cacheServerCatalogImpl = async ({ inventory = [], prices = [] } = {}) => {
-  // ORDEN IMPORTANTE: primero se escribe el catalogo del servidor y despues se
-  // resuelve la hidratacion de los items de venta. Si se invirtiera, una venta
-  // que referencia un producto nuevo para el dispositivo no lo encontraria en el
-  // indice y el pull entero fallaria.
   await localDb.transaction('rw', localDb.inventory, localDb.prices, async () => {
     for (const row of inventory) {
       const local = await localDb.inventory.get(row.id);
@@ -769,8 +721,6 @@ const cacheServerCatalogImpl = async ({ inventory = [], prices = [] } = {}) => {
     const items = await deriveItems(sale);
     for (const item of items) {
       const producto = await locateInventory(item, inventoryIndex).catch(() => null);
-      // Un producto que no esta ni en el servidor ni en el dispositivo no debe
-      // tumbar el pull completo: se omite este item y el resto sigue.
       if (!producto) continue;
       newSaleItems.push({
         id: createUuid(), saleId: sale.id, inventoryId: producto.id,
@@ -786,6 +736,7 @@ const cacheServerCatalogImpl = async ({ inventory = [], prices = [] } = {}) => {
     });
   }
 };
+
 const importLegacyCacheImpl = async () => {
   if (await getMeta('legacyCacheImported', false)) return;
   const { leerBoveda } = await import('./motorOffline.js');
@@ -836,32 +787,21 @@ const importLegacyCacheImpl = async () => {
       }
     });
   } catch (error) {
-    // La bandera se escribe IGUAL. Este era el bucle infinito: si la transaccion
-    // fallaba, el flag nunca se guardaba, y cada carga de datos volvia a
-    // intentar la migracion y a fallar otra vez, sin parar.
     await setMeta('legacyCacheImported', true);
-    console.warn('[migracion] no se pudo importar el cache antiguo; se marcara como hecho para no reintentar en bucle:', error);
+    console.warn('[migracion] no se pudo importar el cache antiguo; se marcara como hecho:', error);
     return;
   }
 
   await setMeta('legacyCacheImported', true);
 };
+
 export const obtenerSnapshotLocal = async () => {
   const [patients, consultations, sales, items, payments, inventory, prices, outbox, cache] = await Promise.all([
     localDb.patients.toArray(), localDb.consultations.toArray(), localDb.sales.toArray(),
     localDb.saleItems.toArray(), localDb.payments.toArray(), localDb.inventory.toArray(),
     localDb.prices.toArray(), localDb.outbox.toArray(), localDb.cache.toArray()
   ]);
-  // Cedulas eliminadas en este dispositivo. Se filtran del historial aunque el
-  // servidor las vuelva a mandar: el borrado local manda hasta que el servidor
-  // confirme el archivo. Sin esto, recargar o actualizar resucitaba al paciente.
-  // Cedulas de pacientes que ya no existen en este dispositivo, por dos vias:
-  //  1. el registro que escribe el boton Eliminar;
-  //  2. las consultas YA archivadas que no dejan ninguna viva del mismo
-  //     paciente. Sin la segunda via, un paciente archivado antes de que el
-  //     registro existiera seguia apareciendo para siempre en el historial.
-  // OJO: se archiva una CONSULTA, no un paciente. Solo se oculta cuando el
-  // paciente se queda sin ninguna consulta viva, que es cuando ya no existe aqui.
+
   const cedulasVivas = new Set(
     consultations.filter(c => !archivada(c)).map(c => normalizeCedula(c.cedula)).filter(Boolean)
   );
@@ -869,20 +809,13 @@ export const obtenerSnapshotLocal = async () => {
     .filter(c => archivada(c))
     .map(c => normalizeCedula(c.cedula))
     .filter(cedula => cedula && !cedulasVivas.has(cedula));
-  // El borrado de un paciente tiene que ser un HECHO DEL SERVIDOR, no un
-  // recuerdo de un dispositivo. Antes solo se guardaba en este navegador, asi que
-  // en Edge, al entrar la primera vez, "PRUEBA" y "PRUEBA2" volvian a aparecer
-  // como si nadie los hubiera borrado nunca.
-  //
-  // El pull escribe 'cedulasArchivadasServidor' leyendo archived_at de la base, y
-  // aqui se mezcla con lo local: asi un borrado hecho sin internet (que aun no ha
-  // subido) sigue ocultandose en este equipo, y en cuanto llega a la nube lo
-  // ocultan TODOS los equipos.
+
   const cedulasArchivadas = new Set([
     ...(await getMeta('cedulasArchivadas', [])).map(normalizeCedula),
     ...(await getMeta('cedulasArchivadasServidor', [])).map(normalizeCedula),
     ...soloArchivadas
   ].filter(Boolean));
+
   const patientById = new Map(patients.map(row => [row.id, row]));
   const saleByConsultation = new Map(sales.filter(row => row.consultationId).map(row => [row.consultationId, row]));
   const itemsBySale = new Map();
@@ -897,33 +830,22 @@ export const obtenerSnapshotLocal = async () => {
       return !(cedula && cedulasArchivadas.has(cedula));
     })
     .map(consultation => {
-    const patient = patientById.get(consultation.patientId) || {};
-    const sale = saleByConsultation.get(consultation.id) || null;
-    const salePayments = sale ? (paymentsBySale.get(sale.id) || []) : [];
-    // Una venta ANULADA no deja deuda: el abono se devuelve y el paciente no debe
-    // ver un "saldo pendiente" por algo que ya no existe. Antes la venta anulada
-    // conservaba el importe y perdia el abono, asi que el historial mostraba el
-    // total entero como pendiente.
-    const ventaAnulada = Boolean(sale) && safeString(sale.estado).trim() === 'Anulado';
-    const abonoReal = sale ? safeNum(sale.abono || salePayments.reduce((sum, payment) => sum + safeNum(payment.monto), 0)) : 0;
-    const abono = ventaAnulada
-      ? calcularSaldo(safeNum(sale.venta ?? consultation.venta), safeNum(sale.descuento ?? consultation.descuento), 0)
-      : abonoReal;
-    return {
-      ...patient, ...consultation, ...(sale || {}),
-      id: consultation.id, patient_id: patient.id, paciente_id: patient.id,
-      pedido_id: sale?.id || '', fecha_venta: sale?.fecha || null,
-      abono: String(abono || 0), syncStatus: sale?.syncStatus || consultation.syncStatus || 'synced'
-    };
-  });
-  // El historial del servidor llega con `estado` = 'En laboratorio' por defecto
-  // (es el valor que la vista toma de la venta). Para una consulta que NUNCA
-  // tuvo venta, ese estado es inventado y hacia que apareciera sola en Pedidos
-  // con monto $0. Se corrige en el origen: si la fila no trae pedido, no hay
-  // estado de venta.
-  // Consultas ya archivadas en ESTE dispositivo. La copia del servidor (remote:)
-  // se filtra tambien por aqui: aunque el pull todavia no haya limpiado la cache,
-  // una consulta archivada no puede seguir apareciendo en el historial.
+      const patient = patientById.get(consultation.patientId) || {};
+      const sale = saleByConsultation.get(consultation.id) || null;
+      const salePayments = sale ? (paymentsBySale.get(sale.id) || []) : [];
+      const ventaAnulada = Boolean(sale) && safeString(sale.estado).trim() === 'Anulado';
+      const abonoReal = sale ? safeNum(sale.abono || salePayments.reduce((sum, payment) => sum + safeNum(payment.monto), 0)) : 0;
+      const abono = ventaAnulada
+        ? calcularSaldo(safeNum(sale.venta ?? consultation.venta), safeNum(sale.descuento ?? consultation.descuento), 0)
+        : abonoReal;
+      return {
+        ...patient, ...consultation, ...(sale || {}),
+        id: consultation.id, patient_id: patient.id, paciente_id: patient.id,
+        pedido_id: sale?.id || '', fecha_venta: sale?.fecha || null,
+        abono: String(abono || 0), syncStatus: sale?.syncStatus || consultation.syncStatus || 'synced'
+      };
+    });
+
   const archivadasLocales = new Set(consultations.filter(c => archivada(c)).map(c => String(c.id)));
   const remoteHistorial = cache
     .filter(row => row.kind === 'historial' && !archivada(row))
@@ -933,31 +855,24 @@ export const obtenerSnapshotLocal = async () => {
       return !(cedula && cedulasArchivadas.has(cedula));
     })
     .map(row => {
-    const data = { ...row };
-    delete data.kind;
-    delete data.updatedAt;
-    data.syncStatus = 'synced';
-    if (!safeString(data.pedido_id).trim() && safeNum(data.venta) <= 0) {
-      data.estado = 'Ninguno';
-    }
-    return data;
-  });
+      const data = { ...row };
+      delete data.kind;
+      delete data.updatedAt;
+      data.syncStatus = 'synced';
+      if (!safeString(data.pedido_id).trim() && safeNum(data.venta) <= 0) {
+        data.estado = 'Ninguno';
+      }
+      return data;
+    });
+
   const combined = [...localHistorial, ...remoteHistorial].sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')));
-  // La tarjeta se titula "Ultima RX Clinica", asi que gana la visita mas reciente
-  // CON refraccion y no la mas reciente sin mas: si no, un control sin receta
-  // tapa la ultima Rx y el optometria ve una tabla vacia. La regla vive en
-  // historial.js, con tests, y es la MISMA que usa el buscador de la pantalla.
+
   return {
     historial: unaTarjetaPorCedula(
       combined,
       fila => normalizeCedula(fila.cedula) || `id:${fila.id}`
     ),
     cedulasArchivadas: [...cedulasArchivadas],
-    // Ventas de pacientes archivados. NO desaparecen: la venta es un hecho
-    // economico y sigue sujetando el stock de los productos. Si se ocultaran con
-    // el historial, el optometria no tendria forma de ANULARLAS y el inventario
-    // se quedaria sin devolver para siempre. Solo se esconden de la lista de
-    // pacientes, no de Pedidos.
     ventasArchivadas: sales
       .map(venta => ({ venta, patient: patientById.get(venta.patientId) || {} }))
       .filter(({ patient }) => {
@@ -1025,10 +940,6 @@ const markLocalOperationSyncedImpl = async operation => {
       break;
   }
 };
-// --- Adjuntos offline ------------------------------------------------------
-// Antes, una foto tomada sin conexion se perdia en silencio: el catch solo
-// hacia console.error y el estado del formulario se limpiaba igual. Aqui el
-// binario queda en IndexedDB y se encola su subida.
 
 const sanitizeNombre = nombre => safeString(nombre).replace(/[^a-zA-Z0-9.]/g, '').slice(-40) || 'archivo.jpg';
 
