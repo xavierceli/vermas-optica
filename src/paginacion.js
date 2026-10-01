@@ -1,31 +1,41 @@
 // ---------------------------------------------------------------------------
 // PAGINACION DE DESCARGAS
-// Antes el historial remoto se bajaba con un limite fijo de 100 filas: cualquier
-// paciente con mas de 100 consultas quedaba invisible en el dispositivo. Esto
-// recorre la vista por paginas, con topes de seguridad para que un fallo de red
-// o un orden inestable no dejen la app colgada en un bucle.
+// ---------------------------------------------------------------------------
+// Recorre consultas remotas por bloques paginados, evitando sobrecargar la red
+// o el límite de memoria del navegador. Incluye topes de seguridad contra
+// bucles infinitos y deduplicación en memoria.
 // ---------------------------------------------------------------------------
 
 /**
- * Recorre paginas hasta agotar los datos o alcanzar el tope.
- * @param fetchPagina (desde, limite) => Promise<array>
- * @param pageSize filas por peticion
- * @param maxPaginas tope de seguridad
- * @param onPagina callback opcional por pagina descargada
+ * Recorre páginas hasta agotar los datos o alcanzar el tope de seguridad.
+ * @param {Function} fetchPagina (desde, limite) => Promise<Array>
+ * @param {number} pageSize Cantidad de filas por petición
+ * @param {number} maxPaginas Límite máximo de páginas a consultar
+ * @param {Function} [onPagina] Callback opcional ejecutado por cada lote
+ * @returns {Promise<{filas: Array, paginasDescargadas: number, completa: boolean}>}
  */
 export const paginarConsulta = async ({ fetchPagina, pageSize = 200, maxPaginas = 25, onPagina }) => {
   const filas = [];
   const vistas = new Set();
   let paginasDescargadas = 0;
+  let alcanzadoFinal = false;
 
   for (let pagina = 0; pagina < maxPaginas; pagina += 1) {
     const desde = pagina * pageSize;
     const lote = await fetchPagina(desde, pageSize);
-    if (!Array.isArray(lote) || lote.length === 0) break;
+    
+    if (!Array.isArray(lote) || lote.length === 0) {
+      alcanzadoFinal = true;
+      break;
+    }
 
     let nuevas = 0;
-    for (const fila of lote) {
-      const clave = fila?.id ?? `${fila?.cedula ?? ''}:${fila?.fecha ?? ''}`;
+    for (let i = 0; i < lote.length; i += 1) {
+      const fila = lote[i];
+      const idValido = fila?.id !== null && fila?.id !== undefined ? String(fila.id) : null;
+      const clave = idValido 
+        ?? `${String(fila?.cedula || '').trim()}:${String(fila?.nombre || '').trim()}:${String(fila?.fecha || '')}:${pagina}_${i}`;
+
       if (vistas.has(clave)) continue;
       vistas.add(clave);
       filas.push(fila);
@@ -33,13 +43,31 @@ export const paginarConsulta = async ({ fetchPagina, pageSize = 200, maxPaginas 
     }
 
     paginasDescargadas += 1;
-    if (onPagina) await onPagina(lote, pagina);
 
-    // Ultima pagina: el servidor devolvio menos filas de las pedidas.
-    if (lote.length < pageSize) break;
-    // La vista no avanza (orden inestable): seguir repetiria la misma pagina.
-    if (nuevas === 0) break;
+    if (typeof onPagina === 'function') {
+      try {
+        await onPagina(lote, pagina);
+      } catch (err) {
+        console.warn('[paginacion] Advertencia en callback onPagina:', err);
+      }
+    }
+
+    // Última página: el servidor devolvió menos filas de las solicitadas
+    if (lote.length < pageSize) {
+      alcanzadoFinal = true;
+      break;
+    }
+
+    // Si no hubo ninguna fila nueva en este bloque, detenemos para evitar bucles por orden inestable
+    if (nuevas === 0) {
+      alcanzadoFinal = true;
+      break;
+    }
   }
 
-  return { filas, paginasDescargadas, completa: filas.length > 0 };
+  return { 
+    filas, 
+    paginasDescargadas, 
+    completa: alcanzadoFinal 
+  };
 };
