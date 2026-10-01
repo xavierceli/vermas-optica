@@ -1,13 +1,16 @@
 import { supabase } from './supabaseClient';
 import { localDb, nowIso, requestPersistentStorage } from './localDb';
 import { cacheServerCatalog, cacheServerHistorial, enColaEscritura, markLocalOperationSynced } from './localRepository';
-
-// OJO, TRAMPA DE INTERBLOQUEO: markLocalOperationSynced y cacheServerHistorial
-// YA pasan por la cola de escritura. Envolverlos aqui otra vez dejaria la cola
-// esperando a si misma y TODO se quedaria colgado. Solo se encolan bloques que
-// escriben directamente en localDb (ver test en avisos.test.js).
 import { paginarConsulta } from './paginacion';
 import { esFalloDeRed } from './reglas';
+
+// Topes de paginación declarados al inicio para evitar valores indefinidos
+const TAMPAGINA_HISTORIAL = 200;
+const MAX_PAGINAS_HISTORIAL = 25;
+const TIEMPO_LIMITE_MS = 10000;
+const DIAS_RETENCION_DESCARTADAS = 7;
+const MAX_INTENTOS = 5;
+const TIEMPO_ESPERA_BASE_MS = 15000;
 
 let running = false;
 let started = false;
@@ -20,62 +23,34 @@ const initialStatus = {
   online: typeof navigator === 'undefined' ? true : navigator.onLine,
   pending: 0,
   conflicts: 0,
-  // Operaciones que el servidor rechazo y que ya no se reintentan. No son
-  // "pendientes": se muestran aparte para que el usuario sepa que se perdieron.
   descartadas: 0,
   lastSync: null,
   lastError: null,
-  // El historial tiene tope de paginas para no descargarse la base entera. Si
-  // se llega al tope, este equipo tiene una VISTA PARCIAL del historial: las
-  // consultas mas antiguas siguen en la nube (se encuentran buscando por cedula
-  // o nombre) pero no salen en la lista. Antes esto solo se avisaba por consola,
-  // que el optometria no abre: parecia que el historial estaba completo.
   historialParcial: false,
   historialDescargadas: 0,
   historialTope: TAMPAGINA_HISTORIAL * MAX_PAGINAS_HISTORIAL
 };
+
 let status = { ...initialStatus };
-// Cuando el usuario entra con el PIN local no hay token del servidor. La
-// sincronizacion queda suspendida por mucho que haya conexion.
 let sesionAusente = false;
 
-// Una sesion caducada hace que supabase-js envie las peticiones con el rol
-// `anon`: el servidor responde 403 a las tablas y "Bucket not found" a Storage,
-// sin avisar. Antes eso solo se veia en la consola; aqui lo detectamos para
-// poder decirlo en la interfaz.
-//
-// Solo se aceptan los codigos REALES de sesion/permisos. Antes bastaba con que
-// el mensaje contuviera la palabra "token" y cualquier error de red con esa
-// palabra (un timeout, un 502 de la CDN) se leia como "tu sesion expiro", que
-// es una orientacion falsa para el usuario.
 const esFalloDeSesion = error => {
   if (!error) return false;
   const codigo = String(error.code || '');
   return error.status === 401
     || error.status === 403
-    || codigo === '42501'            // insufficient_privilege
-    || codigo.startsWith('PGRST301'); // JWT ausente, caducado o invalido
+    || codigo === '42501'
+    || codigo.startsWith('PGRST301');
 };
-
-// supabase-js NO aplica timeout por defecto: en una red movil degenerada (el caso
-// real de uso de esta app) la peticion se queda colgada, el candado `running`
-// nunca se libera y la app deja de sincronizar en silencio para siempre.
-// Este tope convierte un cuelgue invisible en un reintento honesto.
-const TIEMPO_LIMITE_MS = 10000;
 
 const conTimeout = (promesa, ms, etiqueta) => Promise.race([
   promesa,
   new Promise((_, rechazar) => {
     const id = setTimeout(() => rechazar(new Error(`Tiempo agotado (${ms / 1000}s) en ${etiqueta}`)), ms);
-    // No dejar el temporizador vivo si la peticion responde antes.
     promesa.then(() => clearTimeout(id), () => clearTimeout(id));
   })
 ]);
 
-/**
- * Marca que no hay sesion del servidor. Mientras sea true, el motor se
- * considera offline: la Outbox se acumula y se subira al volver a entrar.
- */
 export const fijarSesionAusente = activa => {
   sesionAusente = Boolean(activa);
   if (sesionAusente) {
@@ -93,17 +68,8 @@ const emit = () => {
   listeners.forEach(listener => listener(status));
 };
 
-// Una operacion 'descartada' ya no esta pendiente de nada: no se reintentara y no
-// debe contar como tal. Antes seguia dentro del conteo para siempre, que es
-// justo lo que hacia que la app mostrara "21 pendientes" sin poder reducirlos.
-// La outbox solo guarda operaciones vivas: lo que el servidor ya aplico se
-// borra en applyResults. Las 'descartada' si se acumulan, y una tabla que crece
-// sin limite hace que cada ciclo se lea entera de mas. Se conservan 7 dias para
-// poder diagnosticar, y luego se purgan.
-const DIAS_RETENcion_DESCARTADAS = 7;
-
 const purgarDescartadas = async () => {
-  const limite = Date.now() - DIAS_RETENcion_DESCARTADAS * 24 * 60 * 60 * 1000;
+  const limite = Date.now() - DIAS_RETENCION_DESCARTADAS * 24 * 60 * 60 * 1000;
   const viejas = await localDb.outbox.where('status').equals('descartada').toArray();
   const aBorrar = viejas.filter(op => new Date(op.updatedAt || op.createdAt).getTime() < limite);
   if (aBorrar.length === 0) return 0;
@@ -111,19 +77,6 @@ const purgarDescartadas = async () => {
   return aBorrar.length;
 };
 
-// BUG REAL: el payload de una venta se congelaba al CREAR la operacion y se
-// reenviaba tal cual, edito o no el optometria la venta despues. Una venta
-// guardada antes de arreglar el filtro dejo en la cola un item con
-// inventario_id null, el servidor lo rechazo con "Item de venta invalido." y se
-// produjo un bucle infinito: la misma operacion, con el mismo payload viejo,
-// rechazada cada 30 s para siempre. Arreglar el filtro al guardar NO la
-// desbloquea, porque la operacion ya estaba en la cola.
-//
-// Aqui se reconstruyen los items desde la venta local, que es la verdad actual:
-// si la venta ya no tiene ese armazon, el item desaparece del envio y la venta
-// sube. Una operacion atascada se cura sola en cuanto hay red. Y se le devuelven
-// los intentos: es un payload NUEVO, se merece una oportunidad limpia. Si no,
-// una venta corregida a la cuarta se descartaba sin llegar a subirse nunca.
 const refrescarItemsDeVenta = async operation => {
   if (operation.type !== 'CREAR_VENTA' && operation.type !== 'EDITAR_VENTA') return operation;
   const items = await localDb.saleItems.where('saleId').equals(operation.entityId).toArray();
@@ -132,7 +85,7 @@ const refrescarItemsDeVenta = async operation => {
     .map(item => ({ inventario_id: item.inventoryId, codigo: null, cantidad: Math.max(1, Number(item.quantity) || 1) }));
   const actuales = operation?.payload?.p_payload?.items || [];
   if (JSON.stringify(actuales) === JSON.stringify(resueltos)) return operation;
-  console.warn(`[sync] se actualizan los items de "${operation.type}" (${operation.entityId}) con la venta local antes de enviarla.`);
+
   const actualizado = {
     ...operation,
     attempts: 0,
@@ -144,10 +97,6 @@ const refrescarItemsDeVenta = async operation => {
   return actualizado;
 };
 
-// Un fallo de RED deja la operacion como 'pending', sin sumar intento ni dejar un
-// motivo de rechazo. Si no, cada corte de internet sumaria un intento, la venta
-// llegaria a MAX_INTENTOS y pasaria a 'descartada' por no tener internet: se
-// perderia el trabajo del optometria por una causa que no es de los datos.
 const marcarPendientePorRed = async operation => {
   await localDb.outbox.put({
     ...operation,
@@ -157,16 +106,15 @@ const marcarPendientePorRed = async operation => {
   });
   status.online = false;
   status.phase = 'offline';
-  console.warn(`[sync] "${operation.type}" queda en espera: sin conexion. No es un rechazo del servidor.`);
 };
 
-// Errores que NO se arreglan reintentando: el dato es invalido de origen. Meterlos
-// en la rueda de reintentos solo genera ruido y bloquea la cola con un error que
-// nadie va a arreglar solo. Se descartan de una vez, diciendo por que.
+// Se agregan validaciones de clave foránea y no existencia de entidades para evitar bloqueos
 const RECHAZO_PERMANENTE = [
   'Item de venta inválido', 'Item de venta invalido',
-  'Stock insuficiente', 'violates check constraint', 'duplicate key'
+  'Stock insuficiente', 'violates check constraint', 'duplicate key',
+  'foreign key', 'violates foreign key', '23503', 'no existe'
 ];
+
 const esRechazoPermanente = motivo => {
   const texto = String(motivo || '').toLowerCase();
   return RECHAZO_PERMANENTE.some(marca => texto.includes(marca.toLowerCase()));
@@ -176,13 +124,9 @@ const refreshCounts = async () => {
   const operations = await localDb.outbox.toArray();
   status.pending = operations.filter(row => row.status === 'pending' || row.status === 'failed').length;
   status.conflicts = operations.filter(row => row.status === 'conflict').length;
-  // Los fallos se reconstruyen desde la cola en cada conteo: asi sobreviven a un
-  // reinicio de la app y el usuario ve el motivo real de cada rechazo, no solo el
-  // del ultimo ciclo.
   status.fallos = operations
     .filter(row => row.status === 'failed' || row.status === 'conflict')
     .map(row => ({ tipo: row.type, motivo: row.lastError || 'Sin detalle del servidor', estado: row.status }));
-  // Las descartadas ya no son pendientes: se cuentan aparte para poder avisar.
   status.descartadas = operations.filter(row => row.status === 'descartada').length;
 };
 
@@ -192,16 +136,6 @@ const subscribe = listener => {
   return () => listeners.delete(listener);
 };
 
-// ---------------------------------------------------------------------------
-// ACCIONES DESDE LA INTERFAZ
-// ---------------------------------------------------------------------------
-// Antes, resolver una operacion atascada exigia abrir la consola del navegador y
-// escribir un script a mano. Eso no es una solucion: cualquier operacion que el
-// servidor rechazara por una causa permanente dejaba la barra roja puesta para
-// siempre y el usuario no tenia ninguna salida sin conocimientos tecnicos.
-// Estas funciones le dan al boton de la barra algo real que hacer.
-
-/** Detalle completo de la cola, para mostrarlo en un panel. */
 export const obtenerDetalleCola = async () => {
   const operaciones = await localDb.outbox.orderBy('createdAt').toArray();
   return operaciones.map(op => ({
@@ -215,7 +149,6 @@ export const obtenerDetalleCola = async () => {
   }));
 };
 
-/** Reintentar una operacion ahora: vuelve a la cola y se sincroniza. */
 export const reintentarOperacion = async (operationId) => {
   await localDb.outbox.update(operationId, {
     status: 'pending', lastError: null, attempts: 0, updatedAt: nowIso()
@@ -225,10 +158,6 @@ export const reintentarOperacion = async (operationId) => {
   return sincronizarAhora({ pull: false });
 };
 
-/**
- * Descartar una operacion. Borra SOLO la fila de la cola: el paciente, la venta
- * y el inventario no se tocan. La operacion simplemente no se enviara.
- */
 export const descartarOperacion = async (operationId) => {
   await localDb.outbox.delete(operationId);
   await refreshCounts();
@@ -236,7 +165,6 @@ export const descartarOperacion = async (operationId) => {
   return obtenerDetalleCola();
 };
 
-/** Descartar todas las atascadas (fallidas, en conflicto o ya descartadas). */
 export const descartarTodoLoAtascado = async () => {
   const atascadas = await localDb.outbox
     .filter(row => row.status === 'failed' || row.status === 'conflict' || row.status === 'descartada')
@@ -266,9 +194,7 @@ const reconciliarStockVenta = async serverResult => {
     .select('id,stock')
     .in('id', [...new Set(ids)]);
   if (error) return;
-  // Lee, MODIFICA y escribe el stock de productos que el usuario puede estar
-  // editando a la vez. Sin la cola, un cambio de precio hecho por el optometria
-  // en ese instante se pierde: se sobrescribe con el valor viejo del servidor.
+
   await enColaEscritura(async () => {
     for (const row of data || []) {
       const local = await localDb.inventory.get(row.id);
@@ -276,40 +202,25 @@ const reconciliarStockVenta = async serverResult => {
     }
   }, 'bajo');
 };
-const MAX_INTENTOS = 5;
-const TIEMPO_ESPERA_BASE_MS = 15000;
 
-// Una operacion rechazada NO se puede reintentar para siempre: si la causa es
-// permanente (datos invalidos, un producto que ya no existe, un estado que el
-// servidor no acepta), cada 30 s se volveria a enviar la misma fila y a fallar
-// igual, indefinidamente. Eso es lo que hacia que la cuenta de "pendientes"
-// subiera y no bajara nunca. Tras MAX_INTENTOS la operacion pasa a 'descartada':
-// sale del conteo, se conserva para diagnostico y se le dice al usuario.
 const finalizarOperacion = async (operation, estadoFinal, motivo) => {
   await markOperation(operation, estadoFinal, motivo);
-  console.warn(`[sync] "${operation.type}" (${operation.entityId}) queda en "${estadoFinal}": ${motivo}`);
 };
 
 const aplicarBackoff = async operation => {
   const intentos = operation.attempts || 0;
   if (intentos <= 0) return true;
-  // Backoff exponencial con tope: 15 s, 30 s, 60 s, 120 s, 240 s.
   const espera = Math.min(TIEMPO_ESPERA_BASE_MS * (2 ** (intentos - 1)), 5 * 60 * 1000);
   const transcurrido = Date.now() - new Date(operation.updatedAt || operation.createdAt).getTime();
-  if (transcurrido < espera) {
-    return false; // todavia no toca reintentarla
-  }
-  return true;
+  return transcurrido >= espera;
 };
 
 const applyResults = async results => {
-  // El servidor puede rechazar una operacion concreta sin fallar el lote. Antes
-  // eso se guardaba en la fila del outbox y no se mostraba nunca: la app se
-  // quedaba con "Pendientes: 5" reintentando en silencio, sin decir por que.
   const fallos = [];
   for (const result of results || []) {
     const operation = await localDb.outbox.get(result.id);
     if (!operation) continue;
+
     if (result.status === 'applied' || result.status === 'synced') {
       const serverResult = result.result || {};
       if (operation.type === 'CREAR_VENTA' || operation.type === 'EDITAR_VENTA') {
@@ -317,13 +228,6 @@ const applyResults = async results => {
       }
       if (operation.type === 'UPSERT_INVENTARIO' && serverResult.inventario) {
         const serverId = Number(serverResult.servidor_id);
-        // OJO: los dos ids se comparan como NUMERO. operation.entityId es el id
-        // que dio el dispositivo y puede venir como TEXTO desde un formulario;
-        // comparar texto con numero da siempre "distintos" y hacia reconciliar
-        // de mas (borrar y reinsertar el producto local) en cada subida.
-        // Todo el bloque va en la cola: cambia el id del producto en ventaItems,
-        // movimientos e inventario, y el usuario puede estar editando ese
-        // producto a la vez.
         if (Number(operation.entityId) !== serverId) {
           await enColaEscritura(async () => {
             await localDb.saleItems.where('inventoryId').equals(operation.entityId).modify({ inventoryId: serverId });
@@ -339,7 +243,6 @@ const applyResults = async results => {
         }
       } else if (operation.type === 'UPSERT_PRECIO' && serverResult.precio) {
         const serverId = Number(serverResult.servidor_id);
-        // Mismo motivo que en el inventario: comparar como numero, no como texto.
         await enColaEscritura(async () => {
           if (Number(operation.entityId) !== serverId) await localDb.prices.delete(operation.entityId);
           await localDb.prices.put({ ...serverResult.precio, syncStatus: 'synced', updatedAt: nowIso() });
@@ -353,32 +256,16 @@ const applyResults = async results => {
       }
       await localDb.outbox.delete(operation.id);
     } else if (result.status === 'conflict') {
-      // Un conflicto no se resuelve solo reintentando: el servidor tiene una
-      // version distinta y mandarla otra vez dara el mismo conflicto. Se marca
-      // para revision humana y NO se reintenta nunca mas por su cuenta.
       await finalizarOperacion(operation, 'conflict', result.error || 'Conflicto de datos');
       fallos.push({ tipo: operation.type, motivo: result.error || 'Conflicto de datos', estado: 'conflict' });
     } else {
       const motivo = result.error || 'La operación fue rechazada por el servidor';
 
-      // BUG REAL, confirmado con una captura: sin internet, el servidor devuelve
-      // "Failed to fetch" COMO si fuera el rechazo de una operacion. La barra se
-      // ponia roja y decia "El servidor rechazo 1 operacion(es): Failed to fetch",
-      // que es una mentira: el servidor no rechazo nada, no llego a responder. Y
-      // como la barra prioriza `fallos` sobre `esOffline`, el aviso de "Sin
-      // conexion" NUNCA llegaba a verse. Un fallo de red no es un rechazo: la
-      // operacion queda esperando y se avisa de la falta de conexion.
       if (esFalloDeRed(motivo)) {
         await marcarPendientePorRed(operation);
-        console.warn('[sync] sin red al enviar una operacion; se reintentara. No es un rechazo del servidor.');
         continue;
       }
 
-      // "La consulta X no existe" al archivar significa que la consulta NUNCA
-      // llego al servidor (se creo y archivo antes de que se sincronizara). El
-      // objetivo del archivo esta entonces cumplido de sobra: no hay nada que
-      // archivar alla. Reintentarlo no dara nunca un resultado distinto, asi que
-      // se descarta como resuelta en vez de marcarlo como fallo.
       const esArchivoDeConsultaInexistente =
         operation.type === 'ARCHIVAR_CONSULTA' &&
         /no existe/i.test(motivo);
@@ -388,17 +275,13 @@ const applyResults = async results => {
           'La consulta nunca se sincronizó: no había nada que archivar en el servidor.');
         await markLocalOperationSynced(operation).catch(() => {});
         await localDb.outbox.delete(operation.id);
-        console.log('[sync] archivo de consulta no sincronizado: nada que hacer en el servidor');
         continue;
       }
 
       const intentos = (operation.attempts || 0) + 1;
-      // Un rechazo permanente no mejora reintentandolo. Antes daba cinco vueltas
-      // y la barra se quedaba roja semanas, hasta que el optometria pulsaba el
-      // boton "Resolver problemas" sin saber que estaba haciendo.
       if (intentos >= MAX_INTENTOS || esRechazoPermanente(motivo)) {
         await finalizarOperacion(operation, 'descartada',
-          `${motivo} (no se reintenta: el dato es invalido, no fue un corte de red)`);
+          `${motivo} (no se reintenta: dato inválido o inexistente en servidor)`);
         fallos.push({
           tipo: operation.type,
           motivo: `${motivo}. Descartada: revisar los datos antes de reintentarlo.`,
@@ -411,16 +294,9 @@ const applyResults = async results => {
     }
   }
   status.fallos = fallos;
-  if (fallos.length > 0) {
-    console.warn('[sync] el servidor rechazo operaciones:', fallos);
-  }
   return fallos;
 };
 
-// Los adjuntos NO viajan por aplicar_operaciones: ese RPC solo entiende
-// comandos de base de datos, no subidas a Storage. Se procesan aparte y antes
-// del lote, para que cuando se registre el pago la ruta apunte a un archivo
-// que ya existe en el bucket.
 const subirAdjuntosPendientes = async () => {
   const operaciones = (await localDb.outbox.orderBy('createdAt').toArray())
     .filter(row => row.type === 'SUBIR_ADJUNTO' && (row.status === 'pending' || row.status === 'failed'));
@@ -429,7 +305,6 @@ const subirAdjuntosPendientes = async () => {
   for (const operacion of operaciones) {
     const adjunto = await localDb.attachments.get(operacion.entityId);
     if (!adjunto) {
-      // El binario ya no esta (limpieza manual): la operacion ya no tiene sentido.
       await localDb.outbox.delete(operacion.id);
       continue;
     }
@@ -452,12 +327,6 @@ const subirAdjuntosPendientes = async () => {
   }
 };
 
-const TAMPAGINA_HISTORIAL = 200;
-const MAX_PAGINAS_HISTORIAL = 25;
-
-// Descarga el historial completo por paginas. El orden secondary por id es
-// necesario: la vista usa DISTINCT ON y "fecha" no es unico, asi que sin un
-// desempate estable una fila podria saltar entre paginas y perderse.
 const descargarHistorialPaginado = async () => {
   const { filas, paginasDescargadas } = await paginarConsulta({
     pageSize: TAMPAGINA_HISTORIAL,
@@ -476,28 +345,6 @@ const descargarHistorialPaginado = async () => {
   return { filas, paginasDescargadas };
 };
 
-// QUE CEDULAS ESTAN BORRADAS, SEGUN EL SERVIDOR.
-//
-// El historial se descarga de `vista_pacientes_unicos`, una vista que se creo
-// antes de que existiera el archivado: ignora `archived_at`. Por eso el borrado de
-// un paciente NUNCA viajaba, y en un navegador nuevo (con la memoria vacia)
-// "PRUEBA" y "PRUEBA2" aparecian como si nadie los hubiera borrado.
-//
-// La vista no se toca: se redefine sin conocer su definicion original y eso es
-// arriesgado. En su lugar se pregunta directamente a la tabla, que si sabe.
-//
-// OJO, TRAMPA IMPORTANTE: `consultas_clinicas` NO tiene columna `cedula`. La cedula
-// vive en `pacientes_perfil`; la consulta solo guarda `paciente_id`. Preguntar
-// `select cedula` a la consulta devuelve un error 42703 y, como este bloque traga
-// los errores a proposito (no puede impedir sincronizar), el fallo pasaba DESAPARECIDO:
-// los pacientes borrados seguian apareciendo y no habia ni un rastro. Por eso van
-// tres consultas: una para las consultas archivadas, otra para las vivas (un
-// paciente sigue existiendo si tiene CUALQUIER consulta viva) y una tercera para
-// traducir paciente_id a cedula.
-//
-// El borrado es un hecho del NEGOCIO, no del dispositivo: si el optometria
-// borra un paciente en el mostrador, no debe reaparecer en la tablet de la otra
-// punta del mostrador.
 const leerCedulasArchivadasDelServidor = async () => {
   try {
     const soloVivas = await supabase
@@ -531,13 +378,8 @@ const leerCedulasArchivadasDelServidor = async () => {
       .map(row => String(row?.cedula ?? '').trim().toUpperCase())
       .filter(Boolean))];
     await localDb.meta.put({ key: 'cedulasArchivadasServidor', value: lista, updatedAt: nowIso() });
-    if (lista.length > 0) console.log(`[sync] el servidor tiene ${lista.length} cedula(s) archivadas.`);
   } catch (e) {
-    // Si esto falla, el equipo sigue ocultando lo que borro el mismo. Es una red
-    // de seguridad, no un requisito: no puede impedir sincronizar. Pero un fallo
-    // AQUI es el motivo por el que un borrado hecho en otro equipo no se ve, asi
-    // que se avisa bien alto en consola.
-    console.warn('[sync] NO se pudieron leer las cedulas archivadas del servidor. Los pacientes borrados en otro equipo pueden aparecer aqui:', e?.message || e);
+    console.warn('[sync] No se pudieron sincronizar las cédulas archivadas del servidor:', e?.message || e);
   }
 };
 
@@ -545,10 +387,6 @@ const pullServerCache = async () => {
   const { data: sessionData } = await supabase.auth.getSession();
   if (!sessionData.session) return null;
 
-  // Catalogo, metricas y deudas van en paralelo; el historial va aparte porque
-  // son varias peticiones encadenadas y no debe bloquear al resto. El tope cubre
-  // el conjunto: si el servidor no responde, se abandona el pull y se conserva lo
-  // que ya habia en el dispositivo, en vez de dejar la app colgada.
   const results = await conTimeout(Promise.allSettled([
     supabase.from('inventario').select('*').order('id', { ascending: false }),
     supabase.from('lista_precios').select('*').order('id', { ascending: false }),
@@ -560,24 +398,16 @@ const pullServerCache = async () => {
   );
 
   if (inventoryResult.error) throw inventoryResult.error;
-  if (pricesResult.error) console.warn('No se pudo actualizar tarifario local:', pricesResult.error.message);
+  if (pricesResult.error) console.warn('Tarifario local no actualizado:', pricesResult.error.message);
 
   let historialRows = [];
   try {
     const descargado = await descargarHistorialPaginado();
     historialRows = descargado.filas;
-    // Se recalcula en cada pull: si la clinica archiva consultas y el equipo
-    // vuelve a caber en el tope, el aviso tiene que desaparecer solo.
     status.historialDescargadas = descargado.filas.length;
     status.historialParcial = descargado.paginasDescargadas >= MAX_PAGINAS_HISTORIAL;
-    if (status.historialParcial) {
-      // No basta con avisar por consola: el optometria no la abre, y una lista
-      // incompleta que parece completa es peor que un aviso.
-      console.warn(`Historial descargado hasta el tope: este equipo solo tiene ${descargado.filas.length} consultas.`);
-    }
   } catch (error) {
-    // El historial no es critico: si falla, el catalogo debe seguir actualizandose.
-    console.warn('No se pudo actualizar historial local:', error?.message || error);
+    console.warn('Historial local no actualizado:', error?.message || error);
   }
 
   await cacheServerHistorial(historialRows);
@@ -592,22 +422,16 @@ const pullServerCache = async () => {
 
 export const sincronizarAhora = async ({ pull = true } = {}) => {
   if (running) { await refreshCounts(); emit(); return status; }
-running = true;
+  running = true;
   status.phase = 'syncing';
   status.lastError = null;
-  // Cada ciclo arranca limpio: sin esto, un rechazo ya resuelto dejaba la barra
-  // roja de App.jsx pegada para siempre, porque status.fallos solo se reescribia
-  // dentro de applyResults y, con la cola vacia, esa funcion ni se llamaba.
   status.fallos = [];
   status.sesionInvalida = false;
   emit();
 
   try {
     await requestPersistentStorage();
-    // La purga va primero: si no, la cola se lee entera incluyendo filas que
-    // van a desaparecer de todas formas.
-    const purgadas = await purgarDescartadas();
-    if (purgadas > 0) console.log(`[sync] purgadas ${purgadas} operaciones descartadas antiguas`);
+    await purgarDescartadas();
     await refreshCounts();
     if (status.online === false) {
       status.phase = 'offline';
@@ -615,16 +439,9 @@ running = true;
       return status;
     }
 
-    // Primero los adjuntos: son subidas a Storage, no comandos de base de datos.
     await subirAdjuntosPendientes();
     await refreshCounts();
 
-
-    // Solo se reenvian las que siguen siendo viables:
-    //  - 'pending'  : nunca se intentó, o esperando su turno.
-    //  - 'failed'   : reintentables, respetando el backoff.
-    //  - NO 'conflict'   : el servidor tiene otra versión; reenviarlo da igual.
-    //  - NO 'descartada' : ya se rindió tras MAX_INTENTOS.
     const candidatas = (await localDb.outbox.orderBy('createdAt').toArray())
       .filter(row => (row.status === 'pending' || row.status === 'failed') && row.type !== 'SUBIR_ADJUNTO');
     const operations = [];
@@ -647,19 +464,10 @@ running = true;
 
     if (pull) await pullServerCache();
     status.lastSync = nowIso();
-    // Si el ciclo llego aqui es que el servidor RESPONDIO: hay red. Sin esto, un
-    // solo fallo de red dejaba la app en "Sin conexion" para siempre, porque el
-    // evento 'online' del navegador no vuelve a dispararse si el enlace jamas se
-    // llego a caer (wifi del negocio con un router sin salida, por ejemplo).
     if (!sesionAusente) status.online = true;
     status.phase = status.pending > 0 ? 'pending' : 'synced';
     emit();
   } catch (error) {
-    // BUG REAL: con el wifi conectado y sin internet, navigator.onLine sigue
-    // diciendo true, el fetch fallaba y la app se creia sincronizada: no salia
-    // ni el aviso de "Sin conexion" ni el de error. El optometria guardaba una
-    // consulta creyendo que estaba en la nube. Un fallo de RED es una
-    // desconexion de hecho, y hay que decirselo.
     if (esFalloDeRed(error) && !sesionAusente) {
       status.online = false;
       status.phase = 'offline';
@@ -669,7 +477,7 @@ running = true;
     status.lastError = error?.message || String(error);
     if (esFalloDeSesion(error)) {
       status.sesionInvalida = true;
-      status.lastError = 'Tu sesion expiro. Vuelve a iniciar sesion para poder sincronizar.';
+      status.lastError = 'Tu sesión expiró. Inicia sesión nuevamente para sincronizar.';
     }
     await refreshCounts();
     emit();
@@ -683,8 +491,6 @@ export const iniciarMotorSync = () => {
   if (started || typeof window === 'undefined') return;
   started = true;
   const onOnline = () => {
-    // Con desbloqueo offline NO hay sesion del servidor: por mucha red que haya,
-    // el dispositivo sigue sin poder sincronizar hasta que se vuelva a entrar.
     if (!sesionAusente) status.online = true;
     emit();
     void sincronizarAhora();

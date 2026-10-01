@@ -1,50 +1,24 @@
 import { safeString, safeNum, calcularCerca, generarDiagnosticos } from './utilidades';
 import { esc } from './escape';
+import { calcularTotal, calcularSaldo, calcularMontoDescuento } from './reglas';
 
 // Todo dato que entra en las plantillas de impresion pasa por txt(): safeString
 // solo convierte a texto, txt() ademas neutraliza < > & " '', de modo que un
 // nombre de paciente no puede inyectar etiquetas ni romper el documento.
 const txt = valor => esc(safeString(valor));
-import { calcularTotal, calcularSaldo, calcularMontoDescuento } from './reglas';
 
 // ---------------------------------------------------------------------------
 // ESPERAR A QUE LA VENTANA ESTE LISTA PARA IMPRIMIR
 // ---------------------------------------------------------------------------
-// Cada plantilla llevaba su propio <script>window.onload = ... print()</script>.
-// Eso era lo unico que hacia falta para que la CSP dijera 'unsafe-inline':
-// permitia ejecutar ARBITRARIO dentro de un documento construido con datos
-// reales. Con 'self' en script-src, ese script dejo de ser una excepcion y pasa
-// a ser un agujero.
-//
-// El evento load no cambia: lo escucha el padre, sobre la ventana. El codigo
-// vive en el bundle, no dentro del documento impreso.
-// La etiqueta lleva un <script src> para el codigo de barras. BUG REAL: sin
-// internet, esa peticion no se resuelve y el evento 'load' de la ventana NO
-// llegaba a dispararse, con lo que la etiqueta no imprimia NADA: ni barcode ni
-// el codigo en texto. El optometria se quedaba sin etiqueta y sin aviso.
-//
-// Por eso el trabajo no cuelga solo de 'load': si pasan ESPERA_MAX_SIN_LOAD_MS y
-// la ventana sigue sin terminar de cargar, se imprime igualmente. Es peor
-// imprimir la etiqueta sin las barras que no imprimirla: el codigo sigue
-// escrito en el papel y el crystal se puede leer a mano.
 const ESPERA_MAX_SIN_LOAD_MS = 2500;
 
 const alCargar = (win, fn) => {
-  // OJO, ORDEN DE DECLARACION. Este bug lo produjo un arreglo anterior: al
-  // escribir "const salvavidas" despues de la funcion, si el documento ya
-  // estaba cargado, `ejecutar()` corria en esa linea y `clearTimeout(salvavidas)`
-  // reventaba con "Cannot access 'salvavidas' before initialization": la
-  // impresion se caia entera con un ReferenceError. Se veia al imprimir desde
-  // OTRO navegador, donde la ventana llega ya cargada.
-  // Se declara primero, se inicializa a null, y se limpia solo si llego a crearse.
   let salvavidas = null;
   const imprimir = () => {
     try { fn(); } catch (e) { console.error(e); }
     if (salvavidas !== null) { clearTimeout(salvavidas); salvavidas = null; }
   };
   try {
-    // Si el documento ya terminó de cargar, load no volverá a dispararse y la
-    // impresión se quedaría en blanco para siempre.
     if (win.document.readyState === 'complete') { imprimir(); return; }
     win.addEventListener('load', imprimir, { once: true });
     salvavidas = setTimeout(() => {
@@ -91,29 +65,29 @@ export const imprimirInforme = (item) => {
             <h3>Lensometría (RX Anterior)</h3>
             <table>
               <tr><th>Ojo</th><th>Esfera</th><th>Cilindro</th><th>Eje</th><th>Add</th><th>A.V.L</th><th>A.V.C</th></tr>
-              <tr><td><strong>OD</strong></td><td>${txt(item?.lenso_esf_od)||'-'}</td><td>${txt(item?.lenso_cil_od)||'-'}</td><td>${txt(item?.lenso_eje_od)||'-'}</td><td>${txt(item?.lenso_add_od)||'-'}</td><td>${txt(item?.lenso_avl_od)||'-'}</td><td>${txt(item?.lenso_avc_od)||'-'}</td></tr>
-              <tr><td><strong>OI</strong></td><td>${txt(item?.lenso_esf_oi)||'-'}</td><td>${txt(item?.lenso_cil_oi||'-')}</td><td>${txt(item?.lenso_eje_oi||'-')}</td><td>${txt(item?.lenso_add_oi||'-')}</td><td>${txt(item?.lenso_avl_oi||'-')}</td><td>${txt(item?.lenso_avc_oi||'-')}</td></tr>
+              <tr><td><strong>OD</strong></td><td>${txt(item?.lenso_esf_od) || '-'}</td><td>${txt(item?.lenso_cil_od) || '-'}</td><td>${txt(item?.lenso_eje_od) || '-'}</td><td>${txt(item?.lenso_add_od) || '-'}</td><td>${txt(item?.lenso_avl_od) || '-'}</td><td>${txt(item?.lenso_avc_od) || '-'}</td></tr>
+              <tr><td><strong>OI</strong></td><td>${txt(item?.lenso_esf_oi) || '-'}</td><td>${txt(item?.lenso_cil_oi) || '-'}</td><td>${txt(item?.lenso_eje_oi) || '-'}</td><td>${txt(item?.lenso_add_oi) || '-'}</td><td>${txt(item?.lenso_avl_oi) || '-'}</td><td>${txt(item?.lenso_avc_oi) || '-'}</td></tr>
             </table>
           </div>
           <div class="section">
             <h3>Agudeza Visual (Sin Corrección)</h3>
             <table>
               <tr><th>Ojo</th><th>A.V.S.L (Lejos)</th><th>A.V.S.C (Cerca)</th></tr>
-              <tr><td><strong>OD</strong></td><td>${txt(item?.avsl_od)||'-'}</td><td>${txt(item?.avsc_od)||'-'}</td></tr>
-              <tr><td><strong>OI</strong></td><td>${txt(item?.avsl_oi)||'-'}</td><td>${txt(item?.avsc_oi)||'-'}</td></tr>
+              <tr><td><strong>OD</strong></td><td>${txt(item?.avsl_od) || '-'}</td><td>${txt(item?.avsc_od) || '-'}</td></tr>
+              <tr><td><strong>OI</strong></td><td>${txt(item?.avsl_oi) || '-'}</td><td>${txt(item?.avsc_oi) || '-'}</td></tr>
             </table>
           </div>
           <div class="section">
             <h3>Refracción Final</h3>
             <table>
               <tr><th>Ojo</th><th>Esfera</th><th>Cilindro</th><th>Eje</th><th>Add</th><th>DNP</th><th>Cerca (Add)</th><th>A.V.C.L</th><th>A.V.C.C</th></tr>
-              <tr><td><strong>OD</strong></td><td>${txt(item?.esfera_od)||'-'}</td><td>${txt(item?.cilindro_od)||'-'}</td><td>${txt(item?.eje_od)||'-'}</td><td>${txt(item?.adicion_od)||'-'}</td><td>${txt(item?.dnp_od)||'-'}</td><td>${calcularCerca(item?.esfera_od, item?.adicion_od)||'-'}</td><td>${txt(item?.avcl_od)||'-'}</td><td>${txt(item?.avcc_od)||'-'}</td></tr>
-              <tr><td><strong>OI</strong></td><td>${txt(item?.esfera_oi)||'-'}</td><td>${txt(item?.cilindro_oi||'-')}</td><td>${txt(item?.eje_oi||'-')}</td><td>${txt(item?.adicion_oi||'-')}</td><td>${txt(item?.dnp_oi||'-')}</td><td>${calcularCerca(item?.esfera_oi, item?.adicion_oi)||'-'}</td><td>${txt(item?.avcl_oi||'-')}</td><td>${txt(item?.avcc_oi||'-')}</td></tr>
+              <tr><td><strong>OD</strong></td><td>${txt(item?.esfera_od) || '-'}</td><td>${txt(item?.cilindro_od) || '-'}</td><td>${txt(item?.eje_od) || '-'}</td><td>${txt(item?.adicion_od) || '-'}</td><td>${txt(item?.dnp_od) || '-'}</td><td>${txt(calcularCerca(item?.esfera_od, item?.adicion_od)) || '-'}</td><td>${txt(item?.avcl_od) || '-'}</td><td>${txt(item?.avcc_od) || '-'}</td></tr>
+              <tr><td><strong>OI</strong></td><td>${txt(item?.esfera_oi) || '-'}</td><td>${txt(item?.cilindro_oi) || '-'}</td><td>${txt(item?.eje_oi) || '-'}</td><td>${txt(item?.adicion_oi) || '-'}</td><td>${txt(item?.dnp_oi) || '-'}</td><td>${txt(calcularCerca(item?.esfera_oi, item?.adicion_oi)) || '-'}</td><td>${txt(item?.avcl_oi) || '-'}</td><td>${txt(item?.avcc_oi) || '-'}</td></tr>
             </table>
           </div>
           <div class="section">
             <h3>Diagnóstico</h3>
-            <div class="text-box"><strong>${diagnosticos}</strong></div>
+            <div class="text-box"><strong>${txt(diagnosticos)}</strong></div>
           </div>
           <div class="section">
             <h3>Recomendaciones y Conclusiones</h3>
@@ -128,11 +102,11 @@ export const imprimirInforme = (item) => {
             <div class="firma-line">Darwin Xavier Celi</div>
             <p style="margin:2px; font-size:12px;">Optómetra | Reg. 2250-2024-8005219</p>
           </div>
-            </body>
+        </body>
       </html>
     `);
     win.document.close();
-  alCargar(win, () => win.print());
+    alCargar(win, () => win.print());
   } catch(e) { console.error(e); }
 };
 
@@ -168,19 +142,19 @@ export const imprimirRecetaSimple = (item) => {
           <div class="title">Receta de Lentes</div>
           <table>
             <tr><th style="border:none; background:none;"></th><th>Esfera</th><th>Cilindro</th><th>Eje</th></tr>
-            <tr><td class="label">Lejos OD</td><td class="bold">${txt(item?.esfera_od)||'-'}</td><td class="bold">${txt(item?.cilindro_od)||'-'}</td><td class="bold">${txt(item?.eje_od)||'-'}</td></tr>
-            <tr><td class="label">OI</td><td class="bold">${txt(item?.esfera_oi)||'-'}</td><td class="bold">${txt(item?.cilindro_oi)||'-'}</td><td class="bold">${txt(item?.eje_oi)||'-'}</td></tr>
+            <tr><td class="label">Lejos OD</td><td class="bold">${txt(item?.esfera_od) || '-'}</td><td class="bold">${txt(item?.cilindro_od) || '-'}</td><td class="bold">${txt(item?.eje_od) || '-'}</td></tr>
+            <tr><td class="label">OI</td><td class="bold">${txt(item?.esfera_oi) || '-'}</td><td class="bold">${txt(item?.cilindro_oi) || '-'}</td><td class="bold">${txt(item?.eje_oi) || '-'}</td></tr>
           </table>
           <table class="add-table">
             <tr><th style="border:none; background:none;"></th><th>ADD</th></tr>
-            <tr><td class="label">Cerca OD</td><td class="bold">${txt(item?.adicion_od)||'-'}</td></tr>
-            <tr><td class="label">OI</td><td class="bold">${txt(item?.adicion_oi)||'-'}</td></tr>
+            <tr><td class="label">Cerca OD</td><td class="bold">${txt(item?.adicion_od) || '-'}</td></tr>
+            <tr><td class="label">OI</td><td class="bold">${txt(item?.adicion_oi) || '-'}</td></tr>
           </table>
-            </body>
+        </body>
       </html>
     `);
     win.document.close();
-  alCargar(win, () => win.print());
+    alCargar(win, () => win.print());
   } catch(e) { console.error(e); }
 };
 
@@ -194,9 +168,9 @@ export const imprimirOrdenTrabajo = (item) => {
     if (item?.tratam_ar === 'SI') tratList.push('Antirreflejo Verde');
     if (item?.tratam_ar_azul === 'SI') tratList.push('Antirreflejo Azul');
     if (item?.tratam_azul === 'SI') tratList.push('Filtro Azul');
-    if (item?.tratam_foto === 'SI') tratList.push(`Fotocromático ${txt(item?.tratam_foto_nota) ? '('+txt(item?.tratam_foto_nota)+')' : ''}`);
-    if (item?.tratam_trans === 'SI') tratList.push(`Transition ${txt(item?.tratam_trans_nota) ? '('+txt(item?.tratam_trans_nota)+')' : ''}`);
-    if (item?.tratam_tinturado === 'SI') tratList.push(`Tinturado ${txt(item?.tratam_tinturado_nota) ? '('+txt(item?.tratam_tinturado_nota)+')' : ''}`);
+    if (item?.tratam_foto === 'SI') tratList.push(`Fotocromático ${item?.tratam_foto_nota ? '(' + txt(item.tratam_foto_nota) + ')' : ''}`);
+    if (item?.tratam_trans === 'SI') tratList.push(`Transition ${item?.tratam_trans_nota ? '(' + txt(item.tratam_trans_nota) + ')' : ''}`);
+    if (item?.tratam_tinturado === 'SI') tratList.push(`Tinturado ${item?.tratam_tinturado_nota ? '(' + txt(item.tratam_tinturado_nota) + ')' : ''}`);
 
     const tratHTML = tratList.length > 0 
         ? tratList.map(t => `<span class="box-item" style="font-size: 13px; font-weight: bold; margin-right: 15px;">${t}</span>`).join('') 
@@ -236,8 +210,8 @@ export const imprimirOrdenTrabajo = (item) => {
           </div>
           <table>
             <tr><th style="background: #fff; border: none;"></th><th>Esfera</th><th>Cilindro</th><th>Eje</th><th>DNP</th><th>Adición</th><th>Altura</th></tr>
-            <tr><td style="font-weight: normal; border-left: 1px solid #000;">O.D.</td><td>${txt(item?.esfera_od||'')}</td><td>${txt(item?.cilindro_od||'')}</td><td>${txt(item?.eje_od||'')}</td><td>${txt(item?.dnp_od||'')}</td><td>${txt(item?.adicion_od||'')}</td><td>${txt(item?.altura_od||'')}</td></tr>
-            <tr><td style="font-weight: normal; border-left: 1px solid #000;">O.I.</td><td>${txt(item?.esfera_oi||'')}</td><td>${txt(item?.cilindro_oi||'')}</td><td>${txt(item?.eje_oi||'')}</td><td>${txt(item?.dnp_oi||'')}</td><td>${txt(item?.adicion_oi||'')}</td><td>${txt(item?.altura_oi||'')}</td></tr>
+            <tr><td style="font-weight: normal; border-left: 1px solid #000;">O.D.</td><td>${txt(item?.esfera_od) || '-'}</td><td>${txt(item?.cilindro_od) || '-'}</td><td>${txt(item?.eje_od) || '-'}</td><td>${txt(item?.dnp_od) || '-'}</td><td>${txt(item?.adicion_od) || '-'}</td><td>${txt(item?.altura_od) || '-'}</td></tr>
+            <tr><td style="font-weight: normal; border-left: 1px solid #000;">O.I.</td><td>${txt(item?.esfera_oi) || '-'}</td><td>${txt(item?.cilindro_oi) || '-'}</td><td>${txt(item?.eje_oi) || '-'}</td><td>${txt(item?.dnp_oi) || '-'}</td><td>${txt(item?.adicion_oi) || '-'}</td><td>${txt(item?.altura_oi) || '-'}</td></tr>
           </table>
           
           <div class="grid-opciones">
@@ -258,7 +232,7 @@ export const imprimirOrdenTrabajo = (item) => {
           <div class="grid-opciones" style="margin-top: 15px;">
             <div class="section-title">Armazón:</div>
             <div class="box-group">
-               <div class="box-item"><span class="label">Cod:</span> <span class="value">${item?.codigo_armazon==='2905' ? 'DEL PACIENTE' : (txt(item?.codigo_armazon)||'_______')}</span></div>
+               <div class="box-item"><span class="label">Cod:</span> <span class="value">${item?.codigo_armazon === '2905' ? 'DEL PACIENTE' : (txt(item?.codigo_armazon) || '_______')}</span></div>
                <div class="box-item"><span class="label">Tipo:</span> <span class="value">${txt(item?.tipo_armazon) || '_______'}</span></div>
             </div>
           </div>
@@ -266,7 +240,7 @@ export const imprimirOrdenTrabajo = (item) => {
           <div class="section-title">Medidas de Armazón:</div>
           <table>
             <tr><th>Horizontal</th><th>Puente</th><th>Vertical</th><th>Diám. Diagonal</th></tr>
-            <tr><td style="height:25px;">${txt(item?.param_horizontal||'')}</td><td>${txt(item?.param_puente||'')}</td><td>${txt(item?.param_vertical||'')}</td><td>${txt(item?.param_diagonal||'')}</td></tr>
+            <tr><td style="height:25px;">${txt(item?.param_horizontal) || '-'}</td><td>${txt(item?.param_puente) || '-'}</td><td>${txt(item?.param_vertical) || '-'}</td><td>${txt(item?.param_diagonal) || '-'}</td></tr>
           </table>
 
           <div class="section-title">Observaciones / Notas del Pedido:</div>
@@ -275,12 +249,11 @@ export const imprimirOrdenTrabajo = (item) => {
           <div class="footer-contacto">
             OPT. XAVIER CELI | 📱 0999911209 / 0988503206 | ✉️ XAVIERCELI@ICLOUD.COM
           </div>
-
-            </body>
+        </body>
       </html>
     `);
     win.document.close();
-  alCargar(win, () => win.print());
+    alCargar(win, () => win.print());
   } catch(e) { console.error(e); }
 };
 
@@ -327,8 +300,8 @@ export const imprimirRecibo = (item) => {
           <div class="border-b">
             <div class="bold" style="margin-bottom: 5px;">Detalle:</div>
             <ul style="margin: 0; padding-left: 15px; font-size: 12px; line-height: 1.6;">
-              ${item?.codigo_armazon ? `<li>Armazón: ${item.codigo_armazon === '2905' ? 'Del Paciente' : item.codigo_armazon}</li>` : ''}
-              ${item?.tipo_lente ? `<li>Lentes: ${item.tipo_lente} (${item.material_lente || ''})</li>` : ''}
+              ${item?.codigo_armazon ? `<li>Armazón: ${item.codigo_armazon === '2905' ? 'Del Paciente' : txt(item.codigo_armazon)}</li>` : ''}
+              ${item?.tipo_lente ? `<li>Lentes: ${txt(item.tipo_lente)} (${txt(item.material_lente || '')})</li>` : ''}
               ${item?.tratam_ar === 'SI' ? '<li>+ Antirreflejo Verde</li>' : ''}
               ${item?.tratam_ar_azul === 'SI' ? '<li>+ Antirreflejo Azul</li>' : ''}
               ${item?.tratam_azul === 'SI' ? '<li>+ Filtro Azul</li>' : ''}
@@ -341,38 +314,36 @@ export const imprimirRecibo = (item) => {
           </div>
 
           <div class="border-b">
-            <div class="row"><span>Subtotal:</span> <span>$${pVenta.toFixed(2)}</span></div>
-            ${pDesc > 0 ? `<div class="row"><span>Descuento (${pDesc}%):</span> <span>-$${descAmount.toFixed(2)}</span></div>` : ''}
-            <div class="row bold" style="font-size: 16px; margin-top: 5px;"><span>TOTAL A PAGAR:</span> <span>$${pFinal.toFixed(2)}</span></div>
+            <div class="row"><span>Subtotal:</span> <span>$${pvpFixed(pVenta)}</span></div>
+            ${pDesc > 0 ? `<div class="row"><span>Descuento (${pDesc}\%):</span> <span>-$${pvpFixed(descAmount)}</span></div>` : ''}
+            <div class="row bold" style="font-size: 16px; margin-top: 5px;"><span>TOTAL A PAGAR:</span> <span>$${pvpFixed(pFinal)}</span></div>
           </div>
 
           <div class="border-b">
             <div class="row"><span>Forma de Pago:</span> <span>${txt(item?.forma_pago)}</span></div>
-            <div class="row"><span>Abono:</span> <span>$${pAbono.toFixed(2)}</span></div>
-            <div class="row bold" style="margin-top: 5px;"><span>Saldo Pendiente:</span> <span>$${pSaldo.toFixed(2)}</span></div>
+            <div class="row"><span>Abono:</span> <span>$${pvpFixed(pAbono)}</span></div>
+            <div class="row bold" style="margin-top: 5px;"><span>Saldo Pendiente:</span> <span>$${pvpFixed(pSaldo)}</span></div>
           </div>
 
           <div class="footer">
             ¡Gracias por confiar en VER+ ÓPTICA para el cuidado de tu salud visual!<br><br>
             Por favor revisa tus medidas y productos al momento de la entrega.
           </div>
-
-            </body>
+        </body>
       </html>
     `);
     win.document.close();
-  alCargar(win, () => win.print());
+    alCargar(win, () => win.print());
   } catch(e) { console.error(e); }
 };
+
+const pvpFixed = val => Number(val || 0).toFixed(2);
 
 export const imprimirEtiqueta = (item) => {
   try {
     const win = window.open('', '_blank', 'width=500,height=300');
     if (!win) return;
 
-    // Dos versiones a proposito: `codigo` ya viene escapado para escribirlo en el
-    // HTML visible de la etiqueta; `codigoPlano` es el valor crudo y solo se usa
-    // dentro del <script>, donde el escape HTML no aplica.
     const codigoPlano = safeString(item?.codigo) || '0000';
     const codigo = txt(codigoPlano);
     const pvp = safeNum(item?.precio).toFixed(2);
@@ -384,7 +355,6 @@ export const imprimirEtiqueta = (item) => {
         <head>
           <title>Etiqueta ${codigo}</title>
           <style>
-            /* Medida estándar de etiqueta mariposa extendida (aprox 80mm x 15mm) */
             @page { margin: 0; size: 80mm 15mm; }
             body {
               margin: 0; padding: 0;
@@ -402,50 +372,33 @@ export const imprimirEtiqueta = (item) => {
               box-sizing: border-box;
               display: flex; flex-direction: column; justify-content: center;
             }
-            .bridge { width: 10mm; height: 15mm; } /* La parte central que abraza la varilla */
+            .bridge { width: 10mm; height: 15mm; }
             .text-line { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 1px; }
             .barcode-container { text-align: left; margin-bottom: 1px; margin-left: -2px; }
             .barcode-container svg { height: 6mm !important; width: auto !important; }
             .bold { font-weight: bold; }
           </style>
-          <!-- Generador de código de barras, servido por NOSOTROS -->
-          <!-- Venía de un CDN externo: sin internet no se imprimía la etiqueta -->
-          <!-- (el error se tragaba en un catch vacío) y salía con el hueco del -->
-          <!-- código de barras, sin decir nada. -->
           <script src="/vendor/JsBarcode.all.min.js"></script>
         </head>
         <body>
-          
-          <!-- LADO 1: Código de barras, Precio y Extras -->
           <div class="side">
             <div class="barcode-container"><svg id="barcode"></svg></div>
             <div class="text-line bold" style="font-size: 8px;">PVP $ ${pvp}</div>
             <div class="text-line">VER+ OPTICA</div>
           </div>
-
-          <!-- PUENTE CENTRAL (No se imprime nada aquí) -->
           <div class="bridge"></div>
-
-          <!-- LADO 2: Descripción y Marca -->
           <div class="side">
             <div class="text-line">${codigo}</div>
             <div class="text-line bold">${modelo}</div>
             <div class="text-line">${categoria}</div>
           </div>
-
-          </body>
+        </body>
       </html>
     `);
     win.document.close();
     alCargar(win, () => {
       try {
-        // El valor llega por la API, no dentro de un literal de JavaScript: ya no
-        // hace falta escJs(). Un código como A" onload="alert(1) es texto, no
-        // código, y sale impreso tal cual.
         if (typeof win.JsBarcode !== 'function') {
-          // Sin internet el generador no se pudo cargar. Se avisa por consola, pero
-          // NO se rompe la impresión: el código ya está escrito en la plantilla,
-          // en texto legible, que es lo que se usa para leer el crystal a mano.
           console.warn('[impresion] el generador de código de barras no está disponible; se imprime sin barras.');
         } else {
           win.JsBarcode('#barcode', codigoPlano, {
@@ -457,12 +410,8 @@ export const imprimirEtiqueta = (item) => {
           });
         }
       } catch (e) {
-        // Antes el fallo se tragaba en un catch vacío y la etiqueta salía con el
-        // hueco del código de barras sin decir nada. Ahora se avisa, y aun así se
-        // imprime: una etiqueta sin barras es mejor que ninguna etiqueta.
         console.error('[impresion] no se pudo dibujar el código de barras:', e);
       }
-      // Medio segundo para que el SVG se dibuje antes de abrir la impresión.
       setTimeout(() => { try { win.print(); } catch (e) { console.error(e); } }, 500);
     });
   } catch (e) { console.error(e); }

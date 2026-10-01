@@ -1,0 +1,17 @@
+﻿(async () => {
+  const db = await new Promise(r => { const q = indexedDB.open('vermas-local'); q.onsuccess = () => r(q.result); });
+  const inv = await new Promise(r => {
+    const q = db.transaction('inventory','readonly').objectStore('inventory').getAll();
+    q.onsuccess = () => r(q.result || []);
+  });
+  const conFoto = inv.filter(i => i && i.imagen_url);
+  console.log('PRODUCTOS:', inv.length, '| CON FOTO:', conFoto.length);
+  const cuenta = {};
+  conFoto.forEach(i => {
+    const t = String(i.imagen_url);
+    const k = t.startsWith('http') ? 'URL' : 'RUTA';
+    cuenta[k] = (cuenta[k]||0)+1;
+  });
+  console.log('FORMATO:', JSON.stringify(cuenta));
+  conFoto.slice(0,3).forEach(i => console.log('  ' + (i.codigo||'-') + ' => ' + i.imagen_url));
+})();
