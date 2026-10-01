@@ -549,10 +549,10 @@ export default function Historial({
                       )}
                     </div>
 
-                    {/* 3. Costo final con saldo en rojo y botón Ver Venta */}
+                    {/* 3. Costo final y botón dinámico (Crear Venta vs Ver Venta) */}
                     <div className="mt-3 pt-3 border-t border-gray-200 flex justify-between items-end">
                       <div>
-                        {tienePedido && (
+                        {tienePedido ? (
                           <>
                             <span className={`block text-[11px] uppercase font-black tracking-wider mb-0.5 ${tieneDeuda ? 'text-red-700' : 'text-gray-600'}`}>
                               {tieneDeuda ? '⚠ Costo Final (Con Saldo Pendiente)' : 'Costo Final'}
@@ -569,20 +569,24 @@ export default function Historial({
                               )}
                             </div>
                           </>
+                        ) : (
+                          <span className="text-xs text-gray-400 italic">Sin venta asociada</span>
                         )}
                       </div>
 
-                      {/* Botón Ver Venta */}
+                      {/* Botón dinámico según el estado del pedido */}
                       <button 
                         type="button" 
                         onClick={() => abrirPedido(item)} 
-                        className={`text-xs px-3.5 py-1.5 rounded-lg font-bold transition-all shadow-sm flex items-center gap-1 ${
-                          tieneDeuda 
+                        className={`text-xs px-3.5 py-1.5 rounded-lg font-bold transition-all shadow-sm flex items-center gap-1.5 ${
+                          !tienePedido
+                            ? 'bg-teal-600 hover:bg-teal-700 text-white active:scale-95'
+                            : tieneDeuda 
                             ? 'bg-red-600 hover:bg-red-700 text-white' 
                             : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200'
                         }`}
                       >
-                        👁️ Ver Venta
+                        {tienePedido ? '👁️ Ver Venta' : '➕ Crear Venta'}
                       </button>
                     </div>
                   </div>
