@@ -1,9 +1,9 @@
-import { useEffect, useState, useRef, lazy, Suspense } from 'react'
-import { useGestor } from './useGestor'
-import { imprimirOrdenTrabajo, imprimirRecibo } from './impresiones'
-import AvisoActualizacion from './AvisoActualizacion'
-import PanelSincronizacion from './PanelSincronizacion'
-import ErrorBoundary from './ErrorBoundary.jsx'
+import { useEffect, useState, useRef, lazy, Suspense } from 'react';
+import { useGestor } from './useGestor';
+import { imprimirOrdenTrabajo, imprimirRecibo } from './impresiones';
+import AvisoActualizacion from './AvisoActualizacion';
+import PanelSincronizacion from './PanelSincronizacion';
+import ErrorBoundary from './ErrorBoundary.jsx';
 
 const Login = lazy(() => import('./Login'));
 const Historial = lazy(() => import('./Historial'));
@@ -108,6 +108,19 @@ function App() {
 
   const tieneAvisoSuperior = esOffline || pendientes > 0 || conflictos > 0 || fallos.length > 0 || g.modoSinConexion;
 
+  const textoFechaCompilacion = (() => {
+    if (typeof __BUILD_ID__ === 'undefined') return 'Copia antigua. Recarga con Ctrl+Shift+R.';
+    try {
+      const timestamp = Number.parseInt(__BUILD_ID__, 36);
+      if (Number.isFinite(timestamp)) {
+        return `Compilada el ${new Date(timestamp).toLocaleString('es-EC', { dateStyle: 'medium', timeStyle: 'short' })}`;
+      }
+    } catch {
+      /* Silencioso */
+    }
+    return `Versión compilada (${__BUILD_ID__})`;
+  })();
+
   return (
     <div className={`min-h-screen bg-gray-50 p-3 sm:p-6 relative touch-manipulation ${tieneAvisoSuperior ? 'pt-12 sm:pt-14' : ''}`}>
 
@@ -202,14 +215,16 @@ function App() {
               {typeof __BUILD_ID__ === 'undefined' ? 'SIN IDENTIFICAR' : __BUILD_ID__}
             </code>
             <span className="text-[11px] sm:text-xs text-gray-400 truncate">
-              {typeof __BUILD_ID__ === 'undefined'
-                ? 'Copia antigua. Recarga con Ctrl+Shift+R.'
-                : `Compilada el ${new Date(Number.parseInt(__BUILD_ID__, 36)).toLocaleString('es-EC', { dateStyle: 'medium', timeStyle: 'short' })}`}
+              {textoFechaCompilacion}
             </span>
           </div>
           <button
             type="button"
-            onClick={() => navigator.clipboard?.writeText(String(__BUILD_ID__))}
+            onClick={() => {
+              if (typeof __BUILD_ID__ !== 'undefined') {
+                navigator.clipboard?.writeText(String(__BUILD_ID__));
+              }
+            }}
             title="Copiar el código de versión"
             className="text-xs font-bold text-gray-300 hover:text-white hover:bg-white/10 px-2 py-1 rounded transition-colors shrink-0"
           >
@@ -256,8 +271,8 @@ function App() {
 
           <nav aria-label="Secciones principales" className="flex flex-wrap sm:flex-nowrap gap-1.5 sm:gap-2 items-center w-full md:w-auto overflow-x-auto pb-1 sm:pb-0">
             <button type="button" onClick={() => g.setVistaActual('historial')} className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold shadow-sm transition-all shrink-0 ${g.vistaActual === 'historial' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>📋 Historial</button>
-            <button type="button" onClick={() => {g.setVistaActual('nueva_medicion'); g.setEditandoId(null); g.setPaciente(g.estadoInicial)}} className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold shadow-sm transition-all shrink-0 ${g.vistaActual === 'nueva_medicion' ? 'bg-teal-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>🩺 Clínica</button>
-            <button type="button" onClick={() => {g.setVistaActual('pedidos_lista'); g.setPedidoSeleccionado(null)}} className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold shadow-sm transition-all shrink-0 ${g.vistaActual.includes('pedido') ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>🛍️ Pedidos</button>
+            <button type="button" onClick={() => {g.setVistaActual('nueva_medicion'); g.setEditandoId(null); g.setPaciente(g.estadoInicial);}} className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold shadow-sm transition-all shrink-0 ${g.vistaActual === 'nueva_medicion' ? 'bg-teal-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>🩺 Clínica</button>
+            <button type="button" onClick={() => {g.setVistaActual('pedidos_lista'); g.setPedidoSeleccionado(null);}} className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold shadow-sm transition-all shrink-0 ${g.vistaActual.includes('pedido') ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>🛍️ Pedidos</button>
             <button type="button" onClick={() => {g.setVistaActual('inventario'); g.cancelarEdicionInventario();}} className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold shadow-sm transition-all shrink-0 ${g.vistaActual === 'inventario' ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>👓 Inventario</button>
             <button type="button" onClick={() => g.setVistaActual('precios')} className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold shadow-sm transition-all shrink-0 ${g.vistaActual === 'precios' ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>🏷️ Tarifario</button>
             <button type="button" onClick={() => g.setVistaActual('dashboard')} className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold shadow-sm transition-all shrink-0 ${g.vistaActual === 'dashboard' ? 'bg-amber-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>📊 Stats</button>
@@ -272,7 +287,7 @@ function App() {
             {g.vistaActual === 'dashboard' && <Dashboard stats={g.stats} historial={g.historial} inventario={g.inventario} />}
             {g.vistaActual === 'precios' && <Tarifario nuevoPrecio={g.nuevoPrecio} setNuevoPrecio={g.setNuevoPrecio} precioInicial={g.precioInicial} editandoPrecioId={g.editandoPrecioId} setEditandoPrecioId={g.setEditandoPrecioId} manejarCambioPrecio={g.manejarCambioPrecio} guardarPrecio={g.guardarPrecio} busquedaPrecio={g.busquedaPrecio} setBusquedaPrecio={g.setBusquedaPrecio} listaPreciosFiltrada={g.listaPreciosFiltrada} cargarParaEditarPrecio={g.cargarParaEditarPrecio} eliminarPrecio={g.eliminarPrecio} />}
             {g.vistaActual === 'inventario' && <Inventario inventario={g.inventario} nuevoItemInv={g.nuevoItemInv} editandoInvId={g.editandoInvId} cargandoImagen={g.cargandoImagen} manejarCambioInv={g.manejarCambioInv} setImagenSeleccionada={g.setImagenSeleccionada} guardarItemInventario={g.guardarItemInventario} cancelarEdicionInventario={g.cancelarEdicionInventario} cargarParaEditarInventario={g.cargarParaEditarInventario} eliminarItemInventario={g.eliminarItemInventario} />}
-            {g.vistaActual === 'historial' && <Historial historialReciente={g.historial} enviarWhatsApp={g.enviarWhatsApp} cargarParaEditarClinico={g.cargarParaEditarClinico} borrarHistoriaClinica={g.borrarHistoriaClinica} abrirPedido={g.abrirPedido} confirmarAccion={g.solicitarConfirmacion} crearNuevoPaciente={() => {g.setVistaActual('nueva_medicion'); g.setEditandoId(null); g.setPaciente(g.estadoInicial)}} />}
+            {g.vistaActual === 'historial' && <Historial historialReciente={g.historial} enviarWhatsApp={g.enviarWhatsApp} cargarParaEditarClinico={g.cargarParaEditarClinico} borrarHistoriaClinica={g.borrarHistoriaClinica} abrirPedido={g.abrirPedido} confirmarAccion={g.solicitarConfirmacion} crearNuevoPaciente={() => {g.setVistaActual('nueva_medicion'); g.setEditandoId(null); g.setPaciente(g.estadoInicial);}} />}
             {g.vistaActual === 'nueva_medicion' && <Clinica paciente={g.paciente} setPaciente={g.setPaciente} estadoInicial={g.estadoInicial} editandoId={g.editandoId} setEditandoId={g.setEditandoId} guardarPacienteClinico={g.guardarPacienteClinico} manejarCambio={g.manejarCambio} edadActual={g.edadActual} claseInputRef={g.claseInputRef} historial={g.historial} cedulasArchivadas={g.cedulasArchivadas} guardando={g.guardando} />}
             {g.vistaActual === 'pedidos_lista' && <PedidosLista crearVentaDirecta={g.crearVentaDirecta} busqueda={g.busqueda} setBusqueda={g.setBusqueda} pedidosFiltrados={g.pedidosFiltrados} imprimirRecibo={imprimirRecibo} imprimirOrdenTrabajo={imprimirOrdenTrabajo} cancelarPedido={g.cancelarPedido} abrirPedido={g.abrirPedido} refrescarDatos={g.obtenerDatos} />}
             {g.vistaActual === 'pedidos_form' && g.pedidoSeleccionado && <PedidosForm pedidoSeleccionado={g.pedidoSeleccionado} setPedidoSeleccionado={g.setPedidoSeleccionado} setVistaActual={g.setVistaActual} guardarPedido={g.guardarPedido} manejarCambioPedido={g.manejarCambioPedido} cambiarMedicionPedido={g.cambiarMedicionPedido} medidasPaciente={g.medidasPaciente} inventario={g.inventario} accesorioOriginalId={g.accesorioOriginalId} forzarRecalculo={g.forzarRecalculo} confirmarAccion={g.solicitarConfirmacion} />}
@@ -281,7 +296,7 @@ function App() {
 
       </main>
     </div>
-  )
+  );
 }
 
-export default App
+export default App;
