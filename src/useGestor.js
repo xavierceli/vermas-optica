@@ -877,56 +877,90 @@ export function useGestor() {
   }, [listaPrecios, busquedaPrecio]);
 
   const stats = useMemo(() => {
-    if (statsRemotos && !modoSinConexion) {
-      return {
-        ventasMes: Number(statsRemotos.ventas_mes || 0),
-        abonosPendientes: Number(statsRemotos.abonos_pendientes || 0),
-        gastosMes: Number(statsRemotos.gastos_mes || 0),
-        utilidadNeta: Number(statsRemotos.utilidad_neta || 0),
-        totalPacientes: Number(statsRemotos.total_pacientes || 0),
-        total: (historial || []).length
-      };
-    }
     try {
       const fechaActual = new Date();
       const mesStr = String(fechaActual.getMonth() + 1).padStart(2, '0');
       const inicioMes = `${fechaActual.getFullYear()}-${mesStr}-01`;
 
-      let ventasMes = 0; 
-      let abonosPendientes = 0; 
+      let ventasMes = 0;
       let gastosMes = 0;
+      let ventasTotal = 0;
+      let gastosTotal = 0;
+      let abonosPendientes = 0;
       const cedulasUnicas = new Set();
+      const ventasProcesadas = new Set();
 
-      (historial || []).forEach(p => {
+      // Fuente unificada: exactamente la misma base de ventas que ve la pantalla Pedidos
+      const todasLasVentas = [...(historial || []), ...(ventasArchivadas || [])];
+
+      todasLasVentas.forEach(p => {
         if (!p) return;
-        if (safeString(p.estado) === 'Anulado') return;
+        if (safeString(p.estado).trim().toLowerCase() === 'anulado') return;
+
+        // Comprobamos si es una venta real
+        const tieneVenta = Boolean(safeString(p.pedido_id).trim())
+          || safeNum(p.venta) > 0
+          || safeString(p.codigo_armazon).trim() !== ''
+          || safeString(p.accesorio_id).trim() !== '';
+
+        if (!tieneVenta) return;
+
+        // Deduplicación estricta por ID de pedido para evitar duplicar saldos
+        const idClave = safeString(p.pedido_id || p.id).trim();
+        if (idClave && ventasProcesadas.has(idClave)) return;
+        if (idClave) ventasProcesadas.add(idClave);
+
         const vFinal = calcularTotal(p.venta, p.descuento);
-        const fechaVentas = (safeNum(p.venta) > 0 && p.fecha_venta) ? p.fecha_venta : p.fecha;
-        if (fechaVentas && fechaVentas >= inicioMes) {  
-          ventasMes += vFinal;
-          gastosMes += (safeNum(p.costo_lunas_int) + safeNum(p.costo_armazon_int) + 
-                        safeNum(p.costo_accesorio_int) + safeNum(p.costo_tratamientos_int) + 
-                        safeNum(p.costo_varios_int));
+        const fechaVenta = (safeNum(p.venta) > 0 && p.fecha_venta) ? p.fecha_venta : p.fecha;
+        const abonoReal = safeNum(p.abono);
+        const saldo = calcularSaldo(p.venta, p.descuento, abonoReal);
+
+        // Abonos pendientes reales
+        if (saldo > 0) {
+          abonosPendientes += saldo;
         }
-        const abonoRedondeado = safeNum(p.abono);
-        if (vFinal - abonoRedondeado > 0) abonosPendientes += (vFinal - abonoRedondeado);
-        if (safeString(p.nombre) !== 'CONSUMIDOR FINAL' && safeString(p.cedula) !== '' && safeString(p.cedula) !== '9999999999') {
-          cedulasUnicas.add(safeString(p.cedula));
+
+        const gastoFila = safeNum(p.costo_lunas_int) + safeNum(p.costo_armazon_int) + 
+                          safeNum(p.costo_accesorio_int) + safeNum(p.costo_tratamientos_int) + 
+                          safeNum(p.costo_varios_int);
+
+        // Acumulado Total
+        if (vFinal > 0) {
+          ventasTotal += vFinal;
+          gastosTotal += gastoFila;
+        }
+
+        // Acumulado del Mes Actual
+        if (fechaVenta && String(fechaVenta).slice(0, 10) >= inicioMes) {  
+          ventasMes += vFinal;
+          gastosMes += gastoFila;
+        }
+
+        const cedula = safeString(p.cedula).trim().toUpperCase();
+        if (safeString(p.nombre).trim().toUpperCase() !== 'CONSUMIDOR FINAL' && cedula && cedula !== '9999999999') {
+          cedulasUnicas.add(cedula);
         }
       });
 
       return { 
         ventasMes: Number(ventasMes.toFixed(2)), 
-        abonosPendientes: Number(abonosPendientes.toFixed(2)),
         gastosMes: Number(gastosMes.toFixed(2)),
         utilidadNeta: Number((ventasMes - gastosMes).toFixed(2)),
+        ventasTotal: Number(ventasTotal.toFixed(2)),
+        gastosTotal: Number(gastosTotal.toFixed(2)),
+        utilidadTotal: Number((ventasTotal - gastosTotal).toFixed(2)),
+        abonosPendientes: Number(abonosPendientes.toFixed(2)),
         totalPacientes: cedulasUnicas.size,
         total: (historial || []).length 
       };
     } catch {
-      return { ventasMes: 0, abonosPendientes: 0, gastosMes: 0, utilidadNeta: 0, totalPacientes: 0, total: 0 }; 
+      return { 
+        ventasMes: 0, gastosMes: 0, utilidadNeta: 0, 
+        ventasTotal: 0, gastosTotal: 0, utilidadTotal: 0, 
+        abonosPendientes: 0, totalPacientes: 0, total: 0 
+      }; 
     }
-  }, [historial, statsRemotos, modoSinConexion]);
+  }, [historial, ventasArchivadas]);
 
   const edadActual = calcularEdad(paciente?.fecha_nacimiento);
   const claseInputRef = (campo, clasesExtra) => {
