@@ -879,8 +879,9 @@ export function useGestor() {
   const stats = useMemo(() => {
     try {
       const fechaActual = new Date();
-      const mesStr = String(fechaActual.getMonth() + 1).padStart(2, '0');
-      const inicioMes = `${fechaActual.getFullYear()}-${mesStr}-01`;
+      const anio = fechaActual.getFullYear();
+      const mes = String(fechaActual.getMonth() + 1).padStart(2, '0');
+      const inicioMes = `${anio}-${mes}-01`;
 
       let ventasMes = 0;
       let gastosMes = 0;
@@ -888,72 +889,82 @@ export function useGestor() {
       let gastosTotal = 0;
       let abonosPendientes = 0;
       const cedulasUnicas = new Set();
-      const ventasProcesadas = new Set();
+      const idsContabilizados = new Set();
 
-      // Fuente unificada: exactamente la misma base de ventas que ve la pantalla Pedidos
-      const todasLasVentas = [...(historial || []), ...(ventasArchivadas || [])];
+      // Unificamos el historial con ventas archivadas
+      const fuenteVentas = [...(historial || []), ...(ventasArchivadas || [])];
 
-      todasLasVentas.forEach(p => {
-        if (!p) return;
-        if (safeString(p.estado).trim().toLowerCase() === 'anulado') return;
+      for (let i = 0; i < fuenteVentas.length; i += 1) {
+        const p = fuenteVentas[i];
+        if (!p) continue;
 
-        // Comprobamos si es una venta real
-        const tieneVenta = Boolean(safeString(p.pedido_id).trim())
-          || safeNum(p.venta) > 0
+        const estado = safeString(p.estado).trim().toLowerCase();
+        if (estado === 'anulado') continue;
+
+        // Clave única para evitar duplicar si viene en historial y ventas
+        const claveUnica = safeString(p.pedido_id) || safeString(p.id) || `fila_${i}`;
+        if (idsContabilizados.has(claveUnica)) continue;
+
+        const montoVenta = safeNum(p.venta);
+        const tienePedidoOPrecio = Boolean(safeString(p.pedido_id).trim()) 
+          || montoVenta > 0 
           || safeString(p.codigo_armazon).trim() !== ''
           || safeString(p.accesorio_id).trim() !== '';
 
-        if (!tieneVenta) return;
-
-        // Deduplicación estricta por ID de pedido para evitar duplicar saldos
-        const idClave = safeString(p.pedido_id || p.id).trim();
-        if (idClave && ventasProcesadas.has(idClave)) return;
-        if (idClave) ventasProcesadas.add(idClave);
+        if (!tienePedidoOPrecio) continue;
+        idsContabilizados.add(claveUnica);
 
         const vFinal = calcularTotal(p.venta, p.descuento);
-        const fechaVenta = (safeNum(p.venta) > 0 && p.fecha_venta) ? p.fecha_venta : p.fecha;
         const abonoReal = safeNum(p.abono);
         const saldo = calcularSaldo(p.venta, p.descuento, abonoReal);
 
-        // Abonos pendientes reales
+        // Saldo pendiente acumulado
         if (saldo > 0) {
           abonosPendientes += saldo;
         }
 
-        const gastoFila = safeNum(p.costo_lunas_int) + safeNum(p.costo_armazon_int) + 
-                          safeNum(p.costo_accesorio_int) + safeNum(p.costo_tratamientos_int) + 
+        const gastoFila = safeNum(p.costo_lunas_int) + 
+                          safeNum(p.costo_armazon_int) + 
+                          safeNum(p.costo_accesorio_int) + 
+                          safeNum(p.costo_tratamientos_int) + 
                           safeNum(p.costo_varios_int);
 
-        // Acumulado Total
-        if (vFinal > 0) {
-          ventasTotal += vFinal;
-          gastosTotal += gastoFila;
-        }
+        // Histórico Total
+        ventasTotal += vFinal;
+        gastosTotal += gastoFila;
 
-        // Acumulado del Mes Actual
-        if (fechaVenta && String(fechaVenta).slice(0, 10) >= inicioMes) {  
+        // Mes en curso
+        const fechaVenta = safeString(p.fecha_venta || p.fecha || '').slice(0, 10);
+        if (fechaVenta && fechaVenta >= inicioMes) {
           ventasMes += vFinal;
           gastosMes += gastoFila;
         }
 
         const cedula = safeString(p.cedula).trim().toUpperCase();
-        if (safeString(p.nombre).trim().toUpperCase() !== 'CONSUMIDOR FINAL' && cedula && cedula !== '9999999999') {
+        if (cedula && cedula !== '9999999999' && safeString(p.nombre).trim().toUpperCase() !== 'CONSUMIDOR FINAL') {
           cedulasUnicas.add(cedula);
         }
-      });
+      }
 
-      return { 
-        ventasMes: Number(ventasMes.toFixed(2)), 
-        gastosMes: Number(gastosMes.toFixed(2)),
-        utilidadNeta: Number((ventasMes - gastosMes).toFixed(2)),
+      // Si en el mes actual no hay ventas registradas aún (ej. día 1 de mes),
+      // mostramos el acumulado para que no quede la pantalla en cero vacío.
+      const mostrarVentas = ventasMes > 0 ? ventasMes : ventasTotal;
+      const mostrarGastos = ventasMes > 0 ? gastosMes : gastosTotal;
+      const mostrarUtilidad = mostrarVentas - mostrarGastos;
+
+      return {
+        ventasMes: Number(mostrarVentas.toFixed(2)),
+        gastosMes: Number(mostrarGastos.toFixed(2)),
+        utilidadNeta: Number(mostrarUtilidad.toFixed(2)),
         ventasTotal: Number(ventasTotal.toFixed(2)),
         gastosTotal: Number(gastosTotal.toFixed(2)),
         utilidadTotal: Number((ventasTotal - gastosTotal).toFixed(2)),
         abonosPendientes: Number(abonosPendientes.toFixed(2)),
         totalPacientes: cedulasUnicas.size,
-        total: (historial || []).length 
+        total: (historial || []).length
       };
-    } catch {
+    } catch (err) {
+      console.error('[stats] Error calculando estadísticas:', err);
       return { 
         ventasMes: 0, gastosMes: 0, utilidadNeta: 0, 
         ventasTotal: 0, gastosTotal: 0, utilidadTotal: 0, 
