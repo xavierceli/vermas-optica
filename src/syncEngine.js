@@ -43,13 +43,16 @@ const esFalloDeSesion = error => {
     || codigo.startsWith('PGRST301');
 };
 
-const conTimeout = (promesa, ms, etiqueta) => Promise.race([
-  promesa,
-  new Promise((_, rechazar) => {
-    const id = setTimeout(() => rechazar(new Error(`Tiempo agotado (${ms / 1000}s) en ${etiqueta}`)), ms);
-    promesa.then(() => clearTimeout(id), () => clearTimeout(id));
-  })
-]);
+const conTimeout = (promesa, ms, etiqueta) => {
+  let timerId;
+  const timeoutPromise = new Promise((_, reject) => {
+    timerId = setTimeout(() => reject(new Error(`Tiempo agotado (${ms / 1000}s) en ${etiqueta}`)), ms);
+  });
+
+  return Promise.race([promesa, timeoutPromise]).finally(() => {
+    if (timerId) clearTimeout(timerId);
+  });
+};
 
 export const fijarSesionAusente = activa => {
   sesionAusente = Boolean(activa);
@@ -83,6 +86,7 @@ const refrescarItemsDeVenta = async operation => {
   const resueltos = items
     .filter(item => item?.inventoryId !== null && item?.inventoryId !== undefined)
     .map(item => ({ inventario_id: item.inventoryId, codigo: null, cantidad: Math.max(1, Number(item.quantity) || 1) }));
+  
   const actuales = operation?.payload?.p_payload?.items || [];
   if (JSON.stringify(actuales) === JSON.stringify(resueltos)) return operation;
 
@@ -108,7 +112,6 @@ const marcarPendientePorRed = async operation => {
   status.phase = 'offline';
 };
 
-// Se agregan validaciones de clave foránea y no existencia de entidades para evitar bloqueos
 const RECHAZO_PERMANENTE = [
   'Item de venta inválido', 'Item de venta invalido',
   'Stock insuficiente', 'violates check constraint', 'duplicate key',
@@ -363,6 +366,7 @@ const leerCedulasArchivadasDelServidor = async () => {
     const idsArchivados = [...new Set((archivadas || [])
       .map(r => String(r.paciente_id ?? ''))
       .filter(id => id && !conConsultaViva.has(id)))];
+    
     if (idsArchivados.length === 0) {
       await localDb.meta.put({ key: 'cedulasArchivadasServidor', value: [], updatedAt: nowIso() });
       return;
@@ -410,9 +414,12 @@ const pullServerCache = async () => {
     console.warn('Historial local no actualizado:', error?.message || error);
   }
 
-  await cacheServerHistorial(historialRows);
+  // 1. PRIMERO leemos y persistimos las cédulas archivadas
   await leerCedulasArchivadasDelServidor();
+  // 2. LUEGO procesamos el caché para que aplique el filtro sobre las cédulas actualizadas
+  await cacheServerHistorial(historialRows);
   await cacheServerCatalog({ inventory: inventoryResult.data || [], prices: pricesResult.data || [] });
+  
   const remoteStats = statsResult.data?.[0] || null;
   const remoteDebts = debtsResult.data || [];
   await localDb.meta.put({ key: 'remoteStats', value: remoteStats, updatedAt: nowIso() });
