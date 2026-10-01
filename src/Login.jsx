@@ -3,9 +3,6 @@ import { supabase } from './supabaseClient';
 
 const CLAVE_RECUPERACION = 'vermas_cambio_clave';
 
-// El modo "crear nueva contraseña" se decide una sola vez al montar: o venimos
-// del enlace de recuperación en la URL, o hay un flag de una sesión anterior.
-// Es una lectura, no un estado reactivo, así que va en un inicializador perezoso.
 const detectarRecuperacion = () => {
   if (typeof window === 'undefined') return false;
   return window.location.hash.includes('type=recovery')
@@ -16,9 +13,6 @@ export default function Login({ dispositivo, entrarSinConexion }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [cargando, setCargando] = useState(false);
-  // Antes estos valores se asignaban dentro de un useEffect, lo que provocaba un
-  // render extra en cascada y dejaba el formulario vacío un instante antes de
-  // mostrar "Crear Nueva Contraseña".
   const [modoNuevaClave] = useState(detectarRecuperacion);
   const [mensaje, setMensaje] = useState(() => (modoNuevaClave
     ? { texto: 'Crea tu nueva contraseña para volver a ingresar.', tipo: 'warning' }
@@ -28,8 +22,6 @@ export default function Login({ dispositivo, entrarSinConexion }) {
   const [nuevaClave, setNuevaClave] = useState('');
   const [confirmarClave, setConfirmarClave] = useState('');
 
-  // Desbloqueo local con PIN: abre los datos de ESTE dispositivo, sin token del
-  // servidor. La sincronizacion queda suspendida hasta entrar con credenciales.
   const [pinLocal, setPinLocal] = useState('');
   const [verPin, setVerPin] = useState(false);
   const [desbloqueando, setDesbloqueando] = useState(false);
@@ -46,7 +38,7 @@ export default function Login({ dispositivo, entrarSinConexion }) {
       const minutos = resultado?.minutos;
       setMensaje({
         texto: minutos
-          ? `Demasiados intentos. Podras volver a intentarlo en ${minutos} minuto(s). Tus datos siguen guardados.`
+          ? `Demasiados intentos. Podrás volver a intentarlo en ${minutos} minuto(s). Tus datos siguen guardados.`
           : 'Demasiados intentos. Espera unos minutos antes de volver a intentar.',
         tipo: 'error'
       });
@@ -59,9 +51,6 @@ export default function Login({ dispositivo, entrarSinConexion }) {
     if (resultado?.error) setMensaje({ texto: resultado.error, tipo: 'error' });
   };
 
-  // Solo queda el efecto sobre el sistema externo: persistir el flag y limpiar
-  // el token de recuperación de la barra del navegador. El estado de la vista ya
-  // quedó resuelto arriba, así que aquí no hay ningún setState.
   useEffect(() => {
     if (window.location.hash.includes('type=recovery')) {
       sessionStorage.setItem(CLAVE_RECUPERACION, '1');
@@ -74,10 +63,9 @@ export default function Login({ dispositivo, entrarSinConexion }) {
     setCargando(true);
     setMensaje({ texto: '', tipo: '' });
     
-    // Honestidad primero: sin internet no se puede validar una contraseña
     if (!navigator.onLine) {
       setCargando(false);
-      return setMensaje({ texto: '⚠️ Sin conexión a internet. El inicio de sesión requiere internet (tu contraseña se valida en el servidor, por seguridad). Si ya habías ingresado en este dispositivo y NO cerraste sesión, simplemente abre la app: el sistema funciona sin internet con la bóveda local.', tipo: 'warning' });
+      return setMensaje({ texto: '⚠️ Sin conexión a internet. El inicio de sesión requiere internet para validar tus credenciales en el servidor. Si ya tenías sesión abierta en este equipo, simplemente recarga para trabajar con la bóveda local.', tipo: 'warning' });
     }
     
     try {
@@ -103,9 +91,8 @@ export default function Login({ dispositivo, entrarSinConexion }) {
       return;
     }
     
-    // Honestidad primero: el enlace se envía por correo, requiere internet
     if (!navigator.onLine) {
-      return setMensaje({ texto: '⚠️ Sin conexión a internet. El enlace de recuperación se envía por correo electrónico, por lo que necesita conexión. Reconéctate e intenta de nuevo.', tipo: 'warning' });
+      return setMensaje({ texto: '⚠️ Sin conexión a internet. El enlace de recuperación se envía por correo electrónico. Reconéctate e intenta de nuevo.', tipo: 'warning' });
     }
     
     setCargando(true);
@@ -117,7 +104,7 @@ export default function Login({ dispositivo, entrarSinConexion }) {
       });
       if (error) throw error;
       
-      setMensaje({ texto: '¡Listo! Revisa tu bandeja de entrada o spam para crear tu nueva clave.', tipo: 'success' });
+      setMensaje({ texto: '¡Listo! Revisa tu bandeja de entrada o correo no deseado para crear tu nueva clave.', tipo: 'success' });
       
       setTimeout(() => {
         setModoRecuperar(false);
@@ -130,10 +117,10 @@ export default function Login({ dispositivo, entrarSinConexion }) {
       
       if (textoError.includes('fetch') || textoError.includes('network')) {
         setMensaje({ texto: 'Se perdió la conexión. Revisa tu internet e intenta de nuevo.', tipo: 'warning' });
-              setMensaje({ texto: 'El servidor ha limitado los envíos porque hubo varios intentos recientes (el plan gratuito de Supabase permite muy pocos correos por hora). Espera al menos 1 hora y prueba UNA sola vez.', tipo: 'warning' });
-        setMensaje({ texto: 'Por seguridad, solo se puede pedir el enlace cada 60 segundos. Espera un minuto e intenta de nuevo.', tipo: 'warning' });
+      } else if (textoError.includes('rate') || textoError.includes('limit')) {
+        setMensaje({ texto: 'Por seguridad, solo se puede solicitar el enlace periódicamente. Espera unos minutos e intenta de nuevo.', tipo: 'warning' });
       } else {
-        setMensaje({ texto: 'Error: ' + (error?.message || 'desconocido'), tipo: 'error' });
+        setMensaje({ texto: 'Error: ' + (error?.message || 'No se pudo procesar la solicitud'), tipo: 'error' });
       }
     } finally {
       setCargando(false);
@@ -169,47 +156,47 @@ export default function Login({ dispositivo, entrarSinConexion }) {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100 p-4">
-      <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border-t-8 border-teal-600">
+      <div className="bg-white p-6 sm:p-8 rounded-2xl shadow-xl w-full max-w-md border-t-8 border-teal-600">
         
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-black text-teal-800 tracking-wider">VER+ ÓPTICA</h1>
-          <p className="text-gray-500 font-medium mt-1">
+        <div className="text-center mb-6 sm:mb-8">
+          <h1 className="text-2xl sm:text-3xl font-black text-teal-800 tracking-wider">VER+ ÓPTICA</h1>
+          <p className="text-gray-600 font-medium text-xs sm:text-sm mt-1">
             {modoNuevaClave ? 'Crear Nueva Contraseña' : modoRecuperar ? 'Recuperación de Acceso' : 'Sistema de Gestión Integrada'}
           </p>
         </div>
 
         {mensaje.texto && (
-          <div className={`p-4 rounded-lg mb-6 text-sm font-bold text-center ${
-            mensaje.tipo === 'error' ? 'bg-red-50 text-red-600 border border-red-200' : 
-            mensaje.tipo === 'warning' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
-            'bg-green-50 text-green-700 border border-green-200'
+          <div className={`p-3.5 sm:p-4 rounded-lg mb-6 text-xs sm:text-sm font-bold text-center ${
+            mensaje.tipo === 'error' ? 'bg-red-50 text-red-700 border border-red-200' : 
+            mensaje.tipo === 'warning' ? 'bg-amber-50 text-amber-800 border border-amber-200' :
+            'bg-green-50 text-green-800 border border-green-200'
           }`}>
             {mensaje.texto}
           </div>
         )}
 
         {modoNuevaClave ? (
-          <form onSubmit={guardarNuevaClave} className="space-y-5">
+          <form onSubmit={guardarNuevaClave} className="space-y-4 sm:space-y-5">
             <div>
-              <label htmlFor="nueva-clave" className="block text-sm font-bold text-gray-700 mb-1">Nueva Contraseña</label>
+              <label htmlFor="nueva-clave" className="block text-xs sm:text-sm font-bold text-gray-800 mb-1">Nueva Contraseña</label>
               <input 
                 id="nueva-clave"
                 type="password" 
                 value={nuevaClave}
                 onChange={(e) => setNuevaClave(e.target.value)}
-                className="w-full p-3 border rounded-lg outline-none focus:ring-2 focus:ring-teal-500 bg-gray-50 focus:bg-white transition-all font-medium"
+                className="w-full p-2.5 sm:p-3 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-teal-500 bg-gray-50 focus:bg-white transition-all font-semibold text-gray-900 text-sm"
                 placeholder="Mínimo 6 caracteres"
                 required 
               />
             </div>
             <div>
-              <label htmlFor="confirmar-clave" className="block text-sm font-bold text-gray-700 mb-1">Confirmar Contraseña</label>
+              <label htmlFor="confirmar-clave" className="block text-xs sm:text-sm font-bold text-gray-800 mb-1">Confirmar Contraseña</label>
               <input 
                 id="confirmar-clave"
                 type="password" 
                 value={confirmarClave}
                 onChange={(e) => setConfirmarClave(e.target.value)}
-                className="w-full p-3 border rounded-lg outline-none focus:ring-2 focus:ring-teal-500 bg-gray-50 focus:bg-white transition-all font-medium"
+                className="w-full p-2.5 sm:p-3 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-teal-500 bg-gray-50 focus:bg-white transition-all font-semibold text-gray-900 text-sm"
                 placeholder="Repite la nueva contraseña"
                 required 
               />
@@ -217,21 +204,21 @@ export default function Login({ dispositivo, entrarSinConexion }) {
             <button 
               type="submit" 
               disabled={cargando}
-              className={`w-full p-3 rounded-lg font-black text-white shadow-md transition-all ${cargando ? 'bg-gray-400 cursor-not-allowed' : 'bg-teal-600 hover:bg-teal-700'}`}
+              className={`w-full p-3 rounded-lg font-black text-white shadow-md transition-all text-sm sm:text-base ${cargando ? 'bg-gray-400 cursor-not-allowed' : 'bg-teal-600 hover:bg-teal-700 active:scale-95'}`}
             >
               {cargando ? 'Guardando...' : '🔐 Guardar Nueva Contraseña'}
             </button>
           </form>
         ) : (
-          <form onSubmit={modoRecuperar ? recuperarContrasena : manejarLogin} className="space-y-5">
+          <form onSubmit={modoRecuperar ? recuperarContrasena : manejarLogin} className="space-y-4 sm:space-y-5">
             <div>
-              <label htmlFor="login-email" className="block text-sm font-bold text-gray-700 mb-1">Correo Electrónico</label>
+              <label htmlFor="login-email" className="block text-xs sm:text-sm font-bold text-gray-800 mb-1">Correo Electrónico</label>
               <input 
                 id="login-email"
                 type="email" 
                 value={email}
                 onChange={(e) => setEmail(e.target.value.toLowerCase())}
-                className="w-full p-3 border rounded-lg outline-none focus:ring-2 focus:ring-teal-500 bg-gray-50 focus:bg-white transition-all font-medium"
+                className="w-full p-2.5 sm:p-3 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-teal-500 bg-gray-50 focus:bg-white transition-all font-semibold text-gray-900 text-sm"
                 placeholder="tu@correo.com"
                 required
               />
@@ -240,11 +227,11 @@ export default function Login({ dispositivo, entrarSinConexion }) {
             {!modoRecuperar && (
               <div>
                 <div className="flex justify-between items-center mb-1">
-                  <label htmlFor="login-password" className="block text-sm font-bold text-gray-700">Contraseña</label>
+                  <label htmlFor="login-password" className="block text-xs sm:text-sm font-bold text-gray-800">Contraseña</label>
                   <button 
                     type="button" 
                     onClick={() => { setModoRecuperar(true); setMensaje({texto:'', tipo:''}); }}
-                    className="text-xs text-teal-600 hover:text-teal-800 font-bold transition-colors"
+                    className="text-xs text-teal-700 hover:text-teal-900 font-bold transition-colors py-1"
                   >
                     ¿Olvidaste tu contraseña?
                   </button>
@@ -254,7 +241,7 @@ export default function Login({ dispositivo, entrarSinConexion }) {
                   type="password" 
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full p-3 border rounded-lg outline-none focus:ring-2 focus:ring-teal-500 bg-gray-50 focus:bg-white transition-all font-medium"
+                  className="w-full p-2.5 sm:p-3 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-teal-500 bg-gray-50 focus:bg-white transition-all font-semibold text-gray-900 text-sm"
                   placeholder="••••••••"
                   required={!modoRecuperar}
                 />
@@ -264,9 +251,9 @@ export default function Login({ dispositivo, entrarSinConexion }) {
             <button 
               type="submit" 
               disabled={cargando}
-              className={`w-full p-3 rounded-lg font-black text-white shadow-md transition-all ${
+              className={`w-full p-3 rounded-lg font-black text-white shadow-md transition-all text-sm sm:text-base ${
                 cargando ? 'bg-gray-400 cursor-not-allowed' : 
-                modoRecuperar ? 'bg-amber-500 hover:bg-amber-600' : 'bg-teal-600 hover:bg-teal-700'
+                modoRecuperar ? 'bg-amber-500 hover:bg-amber-600 active:scale-95' : 'bg-teal-600 hover:bg-teal-700 active:scale-95'
               }`}
             >
               {cargando ? 'Procesando...' : (modoRecuperar ? '📧 Enviar Enlace' : '🔐 Ingresar al Sistema')}
@@ -275,11 +262,11 @@ export default function Login({ dispositivo, entrarSinConexion }) {
         )}
 
         {modoRecuperar && !modoNuevaClave && (
-          <div className="mt-6 text-center">
+          <div className="mt-5 text-center">
             <button 
               type="button" 
               onClick={() => { setModoRecuperar(false); setMensaje({texto:'', tipo:''}); }}
-              className="text-sm font-bold text-gray-500 hover:text-gray-800 transition-colors"
+              className="text-xs sm:text-sm font-bold text-gray-600 hover:text-gray-900 transition-colors py-1"
             >
               🔙 Volver al inicio de sesión
             </button>
@@ -288,13 +275,13 @@ export default function Login({ dispositivo, entrarSinConexion }) {
 
         {dispositivo?.enrolado && !modoNuevaClave && (
           <div className="mt-6 pt-6 border-t border-dashed border-gray-300">
-            <p className="text-center text-xs text-gray-500 mb-3">
+            <p className="text-center text-xs text-gray-600 font-medium mb-3">
               ¿Sin internet? Entra con el PIN configurado en este dispositivo.
             </p>
             <form onSubmit={manejarDesbloqueoLocal} className="space-y-2">
               <input
                 id="pin-local"
-                aria-label="PIN de acceso sin conexion, de 4 a 8 digitos"
+                aria-label="PIN de acceso sin conexión, de 4 a 8 dígitos"
                 type={verPin ? 'text' : 'password'}
                 inputMode="numeric"
                 autoComplete="off"
@@ -302,26 +289,26 @@ export default function Login({ dispositivo, entrarSinConexion }) {
                 value={pinLocal}
                 onChange={(e) => setPinLocal(e.target.value.replace(/\D/g, ''))}
                 placeholder="PIN de 4 a 8 dígitos"
-                className="w-full p-3 border rounded-lg outline-none focus:ring-2 focus:ring-teal-500 bg-gray-50 text-center tracking-[0.4em] font-bold"
+                className="w-full p-2.5 sm:p-3 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-teal-500 bg-gray-50 text-center tracking-[0.4em] font-bold text-gray-900 text-sm"
               />
               <div className="flex gap-2">
                 <button
                   type="submit"
                   disabled={desbloqueando || pinLocal.length < 4}
-                  className="flex-1 py-2.5 rounded-lg font-bold text-white bg-teal-600 hover:bg-teal-700 disabled:opacity-50 transition-colors"
+                  className="flex-1 py-2.5 rounded-lg font-bold text-white bg-teal-600 hover:bg-teal-700 disabled:opacity-50 transition-colors text-xs sm:text-sm"
                 >
                   {desbloqueando ? 'Abriendo…' : 'Entrar sin conexión'}
                 </button>
                 <button
                   type="button"
                   onClick={() => setVerPin(v => !v)}
-                  className="px-3 rounded-lg bg-gray-100 text-gray-600 font-bold text-xs"
+                  className="px-3 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-xs transition-colors"
                 >
                   {verPin ? 'Ocultar' : 'Ver'}
                 </button>
               </div>
             </form>
-            <p className="text-[10px] text-gray-400 text-center mt-2">
+            <p className="text-[11px] text-gray-500 text-center mt-2 font-medium">
               Solo abre los datos guardados en este equipo. No accede al servidor.
             </p>
           </div>
