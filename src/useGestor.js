@@ -17,7 +17,7 @@ import {
   enrolarDispositivo, leerEnrolamiento, intentarDesbloqueo, 
   revocarEnrolamiento, pinValido 
 } from './seguridad';
-import { aplicarAvisoQueratometria, calcularTotal } from './reglas';
+import { aplicarAvisoQueratometria, calcularTotal, calcularSaldo } from './reglas';
 import { limpiarHtml } from './escape';
 import { validarFichaClinica, motivoDocumentoInvalido } from './validacion';
 import { aplicarCedula, crearEstadoPaciente, hoyISO, INV_INICIAL, PRECIO_INICIAL } from './fichaClinica';
@@ -75,6 +75,7 @@ export function useGestor() {
   const [historial, setHistorial] = useState([]);
   const [cedulasArchivadas, setCedulasArchivadas] = useState([]);
   const [ventasArchivadas, setVentasArchivadas] = useState([]);
+  const [ventasLocales, setVentasLocales] = useState([]);
   const [inventario, setInventario] = useState([]);
   const [listaPrecios, setListaPrecios] = useState([]);
   
@@ -140,6 +141,9 @@ export function useGestor() {
     setInventario(snapshot.inventory || []);
     setListaPrecios(snapshot.prices || []);
     setCedulasArchivadas(snapshot.cedulasArchivadas || []);
+    if (snapshot.sales) {
+      setVentasLocales(snapshot.sales);
+    }
   };
 
   const obtenerDatos = async ({ sync = true } = {}) => {
@@ -149,13 +153,31 @@ export function useGestor() {
       console.warn('[datos] No se pudo migrar el caché antiguo:', error);
     }
     const snapshot = await obtenerSnapshotLocal();
+
+    // Leemos directamente las ventas reales de la tabla sales de Dexie
+    try {
+      const ventasDirectas = await localDb.sales.toArray();
+      if (ventasDirectas && ventasDirectas.length > 0) {
+        snapshot.sales = ventasDirectas;
+      }
+    } catch (err) {
+      console.warn('[datos] No se pudo leer localDb.sales:', err);
+    }
+
     aplicarSnapshotLocal(snapshot);
     const remoteStats = (await localDb.meta.get('remoteStats'))?.value || null;
     if (remoteStats) setStatsRemotos(remoteStats);
 
     if (sync) {
       void sincronizarAhora({ pull: true }).then(async () => {
-        aplicarSnapshotLocal(await obtenerSnapshotLocal());
+        const snapFresca = await obtenerSnapshotLocal();
+        try {
+          const vDirectas = await localDb.sales.toArray();
+          if (vDirectas && vDirectas.length > 0) {
+            snapFresca.sales = vDirectas;
+          }
+        } catch {}
+        aplicarSnapshotLocal(snapFresca);
         const statsFrescos = (await localDb.meta.get('remoteStats'))?.value || null;
         if (statsFrescos) setStatsRemotos(statsFrescos);
       });
@@ -401,7 +423,7 @@ export function useGestor() {
     }
   };
 
-  const cargarParaEditarInventario = (item) => {
+  const cargarParaEditarInventario = (item) => { 
     let itemFormateado = { ...item };
     Object.keys(itemFormateado).forEach(key => { if (itemFormateado[key] === null) itemFormateado[key] = ''; });
     setNuevoItemInv(itemFormateado); 
@@ -541,13 +563,13 @@ export function useGestor() {
     }
   };
 
-  const cargarParaEditarClinico = (item) => {
+  const cargarParaEditarClinico = (item) => { 
     let itemFormateado = { ...item };
     Object.keys(itemFormateado).forEach(key => { if (itemFormateado[key] === null) itemFormateado[key] = ''; });
     setPaciente({ ...estadoInicial, ...itemFormateado }); 
     setEditandoId(item.id); 
     setVistaActual('nueva_medicion'); 
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo({ top: 0, behavior: 'smooth' }); 
   };
 
   const abrirPedido = (item) => {
@@ -853,18 +875,51 @@ export function useGestor() {
   };
 
   const queryGlobal = safeString(busqueda).toLowerCase();
-  const pedidosFiltrados = useMemo(() => {
-    const base = [...(historial || []), ...(ventasArchivadas || [])];
-    return base.filter(item => {
-      if (!item) return false;
-      const matchSearch = safeString(item.nombre).toLowerCase().includes(queryGlobal) || safeString(item.cedula).includes(queryGlobal);
-      const tienePedido = Boolean(safeString(item.pedido_id).trim())
-        || safeNum(item.venta) > 0
+  
+  // Unificamos historial + ventasArchivadas + ventasLocales
+  const todosLosPedidosUnificados = useMemo(() => {
+    const mapa = new Map();
+    const fuentes = [
+      ...(historial || []),
+      ...(ventasArchivadas || []),
+      ...(ventasLocales || [])
+    ];
+
+    fuentes.forEach((item, index) => {
+      if (!item) return;
+      const clave = safeString(item.pedido_id) || safeString(item.id) || `temp_${index}`;
+      
+      const v = safeNum(item.venta || item.total || item.precio_total);
+      const ab = safeNum(item.abono);
+      const tieneDatosVenta = Boolean(safeString(item.pedido_id).trim())
+        || v > 0
+        || ab > 0
         || safeString(item.codigo_armazon).trim() !== ''
         || safeString(item.accesorio_id).trim() !== '';
-      return queryGlobal ? matchSearch : tienePedido;
+
+      if (!tieneDatosVenta) return;
+
+      if (mapa.has(clave)) {
+        const existente = mapa.get(clave);
+        // Priorizamos la fila que tenga más información de cobros
+        if (ab > safeNum(existente.abono) || v > safeNum(existente.venta)) {
+          mapa.set(clave, { ...existente, ...item, venta: v || existente.venta, abono: ab || existente.abono });
+        }
+      } else {
+        mapa.set(clave, { ...item, venta: v, abono: ab });
+      }
     });
-  }, [historial, ventasArchivadas, queryGlobal]);
+
+    return Array.from(mapa.values());
+  }, [historial, ventasArchivadas, ventasLocales]);
+
+  const pedidosFiltrados = useMemo(() => {
+    return todosLosPedidosUnificados.filter(item => {
+      if (!item) return false;
+      const matchSearch = safeString(item.nombre).toLowerCase().includes(queryGlobal) || safeString(item.cedula).includes(queryGlobal);
+      return queryGlobal ? matchSearch : true;
+    });
+  }, [todosLosPedidosUnificados, queryGlobal]);
 
   const listaPreciosFiltrada = useMemo(() => {
     const q = safeString(busquedaPrecio).toLowerCase();
@@ -889,36 +944,18 @@ export function useGestor() {
       let gastosTotal = 0;
       let abonosPendientes = 0;
       const cedulasUnicas = new Set();
-      const idsContabilizados = new Set();
 
-      // Unificamos el historial con ventas archivadas
-      const fuenteVentas = [...(historial || []), ...(ventasArchivadas || [])];
-
-      for (let i = 0; i < fuenteVentas.length; i += 1) {
-        const p = fuenteVentas[i];
-        if (!p) continue;
-
+      // Calculamos exactamente sobre las ventas unificadas reales
+      todosLosPedidosUnificados.forEach(p => {
+        if (!p) return;
         const estado = safeString(p.estado).trim().toLowerCase();
-        if (estado === 'anulado') continue;
+        if (estado === 'anulado') return;
 
-        // Clave única para evitar duplicar si viene en historial y ventas
-        const claveUnica = safeString(p.pedido_id) || safeString(p.id) || `fila_${i}`;
-        if (idsContabilizados.has(claveUnica)) continue;
-
-        const montoVenta = safeNum(p.venta);
-        const tienePedidoOPrecio = Boolean(safeString(p.pedido_id).trim()) 
-          || montoVenta > 0 
-          || safeString(p.codigo_armazon).trim() !== ''
-          || safeString(p.accesorio_id).trim() !== '';
-
-        if (!tienePedidoOPrecio) continue;
-        idsContabilizados.add(claveUnica);
-
-        const vFinal = calcularTotal(p.venta, p.descuento);
+        const vFinal = calcularTotal(p.venta || 0, p.descuento || 0);
         const abonoReal = safeNum(p.abono);
-        const saldo = calcularSaldo(p.venta, p.descuento, abonoReal);
+        const saldo = calcularSaldo(p.venta || 0, p.descuento || 0, abonoReal);
 
-        // Saldo pendiente acumulado
+        // Abonos pendientes reales
         if (saldo > 0) {
           abonosPendientes += saldo;
         }
@@ -929,13 +966,13 @@ export function useGestor() {
                           safeNum(p.costo_tratamientos_int) + 
                           safeNum(p.costo_varios_int);
 
-        // Histórico Total
+        // Histórico Total acumulado
         ventasTotal += vFinal;
         gastosTotal += gastoFila;
 
-        // Mes en curso
-        const fechaVenta = safeString(p.fecha_venta || p.fecha || '').slice(0, 10);
-        if (fechaVenta && fechaVenta >= inicioMes) {
+        // Mes actual en curso
+        const fecha = safeString(p.fecha_venta || p.fecha || '').slice(0, 10);
+        if (fecha && fecha >= inicioMes) {
           ventasMes += vFinal;
           gastosMes += gastoFila;
         }
@@ -944,18 +981,25 @@ export function useGestor() {
         if (cedula && cedula !== '9999999999' && safeString(p.nombre).trim().toUpperCase() !== 'CONSUMIDOR FINAL') {
           cedulasUnicas.add(cedula);
         }
-      }
+      });
 
-      // Si en el mes actual no hay ventas registradas aún (ej. día 1 de mes),
-      // mostramos el acumulado para que no quede la pantalla en cero vacío.
-      const mostrarVentas = ventasMes > 0 ? ventasMes : ventasTotal;
-      const mostrarGastos = ventasMes > 0 ? gastosMes : gastosTotal;
-      const mostrarUtilidad = mostrarVentas - mostrarGastos;
+      // Aseguramos conteo de todos los pacientes del historial médico
+      (historial || []).forEach(h => {
+        const c = safeString(h?.cedula).trim().toUpperCase();
+        if (c && c !== '9999999999' && safeString(h?.nombre).trim().toUpperCase() !== 'CONSUMIDOR FINAL') {
+          cedulasUnicas.add(c);
+        }
+      });
+
+      // Si el mes arrancó hoy y no tiene ventas aún, muestra el histórico total para evitar la pantalla vacía
+      const mostrarVentasMes = ventasMes > 0 ? ventasMes : ventasTotal;
+      const mostrarGastosMes = ventasMes > 0 ? gastosMes : gastosTotal;
+      const mostrarUtilidadMes = mostrarVentasMes - mostrarGastosMes;
 
       return {
-        ventasMes: Number(mostrarVentas.toFixed(2)),
-        gastosMes: Number(mostrarGastos.toFixed(2)),
-        utilidadNeta: Number(mostrarUtilidad.toFixed(2)),
+        ventasMes: Number(mostrarVentasMes.toFixed(2)),
+        gastosMes: Number(mostrarGastosMes.toFixed(2)),
+        utilidadNeta: Number(mostrarUtilidadMes.toFixed(2)),
         ventasTotal: Number(ventasTotal.toFixed(2)),
         gastosTotal: Number(gastosTotal.toFixed(2)),
         utilidadTotal: Number((ventasTotal - gastosTotal).toFixed(2)),
@@ -971,7 +1015,7 @@ export function useGestor() {
         abonosPendientes: 0, totalPacientes: 0, total: 0 
       }; 
     }
-  }, [historial, ventasArchivadas]);
+  }, [todosLosPedidosUnificados, historial]);
 
   const edadActual = calcularEdad(paciente?.fecha_nacimiento);
   const claseInputRef = (campo, clasesExtra) => {
@@ -988,7 +1032,7 @@ export function useGestor() {
     modoSinConexion, entrarSinConexion, dispositivo, configurarAccesoSinConexion, desactivarAccesoSinConexion,
     toast, confirmDialog, setConfirmDialog, vistaActual, setVistaActual, syncEstado, sincronizarAhora,
     obtenerDetalleCola, reintentarOperacion, descartarOperacion, descartarTodoLoAtascado,
-    historial, ventasArchivadas, inventario, listaPrecios, paciente, setPaciente, estadoInicial, editandoId, setEditandoId,
+    historial, ventasArchivadas, ventasLocales, inventario, listaPrecios, paciente, setPaciente, estadoInicial, editandoId, setEditandoId,
     cedulasArchivadas, 
     guardarPacienteClinico, manejarCambio, borrarHistoriaClinica, cargarParaEditarClinico, edadActual, claseInputRef,
     busqueda, setBusqueda, pedidosFiltrados, stats, enviarWhatsApp,
