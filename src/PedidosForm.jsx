@@ -1,12 +1,12 @@
-import { useState, useMemo } from 'react'
-import { safeString, safeNum, comprimirImagen } from './utilidades'
-import { mostrarAviso } from './avisos'
-import { validarMontoCobro } from './cobros'
-import { calcularTotal, calcularSaldo, calcularMontoDescuento, normalizarDescuento } from './reglas'
-import { supabase } from './supabaseClient'
-import { guardarAdjuntoLocal } from './localRepository'
-import { createUuid as generarId } from './localDb'
-import BotonComprobante from './BotonComprobante'
+import { useState, useMemo, useRef } from 'react';
+import { safeString, safeNum, comprimirImagen } from './utilidades';
+import { mostrarAviso } from './avisos';
+import { validarMontoCobro } from './cobros';
+import { calcularTotal, calcularSaldo, calcularMontoDescuento, normalizarDescuento } from './reglas';
+import { supabase } from './supabaseClient';
+import { guardarAdjuntoLocal } from './localRepository';
+import { createUuid as generarId } from './localDb';
+import BotonComprobante from './BotonComprobante';
 
 export default function PedidosForm({
   pedidoSeleccionado, setPedidoSeleccionado, setVistaActual, guardarPedido,
@@ -21,6 +21,7 @@ export default function PedidosForm({
   const [imagenComprobante, setImagenComprobante] = useState(null);
   const [subiendoComprobante, setSubiendoComprobante] = useState(false);
   const [procesando, setProcesando] = useState(false);
+  const guardandoRef = useRef(false);
   const [abonoAlAbrir] = useState(() => safeNum(pedidoSeleccionado?.abono));
 
   const [avisoComprobante, setAvisoComprobante] = useState('');
@@ -29,10 +30,21 @@ export default function PedidosForm({
     setTimeout(() => setAvisoComprobante(''), 6000);
   };
 
+  const pVenta = safeNum(pedidoSeleccionado?.venta);
+  const pDesc = normalizarDescuento(pedidoSeleccionado?.descuento);
+  const pAbono = safeNum(pedidoSeleccionado?.abono);
+  const pFinal = useMemo(() => calcularTotal(pVenta, pDesc), [pVenta, pDesc]);
+  const pSaldo = useMemo(() => calcularSaldo(pVenta, pDesc, pAbono), [pVenta, pDesc, pAbono]);
+  const pMontoDescuento = useMemo(() => calcularMontoDescuento(pVenta, pDesc), [pVenta, pDesc]);
+
   const registrarAbono = async () => {
     const monto = safeNum(nuevoAbonoMonto);
     const problema = validarMontoCobro(monto);
-    if (problema) return mostrarAviso(problema);
+    if (problema) return mostrarAviso(problema, 'warning');
+
+    if (monto > pSaldo + 0.005) {
+      return mostrarAviso(`El abono ($${monto.toFixed(2)}) supera el saldo pendiente ($${pSaldo.toFixed(2)}).`, 'warning');
+    }
 
     setSubiendoComprobante(true);
     let urlComprobanteFinal = pedidoSeleccionado.comprobante_url || '';
@@ -72,31 +84,50 @@ export default function PedidosForm({
         setMontoAbonoPendiente(prev => prev + monto);
       }
 
+      const fechaHoy = new Date().toISOString().slice(0, 10);
+      const notaAbonoNueva = nuevoAbonoNota ? ` - ${nuevoAbonoNota}` : '';
+      const lineaHistorial = `[${fechaHoy}] +$${monto.toFixed(2)} ${nuevoAbonoForma}${notaAbonoNueva}`;
+      const notasPrevias = safeString(pedidoSeleccionado.pago_nota).trim();
+      const pagoNotaActualizado = notasPrevias ? `${notasPrevias}\n${lineaHistorial}` : lineaHistorial;
+
       setPedidoSeleccionado({
         ...pedidoSeleccionado,
         abono: abonoAcumulado,
         forma_pago: nuevoAbonoForma,
+        pago_nota: pagoNotaActualizado,
         comprobante_url: urlComprobanteFinal
       });
+
       setNuevoAbonoMonto('');
       setNuevoAbonoNota('');
       setImagenComprobante(null);
+
       if (comprobantePendiente) {
         avisarComprobantePendiente('Comprobante guardado localmente. Se subirá al recuperar conexión.');
       }
     } catch (err) {
-      mostrarAviso('No se pudo registrar el abono localmente: ' + err.message);
+      mostrarAviso('No se pudo registrar el abono localmente: ' + err.message, 'error');
     } finally {
       setSubiendoComprobante(false);
     }
   };
 
-  const pVenta = safeNum(pedidoSeleccionado?.venta);
-  const pDesc = normalizarDescuento(pedidoSeleccionado?.descuento);
-  const pAbono = safeNum(pedidoSeleccionado?.abono);
-  const pFinal = useMemo(() => calcularTotal(pVenta, pDesc), [pVenta, pDesc]);
-  const pSaldo = useMemo(() => calcularSaldo(pVenta, pDesc, pAbono), [pVenta, pDesc, pAbono]);
-  const pMontoDescuento = useMemo(() => calcularMontoDescuento(pVenta, pDesc), [pVenta, pDesc]);
+  const ejecutarGuardado = async () => {
+    if (guardandoRef.current || procesando) return;
+    guardandoRef.current = true;
+    setProcesando(true);
+
+    try {
+      const montoAdicional = montoAbonoPendiente;
+      const guardado = await guardarPedido({ montoAdicional });
+      if (guardado) {
+        setMontoAbonoPendiente(0);
+      }
+    } finally {
+      setProcesando(false);
+      guardandoRef.current = false;
+    }
+  };
 
   const armazonUIInfo = (inventario || []).find(i => i && i.categoria === 'Armazon' && safeString(i.codigo).toUpperCase().trim() === safeString(pedidoSeleccionado?.codigo_armazon).toUpperCase().trim());
   const precioArmazonUI = armazonUIInfo ? safeNum(armazonUIInfo.precio) : 0;
@@ -131,16 +162,7 @@ export default function PedidosForm({
           </button>
           <button
             type="button"
-            onClick={async () => {
-              if (procesando) return;
-              setProcesando(true);
-              try { 
-                const guardado = await guardarPedido({ montoAdicional: montoAbonoPendiente }); 
-                if (guardado) setMontoAbonoPendiente(0); 
-              } finally { 
-                setProcesando(false); 
-              }
-            }}
+            onClick={ejecutarGuardado}
             disabled={procesando}
             className={`px-6 sm:px-8 py-2 rounded-lg font-bold shadow-md text-white transition-all text-sm sm:text-base ${procesando ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 active:scale-95'}`}
           >
@@ -325,11 +347,11 @@ export default function PedidosForm({
           <div className="bg-red-50 p-3 rounded-b-lg border border-t-0 border-red-200 space-y-3 mb-6 shadow-inner">
             <p className="text-xs text-red-700 mb-2 font-bold">Estos valores son privados para calcular tu balance y ganancia real.</p>
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-              <div><label htmlFor="pf-costo_lunas_int" className="block text-xs font-bold text-gray-800 mb-1">Costo Lunas ($)</label><input id="pf-costo_lunas_int" name="costo_lunas_int" value={safeString(pedidoSeleccionado.costo_lunas_int)} onChange={manejarCambioPedido} type="number" className="w-full p-1.5 border border-gray-300 rounded outline-none text-xs sm:text-sm text-gray-900 font-semibold bg-white" placeholder="0.00" /></div>
-              <div><label htmlFor="pf-costo_tratamientos_int" className="block text-xs font-bold text-gray-800 mb-1">Tratamientos ($)</label><input id="pf-costo_tratamientos_int" name="costo_tratamientos_int" value={safeString(pedidoSeleccionado.costo_tratamientos_int)} onChange={manejarCambioPedido} type="number" className="w-full p-1.5 border border-gray-300 rounded outline-none text-xs sm:text-sm text-gray-900 font-semibold bg-white" placeholder="0.00" /></div>
-              <div><label htmlFor="pf-costo_armazon_int" className="block text-xs font-bold text-gray-800 mb-1">Costo Armazón ($)</label><input id="pf-costo_armazon_int" name="costo_armazon_int" value={safeString(pedidoSeleccionado.costo_armazon_int)} onChange={manejarCambioPedido} type="number" className="w-full p-1.5 bg-gray-100 border border-gray-300 rounded outline-none text-xs sm:text-sm text-gray-700 font-semibold" placeholder="Auto" /></div>
-              <div><label htmlFor="pf-costo_accesorio_int" className="block text-xs font-bold text-gray-800 mb-1">Costo Accesorio ($)</label><input id="pf-costo_accesorio_int" name="costo_accesorio_int" value={safeString(pedidoSeleccionado.costo_accesorio_int)} onChange={manejarCambioPedido} type="number" className="w-full p-1.5 bg-gray-100 border border-gray-300 rounded outline-none text-xs sm:text-sm text-gray-700 font-semibold" placeholder="Auto" /></div>
-              <div><label htmlFor="pf-costo_varios_int" className="block text-xs font-bold text-gray-800 mb-1">Gastos Varios ($)</label><input id="pf-costo_varios_int" name="costo_varios_int" value={safeString(pedidoSeleccionado.costo_varios_int)} onChange={manejarCambioPedido} type="number" className="w-full p-1.5 border border-gray-300 rounded outline-none text-xs sm:text-sm font-bold text-red-800 bg-white" placeholder="Transporte..." /></div>
+              <div><label htmlFor="pf-costo_lunas_int" className="block text-xs font-bold text-gray-800 mb-1">Costo Lunas ($)</label><input id="pf-costo_lunas_int" name="costo_lunas_int" value={safeString(pedidoSeleccionado.costo_lunas_int)} onChange={manejarCambioPedido} type="number" step="0.01" className="w-full p-1.5 border border-gray-300 rounded outline-none text-xs sm:text-sm text-gray-900 font-semibold bg-white" placeholder="0.00" /></div>
+              <div><label htmlFor="pf-costo_tratamientos_int" className="block text-xs font-bold text-gray-800 mb-1">Tratamientos ($)</label><input id="pf-costo_tratamientos_int" name="costo_tratamientos_int" value={safeString(pedidoSeleccionado.costo_tratamientos_int)} onChange={manejarCambioPedido} type="number" step="0.01" className="w-full p-1.5 border border-gray-300 rounded outline-none text-xs sm:text-sm text-gray-900 font-semibold bg-white" placeholder="0.00" /></div>
+              <div><label htmlFor="pf-costo_armazon_int" className="block text-xs font-bold text-gray-800 mb-1">Costo Armazón ($)</label><input id="pf-costo_armazon_int" name="costo_armazon_int" value={safeString(pedidoSeleccionado.costo_armazon_int)} onChange={manejarCambioPedido} type="number" step="0.01" className="w-full p-1.5 bg-gray-100 border border-gray-300 rounded outline-none text-xs sm:text-sm text-gray-700 font-semibold" placeholder="Auto" /></div>
+              <div><label htmlFor="pf-costo_accesorio_int" className="block text-xs font-bold text-gray-800 mb-1">Costo Accesorio ($)</label><input id="pf-costo_accesorio_int" name="costo_accesorio_int" value={safeString(pedidoSeleccionado.costo_accesorio_int)} onChange={manejarCambioPedido} type="number" step="0.01" className="w-full p-1.5 bg-gray-100 border border-gray-300 rounded outline-none text-xs sm:text-sm text-gray-700 font-semibold" placeholder="Auto" /></div>
+              <div><label htmlFor="pf-costo_varios_int" className="block text-xs font-bold text-gray-800 mb-1">Gastos Varios ($)</label><input id="pf-costo_varios_int" name="costo_varios_int" value={safeString(pedidoSeleccionado.costo_varios_int)} onChange={manejarCambioPedido} type="number" step="0.01" className="w-full p-1.5 border border-gray-300 rounded outline-none text-xs sm:text-sm font-bold text-red-800 bg-white" placeholder="Transporte..." /></div>
             </div>
             <div className="text-right pt-2 border-t border-red-200">
               <span className="text-xs sm:text-sm font-black text-red-900">Total Gasto Interno: ${costoTotalInterno.toFixed(2)}</span>
@@ -342,7 +364,7 @@ export default function PedidosForm({
             <div>
               <label className="block text-xs sm:text-sm font-bold text-gray-800 mb-1">Costo Base ($)</label>
               <div className="flex gap-2">
-                <input name="venta" aria-label="Costo base de la venta en dólares" value={safeString(pedidoSeleccionado.venta)} onChange={manejarCambioPedido} type="number" className="w-full p-2 sm:p-2.5 bg-gray-50 border border-gray-300 rounded-lg outline-none font-black text-indigo-950 text-base" />
+                <input name="venta" aria-label="Costo base de la venta en dólares" value={safeString(pedidoSeleccionado.venta)} onChange={manejarCambioPedido} type="number" step="0.01" className="w-full p-2 sm:p-2.5 bg-gray-50 border border-gray-300 rounded-lg outline-none font-black text-indigo-950 text-base" />
                 <button type="button" onClick={forzarRecalculo} title="Volver a calcular automáticamente" className="bg-indigo-100 hover:bg-indigo-200 text-indigo-900 p-2 sm:p-2.5 rounded-lg font-bold border border-indigo-300 transition-colors">♻️</button>
               </div>
             </div>
@@ -361,7 +383,7 @@ export default function PedidosForm({
                  <div>
                    <label className="block text-xs font-bold text-gray-800 mb-1">Monto a abonar hoy ($)</label>
                    <div className="flex gap-2">
-                     <input aria-label="Monto del abono a registrar" type="number" value={nuevoAbonoMonto} onChange={e => setNuevoAbonoMonto(e.target.value)} className="w-full p-2 border border-gray-300 rounded-lg outline-none font-bold text-green-800 bg-white text-sm" placeholder="Ej: 20.00" />
+                     <input aria-label="Monto del abono a registrar" type="number" step="0.01" value={nuevoAbonoMonto} onChange={e => setNuevoAbonoMonto(e.target.value)} className="w-full p-2 border border-gray-300 rounded-lg outline-none font-bold text-green-800 bg-white text-sm" placeholder="Ej: 20.00" />
                      <select aria-label="Forma de pago del abono" value={nuevoAbonoForma} onChange={e => setNuevoAbonoForma(e.target.value)} className="p-2 border border-gray-300 rounded-lg outline-none text-xs bg-white text-gray-900 font-semibold">
                         <option value="Efectivo">Efectivo</option>
                         <option value="Transferencia">Transferencia</option>
@@ -394,23 +416,23 @@ export default function PedidosForm({
               <div className="bg-white p-3 rounded-lg border border-green-200 shadow-sm flex flex-col h-full">
                  <div className="flex justify-between items-center mb-1">
                    <label className="block text-[11px] font-bold text-gray-600 uppercase tracking-wide">Total Abonado</label>
-                    <BotonComprobante
-                      ruta={pedidoSeleccionado.comprobante_url}
-                      refId={pedidoSeleccionado.pedido_id || pedidoSeleccionado.id}
-                      className="text-xs font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1 bg-indigo-100 text-indigo-800 hover:bg-indigo-200 border border-indigo-200"
-                    >
-                      👁️ Ver Comprobante
-                    </BotonComprobante>
+                   <BotonComprobante
+                     ruta={pedidoSeleccionado.comprobante_url}
+                     refId={pedidoSeleccionado.pedido_id || pedidoSeleccionado.id}
+                     className="text-xs font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1 bg-indigo-100 text-indigo-800 hover:bg-indigo-200 border border-indigo-200"
+                   >
+                     👁️ Ver Comprobante
+                   </BotonComprobante>
                  </div>
                  <div className="flex items-center gap-2 mb-2">
-                    <span className="text-2xl font-black text-green-700">${safeNum(pedidoSeleccionado.abono).toFixed(2)}</span>
-                    <span className="text-xs text-gray-500 font-medium">(Acumulado)</span>
+                   <span className="text-2xl font-black text-green-700">${safeNum(pedidoSeleccionado.abono).toFixed(2)}</span>
+                   <span className="text-xs text-gray-500 font-medium">(Acumulado)</span>
                  </div>
                  <textarea name="pago_nota" aria-label="Nota o referencia del pago" value={safeString(pedidoSeleccionado.pago_nota)} onChange={manejarCambioPedido} className="w-full flex-1 min-h-[50px] p-2 bg-gray-50 border border-gray-200 rounded outline-none resize-none text-xs font-mono text-gray-800" placeholder="Historial de pagos aparecerá aquí..."></textarea>
 
                  <div className="mt-2 flex items-center justify-between border-t border-gray-200 pt-2">
                    <span className="text-[11px] text-gray-600 font-medium">Corrección manual:</span>
-                   <input name="abono" aria-label="Monto abonado anteriormente" value={safeString(pedidoSeleccionado.abono)} onChange={manejarCambioPedido} type="number" className="w-20 p-1 border border-gray-300 rounded text-xs text-right outline-none bg-gray-50 text-gray-900 font-bold" />
+                   <input name="abono" aria-label="Monto abonado anteriormente" value={safeString(pedidoSeleccionado.abono)} onChange={manejarCambioPedido} type="number" step="0.01" className="w-20 p-1 border border-gray-300 rounded text-xs text-right outline-none bg-gray-50 text-gray-900 font-bold" />
                  </div>
               </div>
 
@@ -427,7 +449,7 @@ export default function PedidosForm({
             <div className="text-left sm:text-right w-full sm:w-auto">
               <span className="text-xs font-bold text-gray-600 uppercase">Costo Final: ${pFinal.toFixed(2)}</span><br/>
               <span className="text-xs sm:text-sm font-bold text-gray-700">Saldo Pendiente: </span>
-              <span className="text-xl sm:text-2xl font-black text-red-600">${pSaldo.toFixed(2)}</span>
+              <span className="text-xl sm:text-2xl font-black text-red-600">${Math.max(0, pSaldo).toFixed(2)}</span>
             </div>
           </div>
 
@@ -447,16 +469,7 @@ export default function PedidosForm({
         </div>
         <button
           type="button"
-          onClick={async () => {
-            if (procesando) return;
-            setProcesando(true);
-            try { 
-              const guardado = await guardarPedido({ montoAdicional: montoAbonoPendiente }); 
-              if (guardado) setMontoAbonoPendiente(0); 
-            } finally { 
-              setProcesando(false); 
-            }
-          }}
+          onClick={ejecutarGuardado}
           disabled={procesando}
           className={`px-6 sm:px-8 py-2.5 sm:py-3 rounded-xl font-black text-sm sm:text-base text-white shadow-lg transition-all ${procesando ? 'bg-gray-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-700 active:scale-95'}`}
         >
@@ -465,5 +478,5 @@ export default function PedidosForm({
       </div>
 
     </div>
-  )
+  );
 }
