@@ -1,6 +1,5 @@
 import { localDb, createUuid, nowIso, pendingRecord, createOutboxOperation, getMeta, setMeta } from './localDb.js';
 import { calcularSaldo } from './reglas.js';
-import { unaTarjetaPorCedula } from './historial.js';
 
 const safeString = value => value === null || value === undefined ? '' : String(value);
 const safeNum = value => {
@@ -152,18 +151,32 @@ const consultationPayload = consultation => {
   return payload;
 };
 
+const fechaHoraActual = () => {
+  const d = new Date();
+  const fecha = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const hora = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  return `${fecha} ${hora}`;
+};
+
 const guardarConsultaLocalImpl = async ({ patient, consultation }) => {
   const consultationId = consultation.id || createUuid();
   const cedula = normalizeCedula(patient.cedula);
   const existingPatient = await findPatient(patient.patient_id || patient.id, cedula);
   const patientId = existingPatient?.id || patient.patient_id || patient.id || createUuid();
   const normalizedPatient = pendingRecord({ ...patientPayload({ ...patient, id: patientId, cedula }) });
+
+  // Preservamos la fecha con hora si viene dada, o asignamos fecha y hora completa actual
+  const fechaCompleta = consultation.fecha && consultation.fecha.includes(':') 
+    ? consultation.fecha 
+    : (consultation.fecha ? `${consultation.fecha.slice(0, 10)} ${fechaHoraActual().split(' ')[1]}` : fechaHoraActual());
+
   const normalizedConsultation = pendingRecord({
     ...consultation,
     id: consultationId,
     patientId,
-    fecha: consultation.fecha || nowIso().slice(0, 10)
+    fecha: fechaCompleta
   });
+
   const operation = createOutboxOperation({
     type: 'GUARDAR_CONSULTA',
     entityId: consultationId,
@@ -552,7 +565,6 @@ const archivarConsultaLocalImpl = async consultationId => {
   }
   const cedulaNormalizada = normalizeCedula(cedula);
 
-  // Registro inmediato en ambas claves de meta para blindaje local
   const borrados = new Set(await getMeta('cedulasArchivadas', []));
   const borradosServidor = new Set(await getMeta('cedulasArchivadasServidor', []));
   if (cedulaNormalizada) {
@@ -590,7 +602,7 @@ const archivarConsultaLocalImpl = async consultationId => {
         await localDb.consultations.put({ 
           ...consultation, 
           archivedAt: nowIso(), 
-          archived_at: nowIso(),
+          archived_at: nowIso(), 
           syncStatus: 'pending' 
         });
       }
@@ -611,7 +623,7 @@ const archivarConsultaLocalImpl = async consultationId => {
         await localDb.patients.put({ 
           ...p, 
           archivedAt: nowIso(), 
-          archived_at: nowIso(),
+          archived_at: nowIso(), 
           syncStatus: 'synced' 
         });
       }
@@ -833,6 +845,7 @@ export const obtenerSnapshotLocal = async () => {
   const paymentsBySale = new Map();
   payments.forEach(payment => paymentsBySale.set(payment.saleId, [...(paymentsBySale.get(payment.saleId) || []), payment]));
 
+  // Todas las consultas clínicas locales reales (CON FECHA Y HORA COMPLETAS)
   const localHistorial = consultations
     .filter(row => !row.archivedAt && !row.archived_at)
     .filter(row => {
@@ -853,6 +866,7 @@ export const obtenerSnapshotLocal = async () => {
         ...patient, ...consultation, ...(sale || {}),
         id: consultation.id, patient_id: patient.id, paciente_id: patient.id,
         pedido_id: sale?.id || '', fecha_venta: sale?.fecha || null,
+        fecha: consultation.fecha || sale?.fecha || nowIso().slice(0, 10),
         abono: String(abono || 0), syncStatus: sale?.syncStatus || consultation.syncStatus || 'synced'
       };
     });
@@ -876,13 +890,12 @@ export const obtenerSnapshotLocal = async () => {
       return data;
     });
 
+  // Orden estrictamente cronológico descendente (las consultas más recientes primero)
   const combined = [...localHistorial, ...remoteHistorial].sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')));
 
   return {
-    historial: unaTarjetaPorCedula(
-      combined,
-      fila => normalizeCedula(fila.cedula) || `id:${fila.id}`
-    ),
+    // Entregamos el array COMPLETO de todas las consultas históricas
+    historial: combined,
     cedulasArchivadas: [...cedulasArchivadas],
     ventasArchivadas: sales
       .map(venta => ({ venta, patient: patientById.get(venta.patientId) || {} }))
