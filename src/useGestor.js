@@ -506,8 +506,21 @@ export function useGestor() {
       let clinicaData = {};
       camposClinica.forEach(k => { clinicaData[k] = paciente[k] === '' ? null : paciente[k]; });
 
-      // Si editandoId tiene valor, se modifica esa visita puntual.
-      // Si editandoId es null, SIEMPRE se genera un idConsulta nuevo para crear una visita histórica separada.
+      // Generación de fecha con hora exacta (HH:mm) para no pisar registros del mismo día
+      const ahora = new Date();
+      const horas = String(ahora.getHours()).padStart(2, '0');
+      const minutos = String(ahora.getMinutes()).padStart(2, '0');
+      const horaActual = `${horas}:${minutos}`;
+
+      const fechaBase = safeString(paciente.fecha) ? safeString(paciente.fecha).split(' ')[0] : hoy;
+      // Si estamos editando una ficha vieja se mantiene su fecha/hora; si es nueva consulta se añade la hora exacta actual
+      if (!editandoId) {
+        clinicaData.fecha = `${fechaBase} ${horaActual}`;
+      } else if (!clinicaData.fecha) {
+        clinicaData.fecha = `${fechaBase} ${horaActual}`;
+      }
+
+      // Si editandoId existe se edita puntualmente; si no, SIEMPRE se crea un idConsulta nuevo independiente
       const idConsulta = editandoId ? editandoId : generarId();
 
       await guardarConsultaLocal({
@@ -746,7 +759,7 @@ export function useGestor() {
         'tratam_trans', 'tratam_ninguno'
       ];
 
-      if (camposQueAfectanPrecio.includes(name)) {
+      if (fieldsQueAfectanPrecio(name)) {
         if (name === 'tratam_ninguno' && val === 'SI') {
           nuevo.tratam_ar = 'NO'; nuevo.tratam_ar_azul = 'NO'; nuevo.tratam_azul = 'NO'; 
           nuevo.tratam_tinturado = 'NO'; nuevo.tratam_foto = 'NO'; nuevo.tratam_trans = 'NO';
@@ -758,6 +771,14 @@ export function useGestor() {
       return nuevo;
     });
   };
+
+  function fieldsQueAfectanPrecio(name) {
+    return [
+      'codigo_armazon', 'material_lente', 'accesorio_id', 'tratam_ar', 
+      'tratam_ar_azul', 'tratam_azul', 'tratam_tinturado', 'tratam_foto', 
+      'tratam_trans', 'tratam_ninguno'
+    ].includes(name);
+  }
 
   const guardandoPedidoRef = useRef(false);
   const guardarPedido = async ({ montoAdicional = 0 } = {}) => {

@@ -88,7 +88,7 @@ export default function Historial({
 
     let mapaVisitas = new Map();
 
-    // 1. Cargar todas las consultas del paciente guardadas en IndexedDB
+    // 1. Cargar todas las consultas locales indexadas por su ID único exclusivo
     try {
       const snapshot = await obtenerSnapshotLocal();
       const histLocal = snapshot?.historial || historialReciente || [];
@@ -97,7 +97,7 @@ export default function Historial({
         .filter(r => normalizeCedula(r.cedula) === cedulaObjetivo)
         .filter(r => !r.archived_at)
         .forEach(r => {
-          const clave = String(r.id || `${r.fecha}_${r.cedula}`);
+          const clave = String(r.id || `${r.fecha}_${r.id}`);
           mapaVisitas.set(clave, r);
         });
       
@@ -110,12 +110,11 @@ export default function Historial({
       console.warn("Fallo al leer datos locales del paciente:", err);
     }
 
-    // 2. Traer el historial completo desde Supabase (todas las fechas de consultas)
+    // 2. Traer todas las consultas remotas de Supabase
     try {
       if (navigator.onLine) {
         let datosConsultas = [];
 
-        // Primero consultamos la tabla maestra 'consultas'
         const { data: resConsultas } = await supabase
           .from('consultas')
           .select('*')
@@ -127,7 +126,6 @@ export default function Historial({
           datosConsultas = resConsultas;
         }
 
-        // Si no trajo resultados, intentamos por paciente_id
         if (datosConsultas.length === 0 && (paciente.patient_id || paciente.id)) {
           const resPorPid = await supabase
             .from('consultas')
@@ -140,7 +138,6 @@ export default function Historial({
           }
         }
 
-        // Si no existe la tabla consultas o está vacía, leemos de vista_pacientes
         if (datosConsultas.length === 0) {
           const resVista = await supabase
             .from('vista_pacientes')
@@ -154,7 +151,7 @@ export default function Historial({
           datosConsultas
             .filter(d => !d.archived_at)
             .forEach(d => {
-              const clave = String(d.id || `${d.fecha}_${d.cedula}`);
+              const clave = String(d.id || `${d.fecha}_${d.id}`);
               const existente = mapaVisitas.get(clave);
               mapaVisitas.set(clave, { ...existente, ...d });
             });
@@ -186,7 +183,15 @@ export default function Historial({
     confirmarAccion(
       `¿Deseas eliminar la consulta del ${safeString(reg.fecha)}?`,
       async () => {
-        await borrarHistoriaClinica(reg);
+        // Borra puntualmente esta consulta específica sin tocar las demás consultas del paciente
+        try {
+          if (reg.id && navigator.onLine) {
+            await supabase.from('consultas').delete().eq('id', reg.id);
+          }
+          await borrarHistoriaClinica(reg);
+        } catch (e) {
+          console.warn("Fallo al eliminar consulta específica:", e);
+        }
         setRegistrosPaciente(prev => prev.filter(r => r.id !== reg.id));
       }
     );
@@ -247,8 +252,8 @@ export default function Historial({
                   <thead>
                     <tr>
                       <th className="p-2 border-r border-b bg-gray-100 text-gray-700 w-10" rowSpan="2"></th>
-                      <th className="p-2 border-r-2 border-b border-gray-300 bg-gray-100 text-gray-800 font-extrabold align-bottom" rowSpan="2">
-                        Fecha
+                      <th className="p-2 border-r-2 border-b border-gray-300 bg-gray-100 text-gray-800 font-extrabold align-bottom whitespace-nowrap" rowSpan="2">
+                        Fecha / Hora
                       </th>
                       
                       <th className="py-2 px-3 border-r-2 border-b-2 border-indigo-300 bg-indigo-100 text-indigo-950 font-black tracking-wider uppercase text-xs" colSpan="8">
@@ -298,7 +303,7 @@ export default function Historial({
                               {filasExpandidas[reg.id] ? '−' : '＋'}
                             </button>
                           </td>
-                          <td className="p-2 border-r-2 border-gray-300 font-bold text-gray-800 whitespace-nowrap bg-gray-50/40">
+                          <td className="p-2 border-r-2 border-gray-300 font-bold text-gray-800 whitespace-nowrap bg-gray-50/40 text-[11px]">
                             {safeString(reg.fecha)}
                           </td>
                           
@@ -329,7 +334,7 @@ export default function Historial({
                               type="button" 
                               onClick={() => eliminarRegistroDeExpediente(reg)} 
                               className="text-xs bg-red-100 text-red-700 hover:bg-red-200 p-1.5 rounded font-bold transition-colors shadow-sm" 
-                              title="Eliminar esta consulta clínica"
+                              title="Eliminar esta consulta clínica puntual"
                             >
                               🗑️
                             </button>
