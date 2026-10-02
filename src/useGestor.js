@@ -506,14 +506,12 @@ export function useGestor() {
       let clinicaData = {};
       camposClinica.forEach(k => { clinicaData[k] = paciente[k] === '' ? null : paciente[k]; });
 
-      const idConsulta = editandoId || safeString(paciente.id) || generarId();
-
-      if (!editandoId && !paciente.id) {
-        setPaciente(prev => ({ ...prev, id: idConsulta }));
-      }
+      // Si editandoId tiene valor, se modifica esa visita puntual.
+      // Si editandoId es null, SIEMPRE se genera un idConsulta nuevo para crear una visita histórica separada.
+      const idConsulta = editandoId ? editandoId : generarId();
 
       await guardarConsultaLocal({
-        patient: { ...perfilData, patient_id: paciente.patient_id || paciente.id },
+        patient: { ...perfilData, patient_id: paciente.patient_id || paciente.id || generarId() },
         consultation: { ...clinicaData, id: idConsulta }
       });
 
