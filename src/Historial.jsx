@@ -204,18 +204,33 @@ export default function Historial({
                 <span className="text-xs text-blue-700 font-medium">Clic en ➕ para ver Lensometría, AutoRef y Queratometría</span>
               </div>
               <div className="overflow-x-auto shadow-sm border border-gray-200 rounded-lg">
-                <table className="w-full text-center text-xs bg-white min-w-[640px]">
+                <table className="w-full text-center text-xs bg-white min-w-[980px]">
                   <thead className="bg-blue-50 text-blue-950">
                     <tr>
                       <th className="p-2 border-r border-b w-10" rowSpan="2"></th>
                       <th className="p-2 border-r border-b align-bottom" rowSpan="2">Fecha</th>
-                      <th className="p-2 border-r border-b font-bold" colSpan="5">Ojo Derecho (OD)</th>
-                      <th className="p-2 border-b font-bold" colSpan="5">Ojo Izquierdo (OI)</th>
+                      <th className="p-2 border-r border-b font-bold text-indigo-950 bg-blue-100/40" colSpan="8">Ojo Derecho (OD)</th>
+                      <th className="p-2 border-b font-bold text-indigo-950 bg-teal-100/30" colSpan="8">Ojo Izquierdo (OI)</th>
                       <th className="p-2 border-l border-b bg-red-50 text-red-800" rowSpan="2">Acción</th>
                     </tr>
                     <tr className="bg-blue-100/60 text-gray-700">
-                      <th className="p-1 border-r border-b">Esf.</th><th className="p-1 border-r border-b">Cil.</th><th className="p-1 border-r border-b">Eje</th><th className="p-1 border-r border-b">Adi.</th><th className="p-1 border-r border-b text-teal-800 font-bold">A.V.CC</th>
-                      <th className="p-1 border-r border-b">Esf.</th><th className="p-1 border-r border-b">Cil.</th><th className="p-1 border-r border-b">Eje</th><th className="p-1 border-r border-b">Adi.</th><th className="p-1 border-b text-teal-800 font-bold">A.V.CC</th>
+                      <th className="p-1 border-r border-b">Esf.</th>
+                      <th className="p-1 border-r border-b">Cil.</th>
+                      <th className="p-1 border-r border-b">Eje</th>
+                      <th className="p-1 border-r border-b">Adi.</th>
+                      <th className="p-1 border-r border-b text-indigo-900 font-bold bg-indigo-50/50">DNP</th>
+                      <th className="p-1 border-r border-b text-indigo-900 font-bold bg-indigo-50/50">Alt.</th>
+                      <th className="p-1 border-r border-b text-teal-800 font-bold">AV.CL</th>
+                      <th className="p-1 border-r border-b text-teal-900 font-black bg-teal-50/60">AV.CC</th>
+
+                      <th className="p-1 border-r border-b">Esf.</th>
+                      <th className="p-1 border-r border-b">Cil.</th>
+                      <th className="p-1 border-r border-b">Eje</th>
+                      <th className="p-1 border-r border-b">Adi.</th>
+                      <th className="p-1 border-r border-b text-indigo-900 font-bold bg-indigo-50/50">DNP</th>
+                      <th className="p-1 border-r border-b text-indigo-900 font-bold bg-indigo-50/50">Alt.</th>
+                      <th className="p-1 border-r border-b text-teal-800 font-bold">AV.CL</th>
+                      <th className="p-1 border-b text-teal-900 font-black bg-teal-50/60">AV.CC</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -227,9 +242,27 @@ export default function Historial({
                               {filasExpandidas[reg.id] ? '−' : '＋'}
                             </button>
                           </td>
-                          <td className="p-2 border-r font-bold text-gray-800">{safeString(reg.fecha)}</td>
-                          <td className="p-2 border-r font-semibold text-gray-900">{safeString(reg.esfera_od) || '—'}</td><td className="p-2 border-r font-semibold text-gray-900">{safeString(reg.cilindro_od) || '—'}</td><td className="p-2 border-r font-semibold text-gray-900">{safeString(reg.eje_od) || '—'}</td><td className="p-2 border-r font-semibold text-gray-900">{safeString(reg.adicion_od) || '—'}</td><td className="p-2 border-r font-bold text-teal-800 bg-teal-50/30">{safeString(reg.avcc_od) || '-'}</td>
-                          <td className="p-2 border-r font-semibold text-gray-900">{safeString(reg.esfera_oi) || '—'}</td><td className="p-2 border-r font-semibold text-gray-900">{safeString(reg.cilindro_oi) || '—'}</td><td className="p-2 border-r font-semibold text-gray-900">{safeString(reg.eje_oi) || '—'}</td><td className="p-2 border-r font-semibold text-gray-900">{safeString(reg.adicion_oi) || '—'}</td><td className="p-2 font-bold text-teal-800 bg-teal-50/30">{safeString(reg.avcc_oi) || '-'}</td>
+                          <td className="p-2 border-r font-bold text-gray-800 whitespace-nowrap">{safeString(reg.fecha)}</td>
+                          
+                          {/* Ojo Derecho */}
+                          <td className="p-2 border-r font-semibold text-gray-900">{safeString(reg.esfera_od) || '—'}</td>
+                          <td className="p-2 border-r font-semibold text-gray-900">{safeString(reg.cilindro_od) || '—'}</td>
+                          <td className="p-2 border-r font-semibold text-gray-900">{safeString(reg.eje_od) || '—'}</td>
+                          <td className="p-2 border-r font-semibold text-gray-900">{safeString(reg.adicion_od) || '—'}</td>
+                          <td className="p-2 border-r font-semibold text-indigo-900 bg-indigo-50/30">{safeString(reg.dnp_od) || '—'}</td>
+                          <td className="p-2 border-r font-semibold text-indigo-900 bg-indigo-50/30">{safeString(reg.altura_od) || '—'}</td>
+                          <td className="p-2 border-r font-bold text-teal-700">{safeString(reg.avcl_od) || '—'}</td>
+                          <td className="p-2 border-r font-black text-teal-900 bg-teal-50/40">{safeString(reg.avcc_od) || '-'}</td>
+
+                          {/* Ojo Izquierdo */}
+                          <td className="p-2 border-r font-semibold text-gray-900">{safeString(reg.esfera_oi) || '—'}</td>
+                          <td className="p-2 border-r font-semibold text-gray-900">{safeString(reg.cilindro_oi) || '—'}</td>
+                          <td className="p-2 border-r font-semibold text-gray-900">{safeString(reg.eje_oi) || '—'}</td>
+                          <td className="p-2 border-r font-semibold text-gray-900">{safeString(reg.adicion_oi) || '—'}</td>
+                          <td className="p-2 border-r font-semibold text-indigo-900 bg-indigo-50/30">{safeString(reg.dnp_oi) || '—'}</td>
+                          <td className="p-2 border-r font-semibold text-indigo-900 bg-indigo-50/30">{safeString(reg.altura_oi) || '—'}</td>
+                          <td className="p-2 border-r font-bold text-teal-700">{safeString(reg.avcl_oi) || '—'}</td>
+                          <td className="p-2 font-black text-teal-900 bg-teal-50/40">{safeString(reg.avcc_oi) || '-'}</td>
                           
                           <td className="p-2 border-l text-center bg-red-50/20">
                             <button 
@@ -245,7 +278,7 @@ export default function Historial({
                         
                         {filasExpandidas[reg.id] && (
                           <tr className="bg-slate-50 border-b shadow-inner">
-                            <td colSpan="13" className="p-3 sm:p-4">
+                            <td colSpan="19" className="p-3 sm:p-4">
                               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 text-xs text-left">
                                 
                                 <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
@@ -528,7 +561,6 @@ export default function Historial({
                             const inicial = safeString(item.forma_pago).trim();
                             if (inicial) metodos.push(inicial);
 
-                            // Extraemos métodos de pago registrados en las notas de abono (ej: "[01/10] +$20.00 Transferencia")
                             const notaCompleta = safeString(item.pago_nota);
                             const regexAbonos = /\+\s*\$?\s*[\d.]+\s+(Efectivo|Transferencia|Tarjeta)/gi;
                             let match;
@@ -537,7 +569,6 @@ export default function Historial({
                               metodos.push(metodoDetectado);
                             }
 
-                            // Si tiene comprobante adjunto y no se detectó transferencia, la agregamos
                             if (item.comprobante_url && !metodos.some(m => m.toLowerCase().includes('transferencia'))) {
                               metodos.push('Transferencia');
                             }
