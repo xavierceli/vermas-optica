@@ -112,6 +112,20 @@ export default function PanelSincronizacion({ abierta, cerrar, gestor }) {
     }
   };
 
+  const sincronizar = async () => {
+    if (typeof gestor?.sincronizarAhora !== 'function') return;
+    setTrabajando(true);
+    setErrorPanel('');
+    try {
+      await gestor.sincronizarAhora();
+      await cargar();
+    } catch {
+      setErrorPanel('No se pudo sincronizar ahora. Los cambios pendientes siguen guardados en este dispositivo.');
+    } finally {
+      setTrabajando(false);
+    }
+  };
+
   const estadoSync = gestor?.syncEstado || {};
   const ultimaSync = estadoSync.lastSync && Number.isFinite(Date.parse(estadoSync.lastSync))
     ? new Date(estadoSync.lastSync).toLocaleString('es-EC')
@@ -137,10 +151,20 @@ export default function PanelSincronizacion({ abierta, cerrar, gestor }) {
                 : `${ops.length} en la cola - ${problemas.length} con problemas`}
             </p>
           </div>
-          <button type="button" onClick={cerrar} aria-label="Cerrar"
-                  className="text-gray-500 hover:text-gray-800 text-2xl leading-none px-2 py-1 rounded hover:bg-gray-100 transition-colors">
-            <span aria-hidden="true">x</span>
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button type="button" onClick={sincronizar}
+                    disabled={trabajando || estadoSync.online === false || estadoSync.phase === 'syncing'}
+                    aria-label="Sincronizar ahora"
+                    className="text-xs font-bold px-3 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition-colors">
+              {estadoSync.phase === 'syncing'
+                ? 'Sincronizando…'
+                : <><span className="hidden sm:inline">Sincronizar ahora</span><span className="sm:hidden">Sincronizar</span></>}
+            </button>
+            <button type="button" onClick={cerrar} aria-label="Cerrar"
+                    className="text-gray-500 hover:text-gray-800 text-2xl leading-none px-2 py-1 rounded hover:bg-gray-100 transition-colors">
+              <span aria-hidden="true">x</span>
+            </button>
+          </div>
         </div>
 
         <div className="p-5 overflow-y-auto flex-1">

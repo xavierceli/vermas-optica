@@ -244,16 +244,11 @@ function App() {
             <div className="flex items-center gap-2 shrink-0">
               <button
                 type="button"
-                onClick={() => {
-                  if (fallos.length > 0 || descartadas > 0 || conflictos > 0) setPanelSync(true);
-                  else g.sincronizarAhora();
-                }}
+                onClick={() => setPanelSync(true)}
                 title={
                   historialParcial
                     ? `Este equipo tiene ${descargas} de ${tope} consultas descargadas.`
-                    : fallos.length > 0 || descartadas > 0 || conflictos > 0
-                    ? 'Hay operaciones con problemas. Clic para resolverlas.'
-                    : `Cola Outbox: ${pendientes} pendiente(s). Clic para sincronizar.`
+                    : 'Abrir el estado de sincronización y los respaldos.'
                 }
                 className={`flex items-center gap-2 px-2.5 sm:px-3 py-1.5 rounded-full border text-xs font-black shadow-sm transition-colors ${estadoOutbox.clases} ${sincronizando ? 'animate-pulse' : ''}`}
               >

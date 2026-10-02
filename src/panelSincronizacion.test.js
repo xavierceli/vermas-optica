@@ -32,3 +32,9 @@ test('el panel de sincronización y respaldo siempre tiene un acceso visible', (
   assert.ok(boton, 'debe existir un botón permanente que abra el panel');
   assert.match(boton[0], /Sincronización y respaldo/);
 });
+
+test('el botón de estado abre el panel y sincronizar es una acción separada dentro del panel', () => {
+  assert.match(app, /onClick=\{\(\) => setPanelSync\(true\)\}\s+title=\{[\s\S]*?Abrir el estado de sincronización y los respaldos/);
+  assert.match(fuente, /onClick=\{sincronizar\}[\s\S]*?aria-label="Sincronizar ahora"/);
+  assert.match(fuente, /await gestor\.sincronizarAhora\(\)/);
+});
