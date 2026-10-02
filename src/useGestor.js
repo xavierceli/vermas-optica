@@ -1,9 +1,9 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { supabase } from './supabaseClient';
 import { safeString, safeNum, comprimirImagen, calcularEdad } from './utilidades';
 import { localDb, createUuid as generarId } from './localDb';
 import { 
-  archivarConsultaLocal, guardarConsultaLocal, guardarInventarioLocal, 
+  archivarConsultaIndividualLocal, guardarConsultaLocal, guardarInventarioLocal,
   guardarPrecioLocal, guardarVentaLocal, obtenerSnapshotLocal, 
   importLegacyCache, anularVentaLocal, eliminarInventarioLocal, 
   eliminarPrecioLocal, guardarAdjuntoLocal, anularVentaConReembolso 
@@ -36,11 +36,11 @@ export function useGestor() {
 
   const [confirmDialog, setConfirmDialog] = useState({ visible: false, mensaje: '', onConfirm: null, onCancel: null });
 
-  const cancelarConfirmacion = () => {
+  const cancelarConfirmacion = useCallback(() => {
     const pendiente = confirmDialog.onCancel;
     setConfirmDialog({ visible: false, mensaje: '', onConfirm: null, onCancel: null });
     if (typeof pendiente === 'function') pendiente();
-  };
+  }, [confirmDialog]);
 
   const aceptarConfirmacion = () => {
     const pendiente = confirmDialog.onConfirm;
@@ -95,7 +95,6 @@ export function useGestor() {
   const [accesorioOriginalId, setAccesorioOriginalId] = useState('');
   const [medidasPaciente, setMedidasPaciente] = useState([]);
 
-  const [statsRemotos, setStatsRemotos] = useState(null);
   const [syncEstado, setSyncEstado] = useState({ phase: 'idle', online: true, pending: 0, conflicts: 0, lastSync: null, lastError: null });
   const [modoSinConexion, setModoSinConexion] = useState(false);
   const [dispositivo, setDispositivo] = useState({ enrolado: false, cargando: true, identidad: null });
@@ -134,7 +133,7 @@ export function useGestor() {
     });
   };
 
-  const aplicarSnapshotLocal = snapshot => {
+  const aplicarSnapshotLocal = useCallback(snapshot => {
     if (!snapshot) return;
     setHistorial(snapshot.historial || []);
     setVentasArchivadas(snapshot.ventasArchivadas || []);
@@ -144,9 +143,9 @@ export function useGestor() {
     if (snapshot.sales) {
       setVentasLocales(snapshot.sales);
     }
-  };
+  }, []);
 
-  const obtenerDatos = async ({ sync = true } = {}) => {
+  const obtenerDatos = useCallback(async ({ sync = true } = {}) => {
     try {
       await importLegacyCache();
     } catch (error) {
@@ -164,9 +163,6 @@ export function useGestor() {
     }
 
     aplicarSnapshotLocal(snapshot);
-    const remoteStats = (await localDb.meta.get('remoteStats'))?.value || null;
-    if (remoteStats) setStatsRemotos(remoteStats);
-
     if (sync) {
       void sincronizarAhora({ pull: true }).then(async () => {
         const snapFresca = await obtenerSnapshotLocal();
@@ -175,29 +171,19 @@ export function useGestor() {
           if (vDirectas && vDirectas.length > 0) {
             snapFresca.sales = vDirectas;
           }
-        } catch {}
+        } catch {
+          // Las ventas pueden no estar disponibles temporalmente; el historial sí se muestra.
+        }
         aplicarSnapshotLocal(snapFresca);
-        const statsFrescos = (await localDb.meta.get('remoteStats'))?.value || null;
-        if (statsFrescos) setStatsRemotos(statsFrescos);
       });
     }
     return snapshot;
-  };
+  }, [aplicarSnapshotLocal]);
 
   useEffect(() => {
     iniciarMotorSync();
     return suscribirSync(setSyncEstado);
   }, []);
-
-  const ultimaSync = syncEstado?.lastSync;
-  useEffect(() => {
-    if (!ultimaSync) return;
-    let vigente = true;
-    localDb.meta.get('remoteStats')
-      .then(row => { if (vigente && row?.value) setStatsRemotos(row.value); })
-      .catch(() => {});
-    return () => { vigente = false; };
-  }, [ultimaSync]);
 
   useEffect(() => {
     let vigente = true;
@@ -276,7 +262,7 @@ export function useGestor() {
       clearTimeout(timerSeguridad);
       subscription?.unsubscribe();
     };
-  }, []);
+  }, [obtenerDatos]);
 
   const manejarCambio = (e) => {
     let { name, value, type, tagName } = e.target;
@@ -542,6 +528,25 @@ export function useGestor() {
     }
   };
 
+  const archivarConsultaPuntual = async (item) => {
+    try {
+      await archivarConsultaIndividualLocal(item?.id);
+      const estadoSync = await sincronizarAhora({ pull: false });
+      await obtenerDatos({ sync: false });
+      const sincronizada = estadoSync?.phase === 'synced' || (estadoSync?.pending || 0) === 0;
+      mostrarToast(
+        sincronizada
+          ? 'Consulta archivada.'
+          : 'Consulta archivada en este dispositivo. Se sincronizará al recuperar la conexión.',
+        sincronizada ? 'success' : 'warning'
+      );
+      return true;
+    } catch (error) {
+      mostrarToast('No se pudo archivar la consulta: ' + error.message, 'error');
+      return false;
+    }
+  };
+
   const borrarHistoriaClinica = async (item) => {
     const cedula = safeString(item?.cedula).trim();
     if (!cedula) return;
@@ -652,15 +657,16 @@ export function useGestor() {
     itemFormateado._nueva_venta = esVentaNueva;
     if (esVentaNueva) {
       itemFormateado.pedido_id = generarId();
-      const CAMPOS_VENTA = [
+      const CAMPOS_DE_LA_VENTA = [
         'codigo_armazon', 'tipo_armazon', 'param_horizontal', 'param_puente',
         'param_vertical', 'param_diagonal', 'tipo_lente', 'material_lente',
         'material_nota', 'accesorio_id', 'venta', 'abono', 'pago_nota',
         'estado', 'notas', 'comprobante_url', 'costo_armazon_int',
         'costo_lunas_int', 'costo_accesorio_int', 'costo_tratamientos_int',
-        'costo_varios_int', 'codigo_armazon_confirmado'
+        'costo_varios_int', 'codigo_armazon_confirmado', 'tratam_tinturado_nota',
+        'tratam_foto_nota', 'tratam_trans_nota'
       ];
-      CAMPOS_VENTA.forEach(k => { itemFormateado[k] = ''; });
+      CAMPOS_DE_LA_VENTA.forEach(k => { itemFormateado[k] = ''; });
       itemFormateado.descuento = '0';
       itemFormateado.forma_pago = 'Efectivo';
       itemFormateado.estado = 'En laboratorio';
@@ -1112,7 +1118,7 @@ export function useGestor() {
     obtenerDetalleCola, reintentarOperacion, descartarOperacion, descartarTodoLoAtascado,
     historial, ventasArchivadas, ventasLocales, inventario, listaPrecios, paciente, setPaciente, estadoInicial, editandoId, setEditandoId,
     cedulasArchivadas, 
-    guardarPacienteClinico, manejarCambio, borrarHistoriaClinica, cargarParaEditarClinico, iniciarNuevaConsulta, edadActual, claseInputRef,
+    guardarPacienteClinico, manejarCambio, borrarHistoriaClinica, archivarConsultaPuntual, cargarParaEditarClinico, iniciarNuevaConsulta, edadActual, claseInputRef,
     busqueda, setBusqueda, pedidosFiltrados, stats, enviarWhatsApp,
     nuevoPrecio, setNuevoPrecio, precioInicial, editandoPrecioId, setEditandoPrecioId,
     manejarCambioPrecio, guardarPrecio, busquedaPrecio, setBusquedaPrecio, listaPreciosFiltrada, cargarParaEditarPrecio, eliminarPrecio,

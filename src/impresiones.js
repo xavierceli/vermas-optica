@@ -326,7 +326,7 @@ export const imprimirRecibo = (item) => {
 
           <div class="border-b">
             <div class="row"><span>Subtotal:</span> <span>$${pvpFixed(pVenta)}</span></div>
-            ${pDesc > 0 ? `<div class="row"><span>Descuento (${pDesc}\%):</span> <span>-$${pvpFixed(descAmount)}</span></div>` : ''}
+            ${pDesc > 0 ? `<div class="row"><span>Descuento (${pDesc}%):</span> <span>-$${pvpFixed(descAmount)}</span></div>` : ''}
             <div class="row bold" style="font-size: 16px; margin-top: 5px;"><span>TOTAL A PAGAR:</span> <span>$${pvpFixed(pFinal)}</span></div>
           </div>
 

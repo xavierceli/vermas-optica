@@ -281,7 +281,7 @@ export default function Clinica({
             <p className="text-xs text-blue-800">Este paciente ya tiene {visitasAnteriores.length} consulta(s) previa(s) registrada(s).</p>
           </div>
           <div className="flex items-center gap-2 w-full md:w-auto">
-            <select value={visitaSeleccionadaId} onChange={cargarVisitaAnterior} className="p-2 bg-white border border-blue-300 rounded-lg text-xs font-semibold outline-none flex-1 md:w-64 text-gray-800">
+            <select aria-label="Ver medidas de consultas anteriores" value={visitaSeleccionadaId} onChange={cargarVisitaAnterior} className="p-2 bg-white border border-blue-300 rounded-lg text-xs font-semibold outline-none flex-1 md:w-64 text-gray-800">
               <option value="">-- Ver medidas de fechas anteriores --</option>
               {visitasAnteriores.map(v => (
                 <option key={v.id} value={v.id}>📅 Fecha: {v.fecha} | Esf OD: {v.esfera_od || '0'} / OI: {v.esfera_oi || '0'}</option>

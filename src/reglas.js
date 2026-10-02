@@ -12,7 +12,11 @@ export const AVISO_QUERATOMETRIA = 'QUERATOMETRIAS ALTAS';
 
 const aNumero = valor => {
   if (valor === null || valor === undefined || valor === '') return NaN;
-  return Number(String(valor).trim().replace(',', '.'));
+  try {
+    return Number(String(valor).trim().replace(',', '.'));
+  } catch {
+    return NaN;
+  }
 };
 
 // --- Clínica ---------------------------------------------------------------

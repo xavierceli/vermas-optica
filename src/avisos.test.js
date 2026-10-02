@@ -367,6 +367,10 @@ test('el borrado de un paciente es un hecho del SERVIDOR, no del dispositivo', (
   const motor = leer('syncEngine.js');
   assert.match(motor, /leerCedulasArchivadasDelServidor/,
     'el sincronizador debe leer del servidor las cedulas archivadas');
+  assert.match(motor, /from\('consultas_clinicas'\)/,
+    'las consultas archivadas se deben leer de la tabla real');
+  assert.ok(!/from\('consultas'\)/.test(motor),
+    'no se debe consultar una tabla inexistente llamada consultas');
   // `consultas_clinicas` NO tiene columna `cedula`: la cedula vive en el PACIENTE.
   // Pedirla a la consulta devuelve un error 42703 y, como este bloque traga los
   // errores a proposito, el fallo pasaba DESAPARECIDO: los pacientes borrados
@@ -402,15 +406,26 @@ test('eliminar un paciente archiva TODO su historial, no solo la ultima visita',
     'y encolarlas una a una: cada consulta necesita su propio ARCHIVAR_CONSULTA');
 });
 
+test('archivar una consulta desde el expediente no elimina al paciente completo', () => {
+  const vista = leer('Historial.jsx');
+  const inicio = vista.indexOf('const eliminarRegistroDeExpediente');
+  const fin = vista.indexOf('const manejarBorradoCompleto', inicio);
+  const accion = vista.slice(inicio, fin);
+  assert.match(accion, /archivarConsultaPuntual\(reg\)/,
+    'la consulta seleccionada debe usar el archivado local y sincronizable');
+  assert.doesNotMatch(accion, /borrarHistoriaClinica\(reg\)|\.from\(['"]consultas['"]\)\.delete\(/,
+    'archivar una consulta no debe borrar al paciente ni escribir directamente en Supabase');
+});
+
 test('eliminar un paciente pide confirmacion y dice lo que hace', () => {
   // Antes era un boton sin confirmar: un toque de más y sin aviso. Y el mensaje
   // decia "Consulta archivada", que no es lo que hace: archiva todo el historial.
   const vista = leer('Historial.jsx');
   assert.match(vista, /confirmarAccion\(/, 'eliminar un paciente debe pedir confirmacion');
-  assert.match(vista, /TODO su historial/, 'y el aviso debe decirlo claro');
+  assert.match(vista, /Se eliminará permanentemente toda su información/, 'y el aviso debe explicar claramente el alcance');
   const gestor = leer('../src/useGestor.js');
-  assert.match(gestor, /se archivó todo su historial/,
-    'el mensaje de exito tambien debe decir que se archivo todo');
+  assert.match(gestor, /Paciente y todos sus registros fueron eliminados de raíz/,
+    'el mensaje debe dejar claro que se eliminó todo el expediente');
   assert.ok(!/mostrarToast\('Consulta archivada\.'/.test(gestor),
     '"Consulta archivada" hacia creer que solo se habia escondido una visita');
 });
@@ -428,10 +443,10 @@ test('archivar un paciente NO hace desaparecer su venta de Pedidos', () => {
     'marcadas como tales, para distinguirlas de una venta corriente');
 
   const gestor = leer('../src/useGestor.js');
-  const i = gestor.indexOf('const pedidosFiltrados');
-  const bloque = gestor.slice(i, i + 700);
+  const i = gestor.indexOf('const todosLosPedidosUnificados');
+  const bloque = gestor.slice(i, i + 900);
   assert.match(bloque, /\.\.\.\(ventasArchivadas \|\| \[\]\)/,
-    'Pedidos debe incluir tambien las ventas de los pacientes archivados');
+    'la lista de pedidos debe combinar ventas archivadas con las demás');
 });
 
 test('el archivado se reconoce en los dos idiomas', () => {
@@ -490,20 +505,13 @@ test('una venta nueva no arrastra el armazon de la venta anterior', () => {
   assert.ok(!bloque.includes('esfera_od'), 'no debe limpiar la refraccion del paciente');
 });
 
-test('las estadisticas se releen cuando el servidor recalcula, no solo al entrar', () => {
-  // BUG REAL: con una venta nueva, "Ingresos Mes" no cambiaba hasta recargar la
-  // app. El motor escribe 'remoteStats' en cada pull, pero la pantalla solo lo
-  // copiaba al ENTRAR, y el sincronizador corre solo cada 30 s.
+test('las estadísticas se recalculan cuando se actualizan los datos de pedidos', () => {
   const fuente = leer('../src/useGestor.js');
-  assert.match(
-    fuente,
-    /\[ultimaSync\]|syncEstado\?\.lastSync/,
-    'las stats deben releerse cuando termina una sincronizacion'
-  );
-  assert.match(fuente, /localDb\.meta\.get\('remoteStats'\)/,
-    'y leerlas de la base local, que es donde el motor las deja');
+  assert.match(fuente, /const todosLosPedidosUnificados = useMemo/,
+    'pedidos debe consolidar las fuentes locales actualizadas');
+  assert.match(fuente, /const stats = useMemo\(\(\) => \{[\s\S]*?\}, \[todosLosPedidosUnificados, historial\]\)/,
+    'las estadísticas deben recalcularse a partir del pedido e historial vigentes');
 });
-
 test('imprimir no depende SOLO del evento load de la ventana', () => {
   // BUG REAL: sin internet, la etiqueta no imprimia NADA. El <script src> del
   // generador de codigo de barras no se resolvía y el evento 'load' de la

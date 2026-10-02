@@ -52,7 +52,7 @@ test('los reintentos esperan de forma progresiva (backoff)', () => {
 test('la cola no crece sin limite', () => {
   assert.match(fuente, /purgarDescartadas/,
     'las descartadas se purgan tras su ventana de retencion');
-  assert.match(fuente, /DIAS_RETENcion_DESCARTADAS/);
+  assert.match(fuente, /DIAS_RETENCION_DESCARTADAS/);
 });
 
 test('las operaciones enviadas son las unicas reintentables', () => {

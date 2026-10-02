@@ -2,10 +2,21 @@ import { calcularSaldo, calcularTotal } from './reglas.js';
 
 export const NOMBRE_CONSUMIDOR_FINAL = 'CONSUMIDOR FINAL';
 
-const aTexto = valor => (valor === null || valor === undefined ? '' : String(valor));
+const aTexto = valor => {
+  if (valor === null || valor === undefined) return '';
+  try {
+    return String(valor);
+  } catch {
+    return '';
+  }
+};
 const aNumero = valor => {
-  const n = Number(valor);
-  return Number.isFinite(n) ? n : 0;
+  try {
+    const n = Number(valor);
+    return Number.isFinite(n) ? n : 0;
+  } catch {
+    return 0;
+  }
 };
 
 /**
@@ -63,7 +74,7 @@ export const unaTarjetaPorCedula = (filas, claveDe) => {
     if (cedula) return cedula;
     const patientId = aTexto(fila?.patientId || fila?.patient_id || fila?.paciente_id).trim();
     if (patientId) return `pid:${patientId}`;
-    return `id:${fila?.id}`;
+    return `id:${aTexto(fila?.id)}`;
   });
 
   const elegidas = new Map();

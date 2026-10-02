@@ -4,7 +4,8 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
-  MAX_ERRORES, agregarError, borrarErrores, describirError, leerErrores,
+  MAX_ERRORES, agregarError, borrarErrores, describirError, detalleTecnicoError, leerErrores,
+  normalizarError,
   registrarError, resumenErrores, textoDiagnostico
 } from './registroErrores.js';
 
@@ -95,6 +96,8 @@ test('cada vista se dibuja dentro de su propio ErrorBoundary', () => {
     /<ErrorBoundary[^>]*clave=\{g\.vistaActual\}/.test(fuente),
     'el borde debe depender de la vista: asi al cambiar de seccion se olvida el error'
   );
+  assert.match(fuente, /import\('\.\/Historial\.jsx'\)/,
+    'Historial necesita extension explicita porque existe historial.js con distinto uso de mayusculas');
 });
 
 test('el panel ofrece salidas claras y NUNCA borra datos', () => {
@@ -107,4 +110,12 @@ test('el panel ofrece salidas claras y NUNCA borra datos', () => {
     !/resetLocalDatabase|localDb\.delete|\.clear\(\)/.test(fuente),
     'el panel no puede borrar datos ni vaciar la cola de salida'
   );
+});
+
+test('un error lanzado con objeto no estándar se puede registrar y mostrar sin provocar otro fallo', () => {
+  const objeto = Object.create(null);
+  objeto.message = 'No se pudo cargar el módulo';
+  assert.equal(normalizarError(objeto).message, 'No se pudo cargar el módulo');
+  assert.equal(describirError(objeto).mensaje, 'No se pudo cargar el módulo');
+  assert.equal(detalleTecnicoError(Object.create(null)), 'Error con formato inesperado (object).');
 });

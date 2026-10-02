@@ -26,14 +26,19 @@ export const validarMontoCobro = (monto) => {
     return 'Por favor, ingrese un monto válido mayor a 0.';
   }
 
-  // Validación estricta de decimales: máximo 2 dígitos tras el separador
-  const partes = texto.split('.');
-  if (partes.length === 2 && partes[1].length > 2) {
-    return 'El monto debe tener como máximo dos decimales.';
+  // Para números calculados en JavaScript (por ejemplo 0.1 + 0.2), elimina
+  // únicamente el residuo binario diminuto. Los valores tecleados como texto
+  // conservan la validación estricta de dos decimales.
+  if (typeof monto === 'number') {
+    const centavos = Math.round(valor * 100);
+    if (Math.abs(valor * 100 - centavos) > 0.000001) {
+      return 'El monto debe tener como máximo dos decimales.';
+    }
+    return null;
   }
 
-  // Tolerancia flotante de respaldo
-  if (Math.abs(valor * 100 - Math.round(valor * 100)) > 0.000001) {
+  const partes = texto.split('.');
+  if (partes.length === 2 && partes[1].length > 2) {
     return 'El monto debe tener como máximo dos decimales.';
   }
 

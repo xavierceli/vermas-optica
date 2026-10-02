@@ -85,9 +85,9 @@ export default function RespaldoDatos() {
         💾 Respaldo de este dispositivo
       </h3>
       <p className="text-xs text-gray-600 mt-1 leading-relaxed">
-        Lo que aún no se ha enviado a la nube vive solo en este navegador. Descarga un respaldo
-        (<code className="font-mono">.json</code>) de vez en cuando y guárdalo en una memoria USB
-        o en el correo.
+        Este archivo contiene los datos de este navegador, incluidos los cambios pendientes de
+        sincronizar. No es una copia automática de Supabase. Puede incluir datos clínicos y adjuntos:
+        guárdalo en un lugar privado y no lo envíes por correo.
       </p>
 
       {espacio && (

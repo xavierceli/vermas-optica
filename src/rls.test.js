@@ -51,24 +51,25 @@ test('cada tabla de negocio queda con UNA politica, y es de solo lectura', () =>
 
 test('las vistas quedan sin permisos de escritura', () => {
   for (const vista of VISTAS) {
-    assert.ok(sql().includes(`revoke all on public.${vista} from anon, authenticated;`), vista);
+    assert.ok(sql().includes(`revoke all on public.${vista} from public, anon, authenticated;`), vista);
     assert.ok(sql().includes(`grant select on public.${vista} to authenticated;`), vista);
+    assert.doesNotMatch(
+      sql(),
+      new RegExp(`(?:create|drop)\\s+policy[^;]*\\bon\\s+public\\.${vista}\\b`, 'i'),
+      `${vista} es una vista y no debe tener politicas RLS`
+    );
   }
-  // PostgreSQL 14, que es la version de este proyecto, NO admite RLS sobre
-  // vistas: falla con "ALTER action ENABLE ROW SECURITY cannot be performed on
-  // relation". En una vista la lectura se resuelve con los privilegios de su
-  // duenio, asi que el unico cerrojo posible es el permiso.
-  // Si un dia se actualiza a PG 15+, este test debe cambiar para exigir ademas
-  // la RLS en la vista (y entonces si convendra revisar la migracion).
+  // PostgreSQL no admite politicas RLS sobre vistas. El acceso se controla
+  // mediante GRANT/REVOKE, no con CREATE/DROP POLICY.
   assert.ok(
     !/alter\s+table\s+public\.vista_pacientes(_unicos)?\s+enable\s+row\s+level\s+security/i.test(sql()),
-    'esta version de PostgreSQL no admite RLS en vistas: esos ALTER sobran'
+    'PostgreSQL no admite activar RLS directamente sobre vistas'
   );
 });
 
 test('anon se queda sin permisos en las tablas de negocio', () => {
   for (const tabla of TABLAS) {
-    assert.ok(sql().includes(`revoke all on public.${tabla} from anon;`), 'falta el revoke de anon en ' + tabla);
+    assert.ok(sql().includes(`revoke all on public.${tabla} from public, anon;`), 'falta el revoke de PUBLIC/anon en ' + tabla);
   }
 });
 
@@ -76,7 +77,7 @@ test('el historial de revisiones se queda sin ningun permiso, no solo sin SELECT
   // La RLS sin politicas ya lo bloquea todo, pero los permisos heredados de
   // escritura eran una mina para el dia que se exponga el historial en la app.
   assert.ok(
-    sql().includes('revoke all on public.consultas_clinicas_revisiones from anon, authenticated;'),
+    sql().includes('revoke all on public.consultas_clinicas_revisiones from public, anon, authenticated;'),
     'debe revocarse TODO, no solo SELECT'
   );
 });

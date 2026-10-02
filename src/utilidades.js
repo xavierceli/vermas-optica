@@ -2,12 +2,23 @@ import { supabase } from './supabaseClient';
 import { mostrarAviso } from './avisos';
 import { neutralizarFormula } from './escape';
 
-export const safeString = (val) => (val === null || val === undefined) ? '' : String(val);
+export const safeString = (val) => {
+  if (val === null || val === undefined) return '';
+  try {
+    return String(val);
+  } catch {
+    return '';
+  }
+};
 
 export const safeNum = (val) => {
   if (val === null || val === undefined || val === '') return 0;
-  const parsed = Number(val);
-  return isNaN(parsed) ? 0 : parsed;
+  try {
+    const parsed = Number(val);
+    return isNaN(parsed) ? 0 : parsed;
+  } catch {
+    return 0;
+  }
 };
 
 export const calcularCerca = (esfera, adicion) => {

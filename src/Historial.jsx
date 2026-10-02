@@ -8,7 +8,7 @@ import BotonComprobante from './BotonComprobante';
 
 export default function Historial({
   historialReciente,
-  enviarWhatsApp, cargarParaEditarClinico, iniciarNuevaConsulta, borrarHistoriaClinica, abrirPedido, crearNuevoPaciente,
+  enviarWhatsApp, cargarParaEditarClinico, iniciarNuevaConsulta, borrarHistoriaClinica, archivarConsultaPuntual, abrirPedido, crearNuevoPaciente,
   confirmarAccion
 }) {
   const [busquedaTexto, setBusquedaTexto] = useState('');
@@ -24,10 +24,6 @@ export default function Historial({
   
   const [filasExpandidas, setFilasExpandidas] = useState({});
   const [aliasVisibles, setAliasVisibles] = useState({});
-
-  useEffect(() => {
-    setVisibles(50);
-  }, [busquedaTexto]);
 
   useEffect(() => {
     const termino = busquedaTexto.trim();
@@ -96,13 +92,13 @@ export default function Historial({
         .filter(r => normalizeCedula(r.cedula) === cedulaObjetivo)
         .filter(r => !r.archived_at)
         .forEach(r => {
-          const clave = String(r.id || `${r.fecha}_${r.id}`);
+          const clave = safeString(r.id || `${safeString(r.fecha)}_${safeString(r.id)}`);
           mapaVisitas.set(clave, r);
         });
       
       if (mapaVisitas.size > 0) {
         const listaInicial = Array.from(mapaVisitas.values())
-          .sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')));
+          .sort((a, b) => safeString(b.fecha).localeCompare(safeString(a.fecha)));
         setRegistrosPaciente(listaInicial);
       }
     } catch (err) {
@@ -113,20 +109,9 @@ export default function Historial({
       if (navigator.onLine) {
         let datosConsultas = [];
 
-        const { data: resConsultas } = await supabase
-          .from('consultas')
-          .select('*')
-          .eq('cedula', paciente.cedula)
-          .is('archived_at', null)
-          .order('fecha', { ascending: false });
-
-        if (resConsultas && resConsultas.length > 0) {
-          datosConsultas = resConsultas;
-        }
-
-        if (datosConsultas.length === 0 && (paciente.patient_id || paciente.id)) {
+        if (paciente.patient_id || paciente.id) {
           const resPorPid = await supabase
-            .from('consultas')
+            .from('consultas_clinicas')
             .select('*')
             .eq('paciente_id', paciente.patient_id || paciente.id)
             .is('archived_at', null)
@@ -149,14 +134,14 @@ export default function Historial({
           datosConsultas
             .filter(d => !d.archived_at)
             .forEach(d => {
-              const clave = String(d.id || `${d.fecha}_${d.id}`);
+              const clave = safeString(d.id || `${safeString(d.fecha)}_${safeString(d.id)}`);
               const existente = mapaVisitas.get(clave);
               mapaVisitas.set(clave, { ...existente, ...d });
             });
         }
 
         const listaFinal = Array.from(mapaVisitas.values())
-          .sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')));
+          .sort((a, b) => safeString(b.fecha).localeCompare(safeString(a.fecha)));
 
         if (listaFinal.length > 0) {
           setRegistrosPaciente(listaFinal);
@@ -179,17 +164,12 @@ export default function Historial({
 
   const eliminarRegistroDeExpediente = async (reg) => {
     confirmarAccion(
-      `¿Deseas eliminar la consulta del ${safeString(reg.fecha)}?`,
+      `¿Deseas archivar únicamente la consulta del ${safeString(reg.fecha)}?`,
       async () => {
-        try {
-          if (reg.id && navigator.onLine) {
-            await supabase.from('consultas').delete().eq('id', reg.id);
-          }
-          await borrarHistoriaClinica(reg);
-        } catch (e) {
-          console.warn("Fallo al eliminar consulta específica:", e);
+        const archivada = await archivarConsultaPuntual(reg);
+        if (archivada) {
+          setRegistrosPaciente(prev => prev.filter(r => r.id !== reg.id));
         }
-        setRegistrosPaciente(prev => prev.filter(r => r.id !== reg.id));
       }
     );
   };
@@ -204,6 +184,7 @@ export default function Historial({
   };
 
   if (expedienteActivo) {
+    const claveExpediente = safeString(expedienteActivo.id) || safeString(expedienteActivo.cedula);
     return (
       <div className="bg-white rounded-xl shadow-lg border-t-4 border-teal-600 overflow-hidden">
         <div className="bg-teal-50 p-4 sm:p-6 border-b border-teal-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -214,11 +195,11 @@ export default function Historial({
               <div className="mt-2">
                 <button 
                   type="button"
-                  onClick={() => toggleAlias(expedienteActivo.id)} 
-                  className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold transition-all shadow-sm border ${aliasVisibles[expedienteActivo.id] ? 'bg-teal-200 text-teal-900 border-teal-300' : 'bg-white text-teal-800 border-teal-200 hover:bg-teal-100'}`}
+                  onClick={() => toggleAlias(claveExpediente)}
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold transition-all shadow-sm border ${aliasVisibles[claveExpediente] ? 'bg-teal-200 text-teal-900 border-teal-300' : 'bg-white text-teal-800 border-teal-200 hover:bg-teal-100'}`}
                   title="Clic para ver u ocultar Alias"
                 >
-                  🏷️ {aliasVisibles[expedienteActivo.id] ? safeString(expedienteActivo.alias) : 'Ver Alias'}
+                  🏷️ {aliasVisibles[claveExpediente] ? safeString(expedienteActivo.alias) : 'Ver Alias'}
                 </button>
               </div>
             )}
@@ -417,8 +398,8 @@ export default function Historial({
                     </tr>
                   </thead>
                   <tbody>
-                    {registrosPaciente.filter(r => String(r.estado) !== 'Ninguno' || safeNum(r.venta) > 0 || safeString(r.codigo_armazon)).length > 0 ? (
-                      registrosPaciente.filter(r => String(r.estado) !== 'Ninguno' || safeNum(r.venta) > 0 || safeString(r.codigo_armazon)).map(reg => {
+                    {registrosPaciente.filter(r => safeString(r.estado) !== 'Ninguno' || safeNum(r.venta) > 0 || safeString(r.codigo_armazon)).length > 0 ? (
+                      registrosPaciente.filter(r => safeString(r.estado) !== 'Ninguno' || safeNum(r.venta) > 0 || safeString(r.codigo_armazon)).map(reg => {
                         const { total: vFinal, saldo } = resumenConsulta(reg);
                         const esAnulado = safeString(reg.estado).trim().toLowerCase() === 'anulado';
                         return (
@@ -480,7 +461,7 @@ export default function Historial({
           type="text" 
           placeholder="🔍 Escribe mínimo 2 letras de Cédula, Nombre o Alias..." 
           value={busquedaTexto} 
-          onChange={(e) => setBusquedaTexto(e.target.value)} 
+          onChange={(e) => { setVisibles(50); setBusquedaTexto(e.target.value); }}
           className="flex-1 p-2.5 sm:p-3 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 shadow-sm text-sm font-medium bg-gray-50 focus:bg-white text-gray-900" 
         />
         {buscando && hayTermino && <div className="flex items-center text-xs font-bold text-blue-700 px-2 shrink-0">Buscando... ☁️</div>}
@@ -489,12 +470,13 @@ export default function Historial({
       <div className="space-y-4 sm:space-y-6">
         {filasVisibles.map(item => {
           try {
+            const claveItem = safeString(item?.id) || safeString(item?.cedula) || 'paciente-sin-id';
             const diagnosticos = generarDiagnosticos(item);
             const { saldo: saldoPendiente, tieneDeuda, tienePedido, total: vFinal, descuento: desc } = resumenConsulta(item);
             const esAnulado = safeString(item.estado).trim().toLowerCase() === 'anulado';
             
             return (
-              <div key={item.id} className="border border-gray-200 bg-white p-4 sm:p-6 rounded-2xl shadow-sm hover:shadow-md transition-all">
+              <div key={claveItem} className="border border-gray-200 bg-white p-4 sm:p-6 rounded-2xl shadow-sm hover:shadow-md transition-all">
                 
                 <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center border-b border-gray-100 pb-4 mb-4 gap-3">
                   <div className="flex items-center gap-3 sm:gap-4">
@@ -513,11 +495,11 @@ export default function Historial({
                         <div className="mt-1 flex items-center">
                           <button 
                             type="button" 
-                            onClick={() => toggleAlias(item.id)} 
-                            className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold transition-all shadow-sm border ${aliasVisibles[item.id] ? 'bg-teal-50 text-teal-800 border-teal-300' : 'bg-gray-100 text-gray-700 border-gray-200 hover:bg-teal-50 hover:text-teal-700'}`}
+                            onClick={() => toggleAlias(claveItem)}
+                            className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold transition-all shadow-sm border ${aliasVisibles[claveItem] ? 'bg-teal-50 text-teal-800 border-teal-300' : 'bg-gray-100 text-gray-700 border-gray-200 hover:bg-teal-50 hover:text-teal-700'}`}
                             title="Clic para ver u ocultar Alias"
                           >
-                            🏷️ {aliasVisibles[item.id] ? safeString(item.alias) : 'Alias'}
+                            🏷️ {aliasVisibles[claveItem] ? safeString(item.alias) : 'Alias'}
                           </button>
                         </div>
                       )}
@@ -632,7 +614,7 @@ export default function Historial({
                               <p>
                                 <strong className="text-indigo-900">🔍 Lente:</strong>{' '}
                                 <span className="font-semibold text-gray-900">
-                                  {safeString(item.tipo_lente) || 'Estándar'} {item.material_lente ? `(${item.material_lente})` : ''}
+                                  {safeString(item.tipo_lente) || 'Estándar'} {safeString(item.material_lente) ? `(${safeString(item.material_lente)})` : ''}
                                 </span>
                               </p>
                             )}
@@ -694,7 +676,7 @@ export default function Historial({
                                     {item.comprobante_url && (
                                       <BotonComprobante
                                         ruta={item.comprobante_url}
-                                        refId={item.pedido_id || item.id}
+                                        refId={safeString(item.pedido_id) || claveItem}
                                         texto="Ver Comprobante 📄"
                                         className="font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-0.5 rounded border border-indigo-300 shadow-sm cursor-pointer transition-colors"
                                       />

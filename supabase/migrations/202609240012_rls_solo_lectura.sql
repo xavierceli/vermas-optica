@@ -21,7 +21,8 @@
 -- ARREGLO
 --   - Cada tabla de negocio queda con UNA sola politica honesta: solo lectura
 --     para usuarios autenticados. Se van las dos anteriores.
---   - Las vistas quedan con RLS activada y solo lectura.
+--   - Las vistas quedan con permisos de solo lectura. PostgreSQL no admite
+--     politicas RLS sobre vistas; se controlan con GRANT y REVOKE.
 --   - `anon` se queda sin nada, y el historial de revisiones vuelve a ser
 --     exclusivo del servidor.
 --
@@ -39,28 +40,15 @@
 begin;
 
 -- --- 1. Vistas de pacientes: solo lectura ---------------------------------
--- OJO: aqui NO se activa la RLS. Este proyecto corre en PostgreSQL 14, donde
--- una vista no admite RLS: falla con "ALTER action ENABLE ROW SECURITY cannot
--- be performed on relation". En una vista, las lecturas se resuelven con los
--- privilegios del duenio de la vista, asi que la unica puerta que se puede
--- cerrar es el PERMISO. Por eso el revoke es el cerrojo de verdad: sin
--- INSERT/UPDATE/DELETE concedidos, nadie escribe por aqui aunque la vista
--- fuera actualizable.
-revoke all on public.vista_pacientes from anon, authenticated;
-revoke all on public.vista_pacientes_unicos from anon, authenticated;
+-- Las politicas RLS se aplican a tablas, no a vistas. Para estas vistas,
+-- REVOKE/GRANT limita el acceso a authenticated y solo permite lectura.
+revoke all on public.vista_pacientes from public, anon, authenticated;
+revoke all on public.vista_pacientes_unicos from public, anon, authenticated;
 grant select on public.vista_pacientes to authenticated;
 grant select on public.vista_pacientes_unicos to authenticated;
 
-drop policy if exists vista_pacientes_lectura_autenticados on public.vista_pacientes;
-create policy vista_pacientes_lectura_autenticados on public.vista_pacientes
-  for select to authenticated using (true);
-
-drop policy if exists vista_pacientes_unicos_lectura_autenticados on public.vista_pacientes_unicos;
-create policy vista_pacientes_unicos_lectura_autenticados on public.vista_pacientes_unicos
-  for select to authenticated using (true);
-
 -- --- 2. Consultas clinicas -------------------------------------------------
-revoke all on public.consultas_clinicas from anon;
+revoke all on public.consultas_clinicas from public, anon;
 drop policy if exists "Acceso total autenticados" on public.consultas_clinicas;
 drop policy if exists consultas_clinicas_solo_personal on public.consultas_clinicas;
 drop policy if exists consultas_clinicas_lectura_autenticados on public.consultas_clinicas;
@@ -68,7 +56,7 @@ create policy consultas_clinicas_lectura_autenticados on public.consultas_clinic
   for select to authenticated using (true);
 
 -- --- 3. Inventario ---------------------------------------------------------
-revoke all on public.inventario from anon;
+revoke all on public.inventario from public, anon;
 drop policy if exists "Acceso total autenticados" on public.inventario;
 drop policy if exists inventario_solo_personal on public.inventario;
 drop policy if exists inventario_lectura_autenticados on public.inventario;
@@ -76,7 +64,7 @@ create policy inventario_lectura_autenticados on public.inventario
   for select to authenticated using (true);
 
 -- --- 4. Tarifario ----------------------------------------------------------
-revoke all on public.lista_precios from anon;
+revoke all on public.lista_precios from public, anon;
 drop policy if exists "Acceso total autenticados" on public.lista_precios;
 drop policy if exists lista_precios_solo_personal on public.lista_precios;
 drop policy if exists lista_precios_lectura_autenticados on public.lista_precios;
@@ -84,7 +72,7 @@ create policy lista_precios_lectura_autenticados on public.lista_precios
   for select to authenticated using (true);
 
 -- --- 5. Pacientes ----------------------------------------------------------
-revoke all on public.pacientes_perfil from anon;
+revoke all on public.pacientes_perfil from public, anon;
 drop policy if exists "Acceso total autenticados" on public.pacientes_perfil;
 drop policy if exists pacientes_perfil_solo_personal on public.pacientes_perfil;
 drop policy if exists pacientes_perfil_lectura_autenticados on public.pacientes_perfil;
@@ -92,7 +80,7 @@ create policy pacientes_perfil_lectura_autenticados on public.pacientes_perfil
   for select to authenticated using (true);
 
 -- --- 6. Ventas -------------------------------------------------------------
-revoke all on public.pedidos_ventas from anon;
+revoke all on public.pedidos_ventas from public, anon;
 drop policy if exists "Acceso total autenticados" on public.pedidos_ventas;
 drop policy if exists pedidos_ventas_solo_personal on public.pedidos_ventas;
 drop policy if exists pedidos_ventas_lectura_autenticados on public.pedidos_ventas;
@@ -105,7 +93,7 @@ create policy pedidos_ventas_lectura_autenticados on public.pedidos_ventas
 -- podian tocarla, pero esos permisos heredados (INSERT, UPDATE, DELETE,
 -- TRUNCATE) eran una mina: el dia que se añada una politica para mostrar el
 -- historial en la app, tambien se abririan las escrituras sin querer.
-revoke all on public.consultas_clinicas_revisiones from anon, authenticated;
+revoke all on public.consultas_clinicas_revisiones from public, anon, authenticated;
 
 commit;
 
@@ -121,7 +109,7 @@ select
   coalesce((select string_agg(g.grantee || ':' || g.privilege_type, '  ')
               from information_schema.role_table_grants g
               where g.table_schema = 'public' and g.table_name = c.relname
-                and g.grantee in ('anon', 'authenticated')), 'sin permisos') as permisos
+                and g.grantee in ('PUBLIC', 'anon', 'authenticated')), 'sin permisos') as permisos
 from pg_class c
 join pg_namespace n on n.oid = c.relnamespace
 where n.nspname = 'public' and c.relkind in ('r', 'v')

@@ -19,7 +19,7 @@
 import { Component } from 'react';
 import { localDb } from './localDb';
 import {
-  describirError, leerErrores, registrarError, resumenErrores, textoDiagnostico
+  describirError, detalleTecnicoError, leerErrores, registrarError, resumenErrores, textoDiagnostico
 } from './registroErrores';
 
 const BOTON = 'px-4 py-3 rounded-xl font-bold transition-colors text-sm';
@@ -74,11 +74,15 @@ export default class ErrorBoundary extends Component {
   }
 
   render() {
-    const { error, pendientes, copiado, detalle } = this.state;
+    const { error, info, pendientes, copiado, detalle } = this.state;
     if (!error) return this.props.children;
 
     const seccion = this.props.etiqueta;
     const hayTrabajo = pendientes > 0;
+    const detalleComponentes = typeof info?.componentStack === 'string' ? info.componentStack : '';
+    const detalleCompleto = [detalleTecnicoError(error), detalleComponentes && `Componentes:\n${detalleComponentes}`]
+      .filter(Boolean)
+      .join('\n\n');
 
     return (
       <div
@@ -130,7 +134,7 @@ export default class ErrorBoundary extends Component {
             Detalle técnico ({resumenErrores([describirError(error, seccion)])})
           </summary>
           <pre className="mt-2 text-[10px] font-mono text-gray-500 whitespace-pre-wrap break-all bg-gray-50 rounded-lg p-3 max-h-48 overflow-auto">
-            {String(error?.stack || error?.message || error).slice(0, 1200)}
+            {detalleCompleto.slice(0, 1200)}
           </pre>
         </details>
       </div>

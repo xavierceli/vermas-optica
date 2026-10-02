@@ -4,15 +4,20 @@ import { imprimirOrdenTrabajo, imprimirRecibo } from './impresiones';
 import AvisoActualizacion from './AvisoActualizacion';
 import PanelSincronizacion from './PanelSincronizacion';
 import ErrorBoundary from './ErrorBoundary.jsx';
+import { normalizarError } from './registroErrores.js';
 
-const Login = lazy(() => import('./Login'));
-const Historial = lazy(() => import('./Historial'));
-const Clinica = lazy(() => import('./Clinica'));
-const Inventario = lazy(() => import('./Inventario'));
-const Tarifario = lazy(() => import('./Tarifario'));
-const Dashboard = lazy(() => import('./Dashboard'));
-const PedidosLista = lazy(() => import('./PedidosLista'));
-const PedidosForm = lazy(() => import('./PedidosForm'));
+const cargarVista = importar => lazy(() => importar().catch(error => {
+  throw normalizarError(error);
+}));
+
+const Login = cargarVista(() => import('./Login.jsx'));
+const Historial = cargarVista(() => import('./Historial.jsx'));
+const Clinica = cargarVista(() => import('./Clinica.jsx'));
+const Inventario = cargarVista(() => import('./Inventario.jsx'));
+const Tarifario = cargarVista(() => import('./Tarifario.jsx'));
+const Dashboard = cargarVista(() => import('./Dashboard.jsx'));
+const PedidosLista = cargarVista(() => import('./PedidosLista.jsx'));
+const PedidosForm = cargarVista(() => import('./PedidosForm.jsx'));
 
 const ETIQUETAS = {
   dashboard: 'Estadísticas',
@@ -78,17 +83,18 @@ function App() {
 
   const [panelSync, setPanelSync] = useState(false);
   const dialogoVisible = g.confirmDialog.visible;
+  const cancelarConfirmacion = g.cancelarConfirmacion;
   const refDialogo = useRef(null);
 
   useEffect(() => {
     const cerrarConEscape = (e) => {
-      if (e.key === 'Escape') g.cancelarConfirmacion();
+      if (e.key === 'Escape') cancelarConfirmacion();
     };
     if (dialogoVisible) {
       window.addEventListener('keydown', cerrarConEscape);
       return () => window.removeEventListener('keydown', cerrarConEscape);
     }
-  }, [dialogoVisible, g.cancelarConfirmacion]);
+  }, [dialogoVisible, cancelarConfirmacion]);
 
   useEffect(() => {
     if (dialogoVisible) refDialogo.current?.focus();
@@ -294,6 +300,7 @@ function App() {
                 cargarParaEditarClinico={g.cargarParaEditarClinico} 
                 iniciarNuevaConsulta={g.iniciarNuevaConsulta} 
                 borrarHistoriaClinica={g.borrarHistoriaClinica} 
+                archivarConsultaPuntual={g.archivarConsultaPuntual}
                 abrirPedido={g.abrirPedido} 
                 confirmarAccion={g.solicitarConfirmacion} 
                 crearNuevoPaciente={() => {

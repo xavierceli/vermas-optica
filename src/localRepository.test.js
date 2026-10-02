@@ -9,7 +9,9 @@ import {
   cacheServerCatalog,
   obtenerContadorEscaneosInventario, archivarConsultaLocal, guardarInventarioLocal
 } from './localRepository.js';
+import { archivarConsultaIndividualLocal } from './localRepository.js';
 import { calcularTotal } from './reglas.js';
+import { resumenConsulta } from './historial.js';
 import { guardarAdjuntoLocal, leerAdjuntoLocal, obtenerAdjuntosDeRef, contarAdjuntosPendientes, anularVentaLocal, cacheServerHistorial, obtenerSnapshotLocal, anularVentaConReembolso, registrarReembolsoLocal, enColaEscritura } from './localRepository.js';
 
 const reset = async () => {
@@ -576,6 +578,35 @@ test('archivar una consulta la marca como archivada', async () => {
   assert.ok(fila.archivedAt, 'debe quedar marcada como archivada');
 });
 
+test('archivar una consulta individual conserva las otras visitas y sus ventas', async () => {
+  await reset();
+  const paciente = patient();
+  const idArchivada = '60000000-0000-4000-8000-000000000101';
+  const idViva = '60000000-0000-4000-8000-000000000102';
+  await guardarConsultaLocal({ patient: paciente, consultation: { id: idArchivada, fecha: '2026-01-15' } });
+  await guardarConsultaLocal({ patient: paciente, consultation: { id: idViva, fecha: '2026-02-15' } });
+  await guardarVentaLocal({
+    patient: paciente, consultationId: idArchivada,
+    sale: { id: 'venta-archivo-individual', estado: 'En laboratorio', venta: '50' }
+  });
+
+  await archivarConsultaIndividualLocal(idArchivada);
+
+  assert.ok((await localDb.consultations.get(idArchivada)).archivedAt);
+  assert.equal((await localDb.consultations.get(idViva)).archivedAt, undefined,
+    'la otra visita de la misma persona debe seguir activa');
+  assert.ok(await localDb.sales.get('venta-archivo-individual'),
+    'la venta vinculada debe conservarse');
+  const operacionesConsulta = await localDb.outbox.where('entityId').equals(idArchivada).toArray();
+  const guardar = operacionesConsulta.find(row => row.type === 'GUARDAR_CONSULTA');
+  const archivar = operacionesConsulta.find(row => row.type === 'ARCHIVAR_CONSULTA');
+  assert.ok(archivar, 'el archivo debe llegar al servidor por la cola');
+  assert.ok(Date.parse(archivar.createdAt) > Date.parse(guardar.createdAt),
+    'si la consulta aún no se había sincronizado, primero debe guardarse y después archivarse');
+  assert.equal((await obtenerSnapshotLocal()).historial.length, 1,
+    'el historial debe seguir mostrando la visita no archivada');
+});
+
 test('archivar dos veces NO da error (debe ser idempotente)', async () => {
   // Pulsar "Eliminar" dos veces no puede mostrar un error rojo: para el usuario
   // el objetivo (que la consulta desaparezca) ya se cumplio.
@@ -648,7 +679,9 @@ test('una venta ANULADA no deja saldo pendiente en el historial', async () => {
   });
 
   const fila = (await obtenerSnapshotLocal()).historial[0];
-  assert.equal(calcularTotal('79.20', '10') - Number(fila.abono), 0, 'una venta anulada no genera deuda');
+  const resumen = resumenConsulta(fila);
+  assert.equal(resumen.saldo, 0, 'una venta anulada no genera deuda');
+  assert.equal(resumen.tieneDeuda, false);
 });
 
 test('una venta normal SI mantiene su saldo pendiente', async () => {

@@ -353,13 +353,13 @@ const descargarHistorialPaginado = async () => {
 const leerCedulasArchivadasDelServidor = async () => {
   try {
     const soloVivas = await supabase
-      .from('consultas')
+      .from('consultas_clinicas')
       .select('paciente_id')
       .is('archived_at', null);
     if (soloVivas.error) throw soloVivas.error;
 
     const { data: archivadas, error: errorArchivadas } = await supabase
-      .from('consultas')
+      .from('consultas_clinicas')
       .select('paciente_id')
       .not('archived_at', 'is', null);
     if (errorArchivadas) throw errorArchivadas;
@@ -395,11 +395,9 @@ const pullServerCache = async () => {
 
   const results = await conTimeout(Promise.allSettled([
     supabase.from('inventario').select('*').order('id', { ascending: false }),
-    supabase.from('lista_precios').select('*').order('id', { ascending: false }),
-    supabase.rpc('deudas_pacientes'),
-    supabase.rpc('stats_negocio')
+    supabase.from('lista_precios').select('*').order('id', { ascending: false })
   ]), TIEMPO_LIMITE_MS, 'pull de catalogo');
-  const [inventoryResult, pricesResult, debtsResult, statsResult] = results.map(result =>
+  const [inventoryResult, pricesResult] = results.map(result =>
     result.status === 'fulfilled' ? result.value : { data: null, error: result.reason }
   );
 
@@ -420,11 +418,6 @@ const pullServerCache = async () => {
   await cacheServerHistorial(historialRows);
   await cacheServerCatalog({ inventory: inventoryResult.data || [], prices: pricesResult.data || [] });
   
-  const remoteStats = statsResult.data?.[0] || null;
-  const remoteDebts = debtsResult.data || [];
-  await localDb.meta.put({ key: 'remoteStats', value: remoteStats, updatedAt: nowIso() });
-  await localDb.meta.put({ key: 'remoteDebts', value: remoteDebts, updatedAt: nowIso() });
-  return { stats: remoteStats, debts: remoteDebts };
 };
 
 export const sincronizarAhora = async ({ pull = true } = {}) => {
@@ -527,6 +520,5 @@ export const detenerMotorSync = () => {
   if (unsubscribeFocus) unsubscribeFocus();
 };
 
-export const obtenerEstadoSync = () => status;
 export const suscribirSync = subscribe;
 export { pullServerCache };

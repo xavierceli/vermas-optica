@@ -139,6 +139,14 @@ test('la interfaz de respaldo jamas borra datos', () => {
   assert.ok(fuente.includes('restaurarRespaldo'), 'debe usar la restauracion que hace upsert');
 });
 
+test('la interfaz explica que el respaldo es local y puede incluir datos clinicos', () => {
+  const fuente = leer('RespaldoDatos.jsx');
+  assert.match(fuente, /datos de este navegador/i);
+  assert.match(fuente, /No es una copia automática de Supabase/i);
+  assert.match(fuente, /datos clínicos y adjuntos/i);
+  assert.match(fuente, /no lo envíes por correo/i);
+});
+
 test('el panel de sincronizacion incluye el respaldo', () => {
   assert.match(leer('PanelSincronizacion.jsx'), /<RespaldoDatos/);
 });

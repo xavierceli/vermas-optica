@@ -12,15 +12,41 @@
 export const MAX_ERRORES = 20;
 export const CLAVE_ERRORES = 'errores_recientes';
 
+/** React espera excepciones Error; algunos imports fallidos rechazan con objetos. */
+export const normalizarError = error => {
+  try {
+    if (error instanceof Error) return error;
+    if (typeof error === 'string' && error) return new Error(error.slice(0, 300));
+    if (typeof error?.message === 'string' && error.message) {
+      return new Error(error.message.slice(0, 300));
+    }
+  } catch {
+    // Un objeto lanzado puede tener propiedades que no se dejan leer.
+  }
+  return new Error(`Error con formato inesperado (${typeof error}).`);
+};
+
+export const detalleTecnicoError = error => {
+  try {
+    if (typeof error?.stack === 'string') return error.stack;
+    if (typeof error?.message === 'string') return error.message;
+    if (typeof error === 'string') return error;
+  } catch {
+    // El diagnóstico nunca debe causar un segundo error al mostrar la pantalla.
+  }
+  return `Error con formato inesperado (${typeof error}).`;
+};
+
 /** Convierte cualquier cosa lanzable en un registro legible y acotado. */
 export const describirError = (error, contexto = '') => {
-  const mensaje = error?.message ?? (typeof error === 'string' ? error : '');
-  const pila = typeof error?.stack === 'string'
-    ? error.stack.split('\n').slice(0, 5).map(line => line.trim()).join(' | ')
+  const normalizado = normalizarError(error);
+  const mensaje = error === null || error === undefined ? '' : normalizado.message;
+  const pila = typeof normalizado.stack === 'string'
+    ? normalizado.stack.split('\n').slice(0, 5).map(line => line.trim()).join(' | ')
     : '';
   return {
     mensaje: String(mensaje || 'Sin mensaje').slice(0, 300),
-    nombre: String(error?.name || 'Error').slice(0, 60),
+    nombre: String(normalizado.name || 'Error').slice(0, 60),
     donde: String(contexto || '').slice(0, 60),
     pila: pila.slice(0, 600),
     hora: new Date().toISOString()

@@ -39,7 +39,7 @@ test('queratometria: el aviso no se duplica si ya esta', () => {
 
 test('queratometria: si el valor baja de rango y el texto era solo el aviso, se retira', () => {
   const r = aplicarAvisoQueratometria({ k1_d_od: '45.00', obs_k_od: AVISO_QUERATOMETRIA }, 'od');
-  assert.equal(r.obs_k_od, undefined);
+  assert.equal(r.obs_k_od, '', 'el campo queda vacío para que el formulario lo muestre limpio');
 });
 
 test('queratometria: si el aviso convive con notas propias, se conserva al normalizar', () => {

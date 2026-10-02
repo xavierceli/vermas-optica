@@ -19,8 +19,6 @@ localDb.version(2).stores({
   attachments: 'id,refType,refId,status,createdAt,[status+createdAt]'
 });
 
-export const LOCAL_DB_NAME = 'vermas-local';
-
 export const nowIso = () => new Date().toISOString();
 
 export const createUuid = () => {
@@ -35,13 +33,6 @@ export const pendingRecord = (record, extra = {}) => ({
   ...record,
   updatedAt: nowIso(),
   syncStatus: 'pending',
-  ...extra
-});
-
-export const syncedRecord = (record, extra = {}) => ({
-  ...record,
-  updatedAt: nowIso(),
-  syncStatus: 'synced',
   ...extra
 });
 

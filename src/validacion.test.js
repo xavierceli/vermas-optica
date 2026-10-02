@@ -42,7 +42,7 @@ test('NO se puede guardar una ficha sin nombre', () => {
 test('NO se puede guardar una ficha sin cedula', () => {
   const r = validarFichaClinica({ ...fichaValida(), cedula: '' });
   assert.equal(r.ok, false);
-  assert.match(r.mensaje, /cedula/i);
+  assert.match(r.mensaje, /c[eé]dula/i);
 });
 
 test('se reportan TODOS los problemas a la vez, no solo el primero', () => {
@@ -50,7 +50,7 @@ test('se reportan TODOS los problemas a la vez, no solo el primero', () => {
   // descubriria el siguiente. Era un ciclo de varios intentos.
   const r = validarFichaClinica({ cedula: '', nombre: '' });
   assert.equal(r.ok, false);
-  assert.match(r.mensaje, /cedula/i);
+  assert.match(r.mensaje, /c[eé]dula/i);
   assert.match(r.mensaje, /nombre/i);
 });
 
@@ -70,8 +70,8 @@ test('con muchos campos faltantes el mensaje los resume', () => {
   assert.equal(r.ok, false);
   assert.equal(r.sinRefraccion.length, 18);
   // Con 18 campos enumerarlos todos saturaria la pantalla.
-  assert.match(r.mensaje, /18 datos de refraccion/);
-  assert.match(r.mensaje, /y 12 mas/);
+  assert.match(r.mensaje, /18 datos de refracci[oó]n/);
+  assert.match(r.mensaje, /y 12 m[aá]s/);
 });
 
 test('el documento valido depende del formato', () => {
@@ -89,8 +89,8 @@ test('el documento valido depende del formato', () => {
 });
 
 test('el motivo explica por que falla el documento', () => {
-  assert.match(motivoDocumentoInvalido(''), /falta la cedula/i);
-  assert.match(motivoDocumentoInvalido('123'), /no es valida/i);
+  assert.match(motivoDocumentoInvalido(''), /falta la c[eé]dula/i);
+  assert.match(motivoDocumentoInvalido('123'), /no es v[aá]lida/i);
   assert.equal(motivoDocumentoInvalido('1712345678'), null);
 });
 

@@ -1,7 +1,14 @@
 import { localDb, createUuid, nowIso, pendingRecord, createOutboxOperation, getMeta, setMeta } from './localDb.js';
 import { calcularSaldo } from './reglas.js';
 
-const safeString = value => value === null || value === undefined ? '' : String(value);
+const safeString = value => {
+  if (value === null || value === undefined) return '';
+  try {
+    return String(value);
+  } catch {
+    return '';
+  }
+};
 const safeNum = value => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -75,7 +82,7 @@ const numericId = value => {
 
 const findPatient = (patientId, cedula) => {
   if (patientId) return localDb.patients.get(patientId);
-  if (cedula) return localDb.patients.where('cedula').equals(normalizeCedula(cedula)).first();
+  if (cedula) return localDb.patients.toArray().then(rows => rows.find(row => normalizeCedula(row.cedula) === normalizeCedula(cedula)) || null);
   return Promise.resolve(null);
 };
 
@@ -633,6 +640,49 @@ const archivarConsultaLocalImpl = async consultationId => {
   return { yaArchivada: false };
 };
 
+const archivarConsultaIndividualLocalImpl = async consultationId => {
+  const idConsulta = String(consultationId || '').replace(/^remote:/, '');
+  const actual = await localDb.consultations.get(idConsulta);
+  const enCache = await localDb.cache.get(`remote:${idConsulta}`);
+  const fila = actual || enCache;
+  if (!fila) return { yaArchivada: true, motivo: 'La consulta ya no existe en este dispositivo.' };
+  if (archivada(fila)) return { yaArchivada: true, motivo: 'La consulta ya estaba archivada.' };
+
+  const ahora = nowIso();
+  const consultaLocal = actual || {
+    ...enCache,
+    id: idConsulta,
+    patientId: enCache.patientId ?? enCache.paciente_id ?? enCache.patient_id ?? null
+  };
+  const operation = createOutboxOperation({
+    type: 'ARCHIVAR_CONSULTA',
+    entityId: idConsulta,
+    payload: { p_consulta_id: idConsulta }
+  });
+  const operacionesAnteriores = await localDb.outbox.where('entityId').equals(idConsulta).toArray();
+  const ultimaCreacion = operacionesAnteriores
+    .filter(row => row.type === 'GUARDAR_CONSULTA')
+    .reduce((ultima, row) => Math.max(ultima, Date.parse(row.createdAt) || 0), 0);
+  if (ultimaCreacion >= Date.parse(operation.createdAt)) {
+    operation.createdAt = new Date(ultimaCreacion + 1).toISOString();
+    operation.updatedAt = operation.createdAt;
+  }
+
+  await localDb.transaction('rw', localDb.consultations, localDb.outbox, localDb.cache, async () => {
+    await localDb.consultations.put({
+      ...consultaLocal,
+      archivedAt: ahora,
+      archived_at: ahora,
+      syncStatus: 'pending',
+      updatedAt: ahora
+    });
+    await localDb.cache.delete(`remote:${idConsulta}`);
+    await localDb.outbox.put(operation);
+  });
+
+  return { yaArchivada: false };
+};
+
 const cacheServerHistorialImpl = async rows => {
   const [localPatients, localConsultations, localSales, cedulasLocales, cedulasServidor] = await Promise.all([
     localDb.patients.toArray(),
@@ -1029,6 +1079,7 @@ export const eliminarInventarioLocal = id => enColaEscritura(() => eliminarInven
 export const guardarPrecioLocal = args => enColaEscritura(() => guardarPrecioLocalImpl(args), 'alta', 'guardarPrecioLocal');
 export const eliminarPrecioLocal = id => enColaEscritura(() => eliminarPrecioLocalImpl(id), 'alta', 'eliminarPrecioLocal');
 export const archivarConsultaLocal = id => enColaEscritura(() => archivarConsultaLocalImpl(id), 'alta', 'archivarConsultaLocal');
+export const archivarConsultaIndividualLocal = id => enColaEscritura(() => archivarConsultaIndividualLocalImpl(id), 'alta', 'archivarConsultaIndividualLocal');
 export const markLocalOperationSynced = op => enColaEscritura(() => markLocalOperationSyncedImpl(op), 'alta', 'markSync');
 export const guardarAdjuntoLocal = args => enColaEscritura(() => guardarAdjuntoLocalImpl(args), 'alta', 'guardarAdjunto');
 export const leerAdjuntoLocal = id => enColaEscritura(() => leerAdjuntoLocalImpl(id), 'alta', 'leerAdjunto');

@@ -11,6 +11,14 @@ import {
 
 const consulta = (extra = {}) => ({ id: 1, cedula: '1712345678', nombre: 'ANA', ...extra });
 
+test('un dato antiguo no convertible no hace fallar las reglas del historial', () => {
+  const raro = Object.create(null);
+  assert.doesNotThrow(() => agruparPorCedula([consulta({ nombre: raro })]));
+  assert.deepEqual(filtrarPorTermino([consulta({ nombre: raro })], 'ana'), []);
+  assert.equal(resumenConsulta(consulta({ venta: raro })).total, 0);
+  assert.doesNotThrow(() => agruparPorCedula([{ id: raro }]));
+});
+
 // --- Que debe el paciente -------------------------------------------------
 test('una venta viva muestra su saldo pendiente', () => {
   const r = resumenConsulta(consulta({ venta: 100, descuento: 0, abono: 40 }));

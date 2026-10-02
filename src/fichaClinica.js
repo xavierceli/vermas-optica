@@ -79,7 +79,7 @@ export const buscarCoincidenciasPacientes = ({ locales = [], nube = [], texto = 
 };
 
 export const CAMPOS_DE_VENTA = [
-  'venta', 'abono', 'notas',
+  'venta', 'abono', 'notas', 'notas_clinicas',
   'codigo_armazon', 'tipo_armazon',
   'param_horizontal', 'param_puente', 'param_vertical', 'param_diagonal',
   'tipo_lente', 'material_lente', 'material_nota',
@@ -126,7 +126,7 @@ export const aplicarCedula = ({ paciente, value, historial = [], hoy = hoyISO() 
   ficha.id = ''; // Nueva consulta
   ficha.pedido_id = '';
 
-  // Limpia los datos de la venta anterior sin tocar notas clínicas ni refracción
+  // Limpia datos de venta y notas específicas sin tocar la refracción.
   CAMPOS_DE_VENTA.forEach(campo => { ficha[campo] = ''; });
   TRATAMIENTOS.forEach(campo => { ficha[campo] = 'NO'; });
   ficha.descuento = '0';
