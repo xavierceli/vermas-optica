@@ -522,7 +522,7 @@ export default function Historial({
                             )}
                           </div>
 
-                          {/* 2. Métodos de pago en orden cronológico */}
+                          {/* 2. Métodos de pago con enlace integrado al comprobante */}
                           {(() => {
                             const metodos = [];
                             const inicial = safeString(item.forma_pago).trim();
@@ -545,20 +545,37 @@ export default function Historial({
                             const listaFinal = metodos.length > 0 ? metodos : ['Efectivo'];
 
                             return (
-                              <div className="flex justify-between items-center pt-1 text-[11px] flex-wrap gap-1">
-                                <p className="text-gray-700 flex items-center gap-1.5 flex-wrap">
-                                  <strong>Método(s) de pago:</strong>{' '}
-                                  <span className="font-bold text-gray-900 bg-gray-100 px-2 py-0.5 rounded border border-gray-200">
-                                    {listaFinal.join(', ')}
-                                  </span>
-                                </p>
-                                {item.comprobante_url && (
-                                  <BotonComprobante
-                                    ruta={item.comprobante_url}
-                                    refId={item.pedido_id || item.id}
-                                    className="text-xs bg-indigo-50 text-indigo-700 font-bold px-2 py-0.5 rounded-full border border-indigo-200 hover:bg-indigo-100 flex items-center shadow-sm"
-                                  />
-                                )}
+                              <div className="pt-1 text-[11px]">
+                                <div className="text-gray-700 flex items-center gap-1.5 flex-wrap">
+                                  <strong>Método(s) de pago:</strong>
+                                  <div className="inline-flex items-center gap-1.5 flex-wrap">
+                                    {listaFinal.map((metodo, idx) => {
+                                      const esTransferencia = metodo.toLowerCase().includes('transferencia');
+                                      const tieneFoto = esTransferencia && Boolean(item.comprobante_url);
+
+                                      if (tieneFoto) {
+                                        return (
+                                          <span key={idx} className="inline-flex items-center">
+                                            <BotonComprobante
+                                              ruta={item.comprobante_url}
+                                              refId={item.pedido_id || item.id}
+                                              texto="Transferencia 📄"
+                                              className="font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-2 py-0.5 rounded border border-indigo-300 shadow-sm cursor-pointer transition-colors"
+                                            />
+                                            {idx < listaFinal.length - 1 && <span className="ml-1 text-gray-500">,</span>}
+                                          </span>
+                                        );
+                                      }
+
+                                      return (
+                                        <span key={idx} className="inline-flex items-center font-bold text-gray-900 bg-gray-100 px-2 py-0.5 rounded border border-gray-200">
+                                          {metodo}
+                                          {idx < listaFinal.length - 1 && <span className="ml-0.5 text-gray-500">,</span>}
+                                        </span>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
                               </div>
                             );
                           })()}
