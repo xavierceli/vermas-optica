@@ -20,7 +20,7 @@ import {
 import { aplicarAvisoQueratometria, calcularTotal, calcularSaldo } from './reglas';
 import { limpiarHtml } from './escape';
 import { validarFichaClinica, motivoDocumentoInvalido } from './validacion';
-import { aplicarCedula, crearEstadoPaciente, hoyISO, INV_INICIAL, PRECIO_INICIAL } from './fichaClinica';
+import { aplicarCedula, crearEstadoPaciente, hoyISO, INV_INICIAL, PRECIO_INICIAL, CAMPOS_DE_VENTA, TRATAMIENTOS } from './fichaClinica';
 import { leerAviso, mostrarAviso, suscribirAvisos } from './avisos';
 
 export function useGestor() {
@@ -427,7 +427,7 @@ export function useGestor() {
     Object.keys(itemFormateado).forEach(key => { if (itemFormateado[key] === null) itemFormateado[key] = ''; });
     setNuevoItemInv(itemFormateado); 
     setEditandoInvId(item.id); 
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo({ top: 0, behavior: 'smooth' }); 
   };
 
   const cancelarEdicionInventario = () => { 
@@ -506,21 +506,20 @@ export function useGestor() {
       let clinicaData = {};
       camposClinica.forEach(k => { clinicaData[k] = paciente[k] === '' ? null : paciente[k]; });
 
-      // Generación de fecha con hora exacta (HH:mm) para no pisar registros del mismo día
       const ahora = new Date();
       const horas = String(ahora.getHours()).padStart(2, '0');
       const minutos = String(ahora.getMinutes()).padStart(2, '0');
       const horaActual = `${horas}:${minutos}`;
 
       const fechaBase = safeString(paciente.fecha) ? safeString(paciente.fecha).split(' ')[0] : hoy;
-      // Si estamos editando una ficha vieja se mantiene su fecha/hora; si es nueva consulta se añade la hora exacta actual
       if (!editandoId) {
         clinicaData.fecha = `${fechaBase} ${horaActual}`;
       } else if (!clinicaData.fecha) {
         clinicaData.fecha = `${fechaBase} ${horaActual}`;
       }
 
-      // Si editandoId existe se edita puntualmente; si no, SIEMPRE se crea un idConsulta nuevo independiente
+      // Si editandoId tiene valor, se modifica esa visita puntual.
+      // Si editandoId es null, SIEMPRE se genera un idConsulta nuevo para crear una visita histórica separada.
       const idConsulta = editandoId ? editandoId : generarId();
 
       await guardarConsultaLocal({
@@ -545,13 +544,11 @@ export function useGestor() {
     }
   };
 
-  // Eliminación definitiva en cascada (local y nube)
   const borrarHistoriaClinica = async (item) => {
     const cedula = safeString(item?.cedula).trim();
     if (!cedula) return;
 
     try {
-      // 1. Ejecutar purga total en Supabase (RPC en cascada)
       if (navigator.onLine) {
         const { error } = await supabase.rpc('eliminar_paciente_completo', { p_cedula: cedula });
         if (error) {
@@ -559,11 +556,9 @@ export function useGestor() {
         }
       }
 
-      // 2. Borrado físico local en Dexie (limpieza exhaustiva de tablas)
       try {
         const cedulaLimpia = cedula.replace(/[^0-9A-Za-z]/g, '').toLowerCase();
 
-        // Borrar de historial y consultas
         if (localDb.historial) {
           await localDb.historial
             .filter(h => safeString(h?.cedula).replace(/[^0-9A-Za-z]/g, '').toLowerCase() === cedulaLimpia)
@@ -574,8 +569,6 @@ export function useGestor() {
             .filter(c => safeString(c?.cedula).replace(/[^0-9A-Za-z]/g, '').toLowerCase() === cedulaLimpia)
             .delete();
         }
-
-        // Borrar de pedidos / ventas
         if (localDb.sales) {
           await localDb.sales
             .filter(s => safeString(s?.cedula).replace(/[^0-9A-Za-z]/g, '').toLowerCase() === cedulaLimpia)
@@ -586,8 +579,6 @@ export function useGestor() {
             .filter(p => safeString(p?.cedula).replace(/[^0-9A-Za-z]/g, '').toLowerCase() === cedulaLimpia)
             .delete();
         }
-
-        // Borrar de pacientes y cédulas archivadas
         if (localDb.patients) {
           await localDb.patients
             .filter(p => safeString(p?.cedula).replace(/[^0-9A-Za-z]/g, '').toLowerCase() === cedulaLimpia)
@@ -600,15 +591,12 @@ export function useGestor() {
         console.warn('[borrar] Limpieza local completada con advertencias:', errDb);
       }
 
-      // 3. Purgar estados de memoria de React inmediatamente
       const matchCedula = c => safeString(c).replace(/[^0-9A-Za-z]/g, '').toLowerCase() === cedula.replace(/[^0-9A-Za-z]/g, '').toLowerCase();
       setHistorial(prev => prev.filter(h => !matchCedula(h?.cedula)));
       setVentasLocales(prev => prev.filter(v => !matchCedula(v?.cedula)));
       setVentasArchivadas(prev => prev.filter(v => !matchCedula(v?.cedula)));
 
-      // 4. Actualizar snapshot local sin traer registros muertos
       await obtenerDatos({ sync: false });
-
       mostrarToast('Paciente y todos sus registros fueron eliminados de raíz.', 'success');
     } catch (err) {
       console.error('[borrar] Error en eliminación definitiva:', err);
@@ -616,6 +604,7 @@ export function useGestor() {
     }
   };
 
+  // Corrige una consulta existente (el botón lápiz ✏️)
   const cargarParaEditarClinico = (item) => { 
     let itemFormateado = { ...item };
     Object.keys(itemFormateado).forEach(key => { if (itemFormateado[key] === null) itemFormateado[key] = ''; });
@@ -623,6 +612,30 @@ export function useGestor() {
     setEditandoId(item.id); 
     setVistaActual('nueva_medicion'); 
     window.scrollTo({ top: 0, behavior: 'smooth' }); 
+  };
+
+  // Inicia una NUEVA consulta/evaluación manteniendo datos personales pero creando un registro nuevo
+  const iniciarNuevaConsulta = (item) => {
+    const estadoLimpio = crearEstadoPaciente(hoy);
+    const nuevaFicha = {
+      ...estadoLimpio,
+      cedula: safeString(item?.cedula),
+      nombre: safeString(item?.nombre),
+      alias: safeString(item?.alias),
+      telefono: safeString(item?.telefono),
+      correo: safeString(item?.correo),
+      fecha_nacimiento: safeString(item?.fecha_nacimiento),
+      antecedentes: safeString(item?.antecedentes),
+      patient_id: item?.patient_id || item?.paciente_id || item?.id,
+      id: '',
+      pedido_id: ''
+    };
+    CAMPOS_DE_VENTA.forEach(campo => { nuevaFicha[campo] = ''; });
+    TRATAMIENTOS.forEach(campo => { nuevaFicha[campo] = 'NO'; });
+    setPaciente(nuevaFicha);
+    setEditandoId(null);
+    setVistaActual('nueva_medicion');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const abrirPedido = (item) => {
@@ -638,7 +651,7 @@ export function useGestor() {
     itemFormateado._nueva_venta = esVentaNueva;
     if (esVentaNueva) {
       itemFormateado.pedido_id = generarId();
-      const CAMPOS_DE_LA_VENTA = [
+      const CAMPOS_VENTA = [
         'codigo_armazon', 'tipo_armazon', 'param_horizontal', 'param_puente',
         'param_vertical', 'param_diagonal', 'tipo_lente', 'material_lente',
         'material_nota', 'accesorio_id', 'venta', 'abono', 'pago_nota',
@@ -646,7 +659,7 @@ export function useGestor() {
         'costo_lunas_int', 'costo_accesorio_int', 'costo_tratamientos_int',
         'costo_varios_int', 'codigo_armazon_confirmado'
       ];
-      CAMPOS_DE_LA_VENTA.forEach(k => { itemFormateado[k] = ''; });
+      CAMPOS_VENTA.forEach(k => { itemFormateado[k] = ''; });
       itemFormateado.descuento = '0';
       itemFormateado.forma_pago = 'Efectivo';
       itemFormateado.estado = 'En laboratorio';
@@ -741,6 +754,12 @@ export function useGestor() {
     setPedidoSeleccionado(prev => ({ ...prev, venta: autoCalcularPrecio(prev) || '' })); 
   };
 
+  const fieldsQueAfectanPrecio = (name) => [
+    'codigo_armazon', 'material_lente', 'accesorio_id', 'tratam_ar', 
+    'tratam_ar_azul', 'tratam_azul', 'tratam_tinturado', 'tratam_foto', 
+    'tratam_trans', 'tratam_ninguno'
+  ].includes(name);
+
   const manejarCambioPedido = (e) => {
     let { name, value, type, checked, tagName } = e.target;
     let val = type === 'checkbox' ? (checked ? 'SI' : 'NO') : value;
@@ -753,11 +772,6 @@ export function useGestor() {
 
     setPedidoSeleccionado(prev => {
       const nuevo = { ...prev, [name]: val };
-      const camposQueAfectanPrecio = [
-        'codigo_armazon', 'material_lente', 'accesorio_id', 'tratam_ar', 
-        'tratam_ar_azul', 'tratam_azul', 'tratam_tinturado', 'tratam_foto', 
-        'tratam_trans', 'tratam_ninguno'
-      ];
 
       if (fieldsQueAfectanPrecio(name)) {
         if (name === 'tratam_ninguno' && val === 'SI') {
@@ -771,14 +785,6 @@ export function useGestor() {
       return nuevo;
     });
   };
-
-  function fieldsQueAfectanPrecio(name) {
-    return [
-      'codigo_armazon', 'material_lente', 'accesorio_id', 'tratam_ar', 
-      'tratam_ar_azul', 'tratam_azul', 'tratam_tinturado', 'tratam_foto', 
-      'tratam_trans', 'tratam_ninguno'
-    ].includes(name);
-  }
 
   const guardandoPedidoRef = useRef(false);
   const guardarPedido = async ({ montoAdicional = 0 } = {}) => {
@@ -1083,7 +1089,7 @@ export function useGestor() {
     obtenerDetalleCola, reintentarOperacion, descartarOperacion, descartarTodoLoAtascado,
     historial, ventasArchivadas, ventasLocales, inventario, listaPrecios, paciente, setPaciente, estadoInicial, editandoId, setEditandoId,
     cedulasArchivadas, 
-    guardarPacienteClinico, manejarCambio, borrarHistoriaClinica, cargarParaEditarClinico, edadActual, claseInputRef,
+    guardarPacienteClinico, manejarCambio, borrarHistoriaClinica, cargarParaEditarClinico, iniciarNuevaConsulta, edadActual, claseInputRef,
     busqueda, setBusqueda, pedidosFiltrados, stats, enviarWhatsApp,
     nuevoPrecio, setNuevoPrecio, precioInicial, editandoPrecioId, setEditandoPrecioId,
     manejarCambioPrecio, guardarPrecio, busquedaPrecio, setBusquedaPrecio, listaPreciosFiltrada, cargarParaEditarPrecio, eliminarPrecio,

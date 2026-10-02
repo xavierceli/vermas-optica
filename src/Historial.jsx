@@ -8,7 +8,7 @@ import BotonComprobante from './BotonComprobante';
 
 export default function Historial({
   historialReciente,
-  enviarWhatsApp, cargarParaEditarClinico, borrarHistoriaClinica, abrirPedido, crearNuevoPaciente,
+  enviarWhatsApp, cargarParaEditarClinico, iniciarNuevaConsulta, borrarHistoriaClinica, abrirPedido, crearNuevoPaciente,
   confirmarAccion
 }) {
   const [busquedaTexto, setBusquedaTexto] = useState('');
@@ -47,7 +47,7 @@ export default function Historial({
         );
         filtradosLocales = filtrados;
         if (filtrados.length > 0) setResultadosBusqueda({ termino, datos: filtrados });
-      } catch { /* continuar si falla */ }
+      } catch { /* continuar */ }
 
       try {
         if (navigator.onLine) {
@@ -88,7 +88,6 @@ export default function Historial({
 
     let mapaVisitas = new Map();
 
-    // 1. Cargar todas las consultas locales indexadas por su ID único exclusivo
     try {
       const snapshot = await obtenerSnapshotLocal();
       const histLocal = snapshot?.historial || historialReciente || [];
@@ -110,7 +109,6 @@ export default function Historial({
       console.warn("Fallo al leer datos locales del paciente:", err);
     }
 
-    // 2. Traer todas las consultas remotas de Supabase
     try {
       if (navigator.onLine) {
         let datosConsultas = [];
@@ -183,7 +181,6 @@ export default function Historial({
     confirmarAccion(
       `¿Deseas eliminar la consulta del ${safeString(reg.fecha)}?`,
       async () => {
-        // Borra puntualmente esta consulta específica sin tocar las demás consultas del paciente
         try {
           if (reg.id && navigator.onLine) {
             await supabase.from('consultas').delete().eq('id', reg.id);
@@ -223,9 +220,24 @@ export default function Historial({
               <span>📱 {safeString(expedienteActivo.telefono)}</span>
             </p>
           </div>
-          <button type="button" onClick={() => {setExpedienteActivo(null); setRegistrosPaciente([]);}} className="bg-gray-800 text-white px-4 py-2 rounded-lg font-bold text-sm shadow hover:bg-gray-900 transition-colors w-full sm:w-auto">
-            🔙 Volver a Tarjetas
-          </button>
+          <div className="flex gap-2 w-full md:w-auto">
+            <button 
+              type="button" 
+              onClick={() => {
+                if (typeof iniciarNuevaConsulta === 'function') {
+                  iniciarNuevaConsulta(expedienteActivo);
+                } else {
+                  cargarParaEditarClinico(expedienteActivo);
+                }
+              }} 
+              className="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded-lg font-bold text-sm shadow transition-colors w-full md:w-auto flex items-center justify-center gap-1.5"
+            >
+              ➕ Nueva Consulta
+            </button>
+            <button type="button" onClick={() => {setExpedienteActivo(null); setRegistrosPaciente([]);}} className="bg-gray-800 text-white px-4 py-2 rounded-lg font-bold text-sm shadow hover:bg-gray-900 transition-colors w-full md:w-auto">
+              🔙 Volver a Tarjetas
+            </button>
+          </div>
         </div>
 
         {cargandoExpediente ? (
@@ -261,7 +273,7 @@ export default function Historial({
                       </th>
 
                       <th className="py-2 px-3 border-r border-b-2 border-emerald-300 bg-emerald-100 text-emerald-950 font-black tracking-wider uppercase text-xs" colSpan="8">
-                        👁️ Ojo Izquierdo (OI)
+                        👁️️ Ojo Izquierdo (OI)
                       </th>
 
                       <th className="p-2 border-l border-b bg-red-50 text-red-800" rowSpan="2">Acción</th>
@@ -399,6 +411,7 @@ export default function Historial({
                     {registrosPaciente.filter(r => String(r.estado) !== 'Ninguno' || safeNum(r.venta) > 0 || safeString(r.codigo_armazon)).length > 0 ? (
                       registrosPaciente.filter(r => String(r.estado) !== 'Ninguno' || safeNum(r.venta) > 0 || safeString(r.codigo_armazon)).map(reg => {
                         const { total: vFinal, saldo } = resumenConsulta(reg);
+                        const esAnulado = safeString(reg.estado).trim().toLowerCase() === 'anulado';
                         return (
                           <tr key={'venta-' + reg.id} className="border-b hover:bg-gray-50 transition-colors">
                             <td className="p-2 border-r font-bold text-gray-700">{safeString(reg.fecha)}</td>
@@ -408,10 +421,14 @@ export default function Historial({
                               <br/>
                               {reg.tratam_ar === 'SI' && ' +AR'} {reg.tratam_ar_azul === 'SI' && ' +AR Azul'} {reg.tratam_azul === 'SI' && ' +Filtro Azul'} {reg.tratam_foto === 'SI' && ' +Foto'}
                             </td>
-                            <td className="p-2 border-r text-center font-bold text-gray-900">${vFinal.toFixed(2)}</td>
-                            <td className={`p-2 border-r text-center font-black ${saldo > 0 ? 'text-red-600' : 'text-emerald-700'}`}>${Math.max(0, saldo).toFixed(2)}</td>
+                            <td className="p-2 border-r text-center font-bold text-gray-900">
+                              {esAnulado ? <span className="line-through text-gray-400">${safeNum(reg.venta).toFixed(2)}</span> : `$${vFinal.toFixed(2)}`}
+                            </td>
+                            <td className={`p-2 border-r text-center font-black ${esAnulado ? 'text-gray-400' : saldo > 0 ? 'text-red-600' : 'text-emerald-700'}`}>
+                              ${esAnulado ? '0.00' : Math.max(0, saldo).toFixed(2)}
+                            </td>
                             <td className="p-2 border-r text-center">
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${reg.estado === 'Entregado' ? 'bg-green-100 text-green-900' : reg.estado === 'Listo para Entrega' ? 'bg-blue-100 text-blue-900' : 'bg-yellow-100 text-yellow-900'}`}>
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${reg.estado === 'Entregado' ? 'bg-green-100 text-green-900' : reg.estado === 'Listo para Entrega' ? 'bg-blue-100 text-blue-900' : esAnulado ? 'bg-red-100 text-red-900' : 'bg-yellow-100 text-yellow-900'}`}>
                                 {safeString(reg.estado)}
                               </span>
                             </td>
@@ -465,6 +482,7 @@ export default function Historial({
           try {
             const diagnosticos = generarDiagnosticos(item);
             const { saldo: saldoPendiente, tieneDeuda, tienePedido, total: vFinal, descuento: desc } = resumenConsulta(item);
+            const esAnulado = safeString(item.estado).trim().toLowerCase() === 'anulado';
             
             return (
               <div key={item.id} className="border border-gray-200 bg-white p-4 sm:p-6 rounded-2xl shadow-sm hover:shadow-md transition-all">
@@ -504,6 +522,20 @@ export default function Historial({
                   </div>
                   
                   <div className="flex flex-wrap gap-1.5 sm:gap-2 w-full xl:w-auto items-center">
+                    <button 
+                      type="button" 
+                      onClick={() => {
+                        if (typeof iniciarNuevaConsulta === 'function') {
+                          iniciarNuevaConsulta(item);
+                        } else {
+                          cargarParaEditarClinico(item);
+                        }
+                      }} 
+                      className="text-xs sm:text-sm bg-teal-50 text-teal-800 border border-teal-300 px-3 py-1.5 rounded-lg font-bold shadow-sm hover:bg-teal-100 transition-colors flex items-center gap-1"
+                      title="Registrar una nueva evaluación clínica a este paciente"
+                    >
+                      ➕ Nueva Consulta
+                    </button>
                     <button type="button" onClick={() => abrirExpedienteCompleto(item)} className="text-xs sm:text-sm bg-indigo-50 text-indigo-700 border border-indigo-200 px-3 py-1.5 rounded-lg font-bold shadow-sm hover:bg-indigo-100 transition-colors flex items-center gap-1">
                       🗂️ Ver Evolución
                     </button>
@@ -520,7 +552,7 @@ export default function Historial({
                       </button>
                     </div>
                     
-                    <button type="button" onClick={() => cargarParaEditarClinico(item)} className="text-xs sm:text-sm bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-1.5 rounded-lg font-bold shadow-sm hover:bg-blue-100 transition-colors" title="Editar Clínica">
+                    <button type="button" onClick={() => cargarParaEditarClinico(item)} className="text-xs sm:text-sm bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-1.5 rounded-lg font-bold shadow-sm hover:bg-blue-100 transition-colors" title="Editar / Corregir esta consulta">
                       ✏️
                     </button>
                     <button 
@@ -572,7 +604,7 @@ export default function Historial({
                     <div>
                       <div className="flex justify-between items-center mb-2">
                         <strong className="text-gray-900 text-sm sm:text-base font-extrabold block">Último Detalle Comercial / Pedido</strong>
-                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold shadow-sm ${item.estado === 'Entregado' ? 'bg-green-100 text-green-900' : item.estado === 'Listo para Entrega' ? 'bg-blue-100 text-blue-900' : item.estado === 'Anulado' ? 'bg-red-100 text-red-900' : 'bg-yellow-100 text-yellow-900'}`}>
+                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold shadow-sm ${item.estado === 'Entregado' ? 'bg-green-100 text-green-900' : item.estado === 'Listo para Entrega' ? 'bg-blue-100 text-blue-900' : esAnulado ? 'bg-red-100 text-red-900' : 'bg-yellow-100 text-yellow-900'}`}>
                           {safeString(item.estado) || 'Sin estado'}
                         </span>
                       </div>
@@ -688,13 +720,13 @@ export default function Historial({
                         {tienePedido ? (
                           <>
                             <span className={`block text-[11px] uppercase font-black tracking-wider mb-0.5 ${tieneDeuda ? 'text-red-700' : 'text-gray-600'}`}>
-                              {tieneDeuda ? '⚠ Costo Final (Con Saldo Pendiente)' : 'Costo Final'}
+                              {esAnulado ? 'Venta Anulada' : tieneDeuda ? '⚠ Costo Final (Con Saldo Pendiente)' : 'Costo Final'}
                             </span>
                             <div className="flex items-baseline gap-2">
-                              <span className={`text-base sm:text-xl font-black ${tieneDeuda ? 'text-red-600 animate-pulse' : 'text-gray-900'}`}>
-                                ${vFinal.toFixed(2)}
+                              <span className={`text-base sm:text-xl font-black ${esAnulado ? 'line-through text-gray-400' : tieneDeuda ? 'text-red-600 animate-pulse' : 'text-gray-900'}`}>
+                                ${esAnulado ? safeNum(item.venta).toFixed(2) : vFinal.toFixed(2)}
                               </span>
-                              {desc > 0 && <span className="text-xs text-green-700 font-bold">(-{desc}%)</span>}
+                              {!esAnulado && desc > 0 && <span className="text-xs text-green-700 font-bold">(-{desc}%)</span>}
                               {tieneDeuda && (
                                 <span className="text-xs font-black text-red-700 bg-red-100 px-2 py-0.5 rounded border border-red-300">
                                   A pagar: ${saldoPendiente.toFixed(2)}
@@ -713,6 +745,8 @@ export default function Historial({
                         className={`text-xs px-3.5 py-1.5 rounded-lg font-bold transition-all shadow-sm flex items-center gap-1.5 ${
                           !tienePedido
                             ? 'bg-teal-600 hover:bg-teal-700 text-white active:scale-95'
+                            : esAnulado
+                            ? 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300'
                             : tieneDeuda 
                             ? 'bg-red-600 hover:bg-red-700 text-white' 
                             : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200'

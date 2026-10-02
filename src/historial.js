@@ -12,10 +12,16 @@ const aNumero = valor => {
  * Todo lo que una tarjeta del historial necesita decidir de una consulta.
  */
 export const resumenConsulta = (item) => {
+  const estado = aTexto(item?.estado).trim().toLowerCase();
+  const esAnulada = estado === 'anulado';
+
   const venta = aNumero(item?.venta);
   const descuento = aNumero(item?.descuento);
   const abono = aNumero(item?.abono);
-  const saldo = calcularSaldo(venta, descuento, abono);
+
+  // Si la venta está Anulada, el total comercial y el saldo por cobrar son estrictamente 0
+  const total = esAnulada ? 0 : calcularTotal(venta, descuento);
+  const saldo = esAnulada ? 0 : calcularSaldo(venta, descuento, abono);
 
   const tienePedido = Boolean(aTexto(item?.pedido_id).trim())
     || aNumero(item?.venta) > 0
@@ -25,12 +31,12 @@ export const resumenConsulta = (item) => {
     || aTexto(item?.accesorio_id).trim() !== '';
 
   return {
-    venta, 
-    descuento, 
-    abono,
-    total: calcularTotal(venta, descuento),
+    venta: esAnulada ? 0 : venta, 
+    descuento: esAnulada ? 0 : descuento, 
+    abono: esAnulada ? 0 : abono,
+    total,
     saldo,
-    tieneDeuda: saldo > 0,
+    tieneDeuda: !esAnulada && saldo > 0,
     tienePedido
   };
 };
@@ -48,8 +54,8 @@ export const tieneRefraccion = (item) =>
     .some(campo => aTexto(item?.[campo]).trim() !== '');
 
 /**
- * Agrupa la lista completa para la pantalla principal (1 tarjeta por paciente mostrando la visita más reciente)
- * sin destruir ni mezclar los registros en el expediente histórico.
+ * Agrupa la lista para la pantalla principal (1 tarjeta por paciente mostrando la visita más reciente)
+ * sin mezclar ni sobrescribir las consultas en el expediente histórico.
  */
 export const unaTarjetaPorCedula = (filas, claveDe) => {
   const clave = claveDe || (fila => {
@@ -61,7 +67,6 @@ export const unaTarjetaPorCedula = (filas, claveDe) => {
   });
 
   const elegidas = new Map();
-  // Se asume que las filas vienen ordenadas por fecha/hora descendente
   for (const fila of filas || []) {
     if (!fila) continue;
     const k = clave(fila);
@@ -72,7 +77,6 @@ export const unaTarjetaPorCedula = (filas, claveDe) => {
       continue;
     }
 
-    // Si la visita más reciente no tiene refracción pero una anterior sí, tomamos la graduación
     if (!tieneRefraccion(actual) && tieneRefraccion(fila)) {
       const receta = {};
       for (const campo of CAMPOS_REFRACCION) {
