@@ -32,12 +32,20 @@ export default function PanelSincronizacion({ abierta, cerrar, gestor }) {
   const [ops, setOps] = useState([]);
   const [cargando, setCargando] = useState(false);
   const [trabajando, setTrabajando] = useState(false);
+  const [errorPanel, setErrorPanel] = useState('');
   const ref = useRef(null);
 
   const cargar = useCallback(async () => {
     if (!gestor?.obtenerDetalleCola) return;
     setCargando(true);
-    try { setOps(await gestor.obtenerDetalleCola()); } finally { setCargando(false); }
+    try {
+      setOps(await gestor.obtenerDetalleCola());
+      setErrorPanel('');
+    } catch {
+      setErrorPanel('No se pudo consultar la cola de sincronización. Inténtalo de nuevo.');
+    } finally {
+      setCargando(false);
+    }
   }, [gestor]);
 
   useEffect(() => {
@@ -56,9 +64,30 @@ export default function PanelSincronizacion({ abierta, cerrar, gestor }) {
   if (!abierta) return null;
   const problemas = ops.filter(o => o.estado !== 'pending');
 
-  const reintentar = async op => { setTrabajando(true); try { await gestor.reintentarOperacion(op.id); await cargar(); } finally { setTrabajando(false); } };
-  const descartar = async op => { setTrabajando(true); try { await gestor.descartarOperacion(op.id); await cargar(); } finally { setTrabajarFinal(); } };
-  const setTrabajarFinal = () => {};
+  const reintentar = async op => {
+    setTrabajando(true);
+    setErrorPanel('');
+    try {
+      await gestor.reintentarOperacion(op.id);
+      await cargar();
+    } catch {
+      setErrorPanel('No se pudo reintentar el cambio. Sigue guardado en el dispositivo.');
+    } finally {
+      setTrabajando(false);
+    }
+  };
+  const descartar = async op => {
+    setTrabajando(true);
+    setErrorPanel('');
+    try {
+      await gestor.descartarOperacion(op.id);
+      await cargar();
+    } catch {
+      setErrorPanel('No se pudo quitar el cambio de la cola. No se borraron sus datos.');
+    } finally {
+      setTrabajando(false);
+    }
+  };
 
   const descartarTodo = async () => {
     // Pregunta con el dialogo de la app: el confirm del navegador congela la
@@ -72,8 +101,35 @@ export default function PanelSincronizacion({ abierta, cerrar, gestor }) {
       : false;
     if (!ok) return;
     setTrabajando(true);
-    try { await gestor.descartarTodoLoAtascado(); await cargar(); } finally { setTrabajando(false); }
+    setErrorPanel('');
+    try {
+      await gestor.descartarTodoLoAtascado();
+      await cargar();
+    } catch {
+      setErrorPanel('No se pudieron quitar los cambios de la cola. No se borraron sus datos.');
+    } finally {
+      setTrabajando(false);
+    }
   };
+
+  const sincronizar = async () => {
+    if (typeof gestor?.sincronizarAhora !== 'function') return;
+    setTrabajando(true);
+    setErrorPanel('');
+    try {
+      await gestor.sincronizarAhora();
+      await cargar();
+    } catch {
+      setErrorPanel('No se pudo sincronizar ahora. Los cambios pendientes siguen guardados en este dispositivo.');
+    } finally {
+      setTrabajando(false);
+    }
+  };
+
+  const estadoSync = gestor?.syncEstado || {};
+  const ultimaSync = estadoSync.lastSync && Number.isFinite(Date.parse(estadoSync.lastSync))
+    ? new Date(estadoSync.lastSync).toLocaleString('es-EC')
+    : null;
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[150] p-4"
@@ -83,18 +139,36 @@ export default function PanelSincronizacion({ abierta, cerrar, gestor }) {
         <div className="flex items-start justify-between gap-4 p-5 border-b bg-gray-50">
           <div>
             <h2 id="titulo-sync" className="text-lg font-black text-gray-800">Estado de sincronizacion</h2>
+            <p className="text-xs text-gray-600 mt-1" aria-live="polite">
+              {estadoSync.online === false
+                ? 'Sin conexión: los cambios quedan guardados en este dispositivo.'
+                : 'Con conexión a internet.'}
+              {estadoSync.phase === 'syncing' ? ' Sincronizando ahora.' : ''}
+              {ultimaSync ? ` Última sincronización en esta sesión: ${ultimaSync}.` : ''}
+            </p>
             <p className="text-xs text-gray-500 mt-0.5">
               {ops.length === 0 ? 'No hay nada en la cola.'
                 : `${ops.length} en la cola - ${problemas.length} con problemas`}
             </p>
           </div>
-          <button type="button" onClick={cerrar} aria-label="Cerrar"
-                  className="text-gray-500 hover:text-gray-800 text-2xl leading-none px-2 py-1 rounded hover:bg-gray-100 transition-colors">
-            <span aria-hidden="true">x</span>
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            <button type="button" onClick={sincronizar}
+                    disabled={trabajando || estadoSync.online === false || estadoSync.phase === 'syncing'}
+                    aria-label="Sincronizar ahora"
+                    className="text-xs font-bold px-3 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition-colors">
+              {estadoSync.phase === 'syncing'
+                ? 'Sincronizando…'
+                : <><span className="hidden sm:inline">Sincronizar ahora</span><span className="sm:hidden">Sincronizar</span></>}
+            </button>
+            <button type="button" onClick={cerrar} aria-label="Cerrar"
+                    className="text-gray-500 hover:text-gray-800 text-2xl leading-none px-2 py-1 rounded hover:bg-gray-100 transition-colors">
+              <span aria-hidden="true">x</span>
+            </button>
+          </div>
         </div>
 
         <div className="p-5 overflow-y-auto flex-1">
+          {errorPanel && <p role="alert" className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg p-3 mb-3">{errorPanel}</p>}
           {cargando && <p className="text-sm text-gray-500">Cargando...</p>}
           {!cargando && ops.length === 0 && (
             <p className="text-sm text-gray-600 text-center py-8">Todo esta sincronizado. No hay nada pendiente.</p>

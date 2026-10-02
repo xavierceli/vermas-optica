@@ -239,29 +239,37 @@ function App() {
         </div>
 
         <header className="bg-white p-3 sm:p-4 rounded-xl shadow-sm flex flex-col md:flex-row justify-between items-center border border-gray-100 gap-3 sm:gap-4">
-          <div className="flex items-center justify-between w-full md:w-auto gap-3">
+          <div className="flex flex-wrap items-center justify-between w-full md:w-auto gap-3">
             <h1 className="font-extrabold text-teal-800 text-xl sm:text-2xl tracking-wider">VER+ ÓPTICA</h1>
-            <button
-              type="button"
-              onClick={() => {
-                if (fallos.length > 0 || descartadas > 0 || conflictos > 0) setPanelSync(true);
-                else g.sincronizarAhora();
-              }}
-              title={
-                historialParcial
-                  ? `Este equipo tiene ${descargas} de ${tope} consultas descargadas.`
-                  : fallos.length > 0 || descartadas > 0 || conflictos > 0
-                  ? 'Hay operaciones con problemas. Clic para resolverlas.'
-                  : `Cola Outbox: ${pendientes} pendiente(s). Clic para sincronizar.`
-              }
-              className={`flex items-center gap-2 px-2.5 sm:px-3 py-1.5 rounded-full border text-xs font-black shadow-sm transition-colors ${estadoOutbox.clases} ${sincronizando ? 'animate-pulse' : ''}`}
-            >
-              <span>{estadoOutbox.icono}</span>
-              <span className="leading-tight text-left">
-                <span className="block">{estadoOutbox.texto}</span>
-                <span className="block text-[10px] font-bold opacity-75">{estadoOutbox.detalle}</span>
-              </span>
-            </button>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setPanelSync(true)}
+                title={
+                  historialParcial
+                    ? `Este equipo tiene ${descargas} de ${tope} consultas descargadas.`
+                    : 'Abrir el estado de sincronización y los respaldos.'
+                }
+                className={`flex items-center gap-2 px-2.5 sm:px-3 py-1.5 rounded-full border text-xs font-black shadow-sm transition-colors ${estadoOutbox.clases} ${sincronizando ? 'animate-pulse' : ''}`}
+              >
+                <span>{estadoOutbox.icono}</span>
+                <span className="leading-tight text-left">
+                  <span className="block">{estadoOutbox.texto}</span>
+                  <span className="block text-[10px] font-bold opacity-75">{estadoOutbox.detalle}</span>
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setPanelSync(true)}
+                title="Abrir el estado de sincronización y los respaldos"
+                aria-label="Abrir sincronización y respaldo"
+                className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-full border border-teal-200 bg-teal-50 text-teal-800 text-[11px] sm:text-xs font-bold hover:bg-teal-100 transition-colors shrink-0"
+              >
+                <span aria-hidden="true">💾</span>
+                <span className="hidden sm:inline">Sincronización y respaldo</span>
+                <span className="sm:hidden">Respaldo</span>
+              </button>
+            </div>
           </div>
 
           {(fallos.length > 0 || descartadas > 0 || conflictos > 0) && (
