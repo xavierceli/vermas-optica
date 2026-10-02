@@ -1,13 +1,3 @@
-// ---------------------------------------------------------------------------
-// DECISIONES DE LA PANTALLA DE HISTORIAL
-// ---------------------------------------------------------------------------
-// Módulo puro, sin React ni Supabase, para poder probarlo con node --test.
-// Centraliza las reglas de negocio:
-//   · Detección estricta de ventas reales vs consultas clínicas solas.
-//   · Cálculo exacto de saldos pendientes sin depender de cachés desactualizadas.
-//   · Fusión inteligente de última RX clínica con última transacción comercial.
-//   · Generación estandarizada de diagnósticos CIE-10.
-// ---------------------------------------------------------------------------
 import { calcularSaldo, calcularTotal } from './reglas.js';
 
 export const NOMBRE_CONSUMIDOR_FINAL = 'CONSUMIDOR FINAL';
@@ -20,8 +10,6 @@ const aNumero = valor => {
 
 /**
  * Todo lo que una tarjeta del historial necesita decidir de una consulta.
- * @returns {{venta:number, descuento:number, abono:number, total:number,
- *            saldo:number, tieneDeuda:boolean, tienePedido:boolean}}
  */
 export const resumenConsulta = (item) => {
   const venta = aNumero(item?.venta);
@@ -29,7 +17,6 @@ export const resumenConsulta = (item) => {
   const abono = aNumero(item?.abono);
   const saldo = calcularSaldo(venta, descuento, abono);
 
-  // Solo hay pedido si existe una venta real asociada o trabajo de óptica
   const tienePedido = Boolean(aTexto(item?.pedido_id).trim())
     || aNumero(item?.venta) > 0
     || aTexto(item?.codigo_armazon).trim() !== ''
@@ -48,9 +35,6 @@ export const resumenConsulta = (item) => {
   };
 };
 
-/**
- * Campos clínicos y de refracción completos para conservar en la fusión del historial.
- */
 const CAMPOS_REFRACCION = [
   'esfera_od', 'esfera_oi', 'cilindro_od', 'cilindro_oi',
   'eje_od', 'eje_oi', 'adicion_od', 'adicion_oi',
@@ -59,15 +43,13 @@ const CAMPOS_REFRACCION = [
   'avsl_oi', 'avsc_oi', 'avcl_oi', 'avcc_oi'
 ];
 
-/** ¿Esta consulta tiene refracción, o es una visita sin receta? */
 export const tieneRefraccion = (item) =>
   ['esfera_od', 'esfera_oi', 'cilindro_od', 'cilindro_oi', 'adicion_od', 'adicion_oi']
     .some(campo => aTexto(item?.[campo]).trim() !== '');
 
 /**
- * Una sola tarjeta por paciente, de una lista ordenada por fecha descendente.
- * - Lo comercial (pedido, armazón, abono, saldo) proviene de la visita más reciente.
- * - La receta clínica completa proviene de la visita más reciente que tenga refracción.
+ * Agrupa la lista completa para la pantalla principal (1 tarjeta por paciente mostrando la visita más reciente)
+ * sin destruir ni mezclar los registros en el expediente histórico.
  */
 export const unaTarjetaPorCedula = (filas, claveDe) => {
   const clave = claveDe || (fila => {
@@ -79,16 +61,18 @@ export const unaTarjetaPorCedula = (filas, claveDe) => {
   });
 
   const elegidas = new Map();
+  // Se asume que las filas vienen ordenadas por fecha/hora descendente
   for (const fila of filas || []) {
     if (!fila) continue;
     const k = clave(fila);
     const actual = elegidas.get(k);
 
     if (!actual) {
-      elegidas.set(k, tieneRefraccion(fila) ? { ...fila, fecha_receta: fila.fecha } : { ...fila });
+      elegidas.set(k, { ...fila, fecha_receta: fila.fecha });
       continue;
     }
 
+    // Si la visita más reciente no tiene refracción pero una anterior sí, tomamos la graduación
     if (!tieneRefraccion(actual) && tieneRefraccion(fila)) {
       const receta = {};
       for (const campo of CAMPOS_REFRACCION) {
@@ -100,12 +84,7 @@ export const unaTarjetaPorCedula = (filas, claveDe) => {
         ...fila,
         ...actual,
         ...receta,
-        fecha_receta: aTexto(fila.fecha).trim() || actual.fecha_receta || actual.fecha
-      });
-    } else if (!actual.fecha_receta && tieneRefraccion(actual)) {
-      elegidas.set(k, {
-        ...actual,
-        fecha_receta: actual.fecha
+        fecha_receta: aTexto(fila.fecha).trim() || actual.fecha
       });
     }
   }
@@ -113,15 +92,11 @@ export const unaTarjetaPorCedula = (filas, claveDe) => {
   return [...elegidas.values()];
 };
 
-/**
- * Una sola tarjeta por paciente, excluyendo el CONSUMIDOR FINAL.
- */
 export const agruparPorCedula = (filas) =>
   unaTarjetaPorCedula(
     (filas || []).filter(item => item && aTexto(item.nombre).trim().toUpperCase() !== NOMBRE_CONSUMIDOR_FINAL)
   );
 
-/** Filtro del buscador sobre el historial local (mínimo 2 caracteres). */
 export const filtrarPorTermino = (filas, termino) => {
   const busqueda = aTexto(termino).trim().toLowerCase();
   if (busqueda.length < 2) return [];
@@ -132,9 +107,6 @@ export const filtrarPorTermino = (filas, termino) => {
   );
 };
 
-/**
- * Determina qué lista mostrar según la búsqueda activa.
- */
 export const listaSegunBusqueda = ({ busquedaTexto = '', resultados = null, historial = [] } = {}) => {
   const terminoActual = aTexto(busquedaTexto).trim();
   const hayTermino = terminoActual.length >= 2;
@@ -144,9 +116,6 @@ export const listaSegunBusqueda = ({ busquedaTexto = '', resultados = null, hist
   return { hayTermino, lista: agruparPorCedula(listaBruta) };
 };
 
-/**
- * Diagnóstico automático a partir de la refracción final con codificación CIE-10.
- */
 export const generarDiagnosticos = (item) => {
   try {
     const diagnosticos = [];

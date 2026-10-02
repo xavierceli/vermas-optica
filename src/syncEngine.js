@@ -330,13 +330,15 @@ const subirAdjuntosPendientes = async () => {
   }
 };
 
+// Descargamos TODAS las consultas históricas, NO solo los pacientes únicos
 const descargarHistorialPaginado = async () => {
   const { filas, paginasDescargadas } = await paginarConsulta({
     pageSize: TAMPAGINA_HISTORIAL,
     maxPaginas: MAX_PAGINAS_HISTORIAL,
     fetchPagina: async (desde, limite) => {
+      // Usamos vista_pacientes para traer TODAS las consultas de cada paciente
       const { data, error } = await supabase
-        .from('vista_pacientes_unicos')
+        .from('vista_pacientes')
         .select('*')
         .order('fecha', { ascending: false })
         .order('id', { ascending: false })
@@ -351,13 +353,13 @@ const descargarHistorialPaginado = async () => {
 const leerCedulasArchivadasDelServidor = async () => {
   try {
     const soloVivas = await supabase
-      .from('consultas_clinicas')
+      .from('consultas')
       .select('paciente_id')
       .is('archived_at', null);
     if (soloVivas.error) throw soloVivas.error;
 
     const { data: archivadas, error: errorArchivadas } = await supabase
-      .from('consultas_clinicas')
+      .from('consultas')
       .select('paciente_id')
       .not('archived_at', 'is', null);
     if (errorArchivadas) throw errorArchivadas;
@@ -414,9 +416,7 @@ const pullServerCache = async () => {
     console.warn('Historial local no actualizado:', error?.message || error);
   }
 
-  // 1. PRIMERO leemos y persistimos las cédulas archivadas
   await leerCedulasArchivadasDelServidor();
-  // 2. LUEGO procesamos el caché para que aplique el filtro sobre las cédulas actualizadas
   await cacheServerHistorial(historialRows);
   await cacheServerCatalog({ inventory: inventoryResult.data || [], prices: pricesResult.data || [] });
   
