@@ -194,6 +194,16 @@ export default function Historial({
     );
   };
 
+  const manejarBorradoCompleto = async (item) => {
+    const cedula = normalizeCedula(item?.cedula);
+    // Limpiamos de inmediato los resultados retenidos en el buscador
+    setResultadosBusqueda(prev => ({
+      ...prev,
+      datos: (prev.datos || []).filter(d => normalizeCedula(d.cedula) !== cedula)
+    }));
+    await borrarHistoriaClinica(item);
+  };
+
   if (expedienteActivo) {
     return (
       <div className="bg-white rounded-xl shadow-lg border-t-4 border-teal-600 overflow-hidden">
@@ -269,11 +279,11 @@ export default function Historial({
                       </th>
                       
                       <th className="py-2 px-3 border-r-2 border-b-2 border-indigo-300 bg-indigo-100 text-indigo-950 font-black tracking-wider uppercase text-xs" colSpan="8">
-                        👁️ Ojo Derecho (OD)
+                        👁️️ Ojo Derecho (OD)
                       </th>
 
                       <th className="py-2 px-3 border-r border-b-2 border-emerald-300 bg-emerald-100 text-emerald-950 font-black tracking-wider uppercase text-xs" colSpan="8">
-                        👁️️ Ojo Izquierdo (OI)
+                        👁️ Ojo Izquierdo (OI)
                       </th>
 
                       <th className="p-2 border-l border-b bg-red-50 text-red-800" rowSpan="2">Acción</th>
@@ -564,7 +574,7 @@ export default function Historial({
                         + '• Historial de refracción y consultas\n'
                         + '• Pedidos, ventas y cobros asociados a esta cédula\n\n'
                         + 'Esta acción NO se puede deshacer.',
-                        () => borrarHistoriaClinica(item)
+                        () => manejarBorradoCompleto(item)
                       )}
                       className="text-xs sm:text-sm bg-red-50 text-red-700 border border-red-200 px-2.5 py-1.5 rounded-lg font-bold shadow-sm hover:bg-red-100 transition-colors"
                       title="Eliminar definitivamente todo el paciente y sus ventas"
