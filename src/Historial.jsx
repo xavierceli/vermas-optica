@@ -196,7 +196,6 @@ export default function Historial({
 
   const manejarBorradoCompleto = async (item) => {
     const cedula = normalizeCedula(item?.cedula);
-    // Limpiamos de inmediato los resultados retenidos en el buscador
     setResultadosBusqueda(prev => ({
       ...prev,
       datos: (prev.datos || []).filter(d => normalizeCedula(d.cedula) !== cedula)
@@ -279,7 +278,7 @@ export default function Historial({
                       </th>
                       
                       <th className="py-2 px-3 border-r-2 border-b-2 border-indigo-300 bg-indigo-100 text-indigo-950 font-black tracking-wider uppercase text-xs" colSpan="8">
-                        👁️️ Ojo Derecho (OD)
+                        👁️ Ojo Derecho (OD)
                       </th>
 
                       <th className="py-2 px-3 border-r border-b-2 border-emerald-300 bg-emerald-100 text-emerald-950 font-black tracking-wider uppercase text-xs" colSpan="8">
@@ -660,54 +659,46 @@ export default function Historial({
                           </div>
 
                           {(() => {
-                            const listaMetodos = [];
+                            // Extracción limpia y sin duplicados de métodos de pago
+                            const metodosSet = new Set();
                             const inicial = safeString(item.forma_pago).trim();
-                            if (inicial) listaMetodos.push(inicial);
+                            if (inicial) metodosSet.add(inicial);
 
                             const notaCompleta = safeString(item.pago_nota);
                             const regexAbonos = /\+\s*\$?\s*[\d.]+\s+(Efectivo|Transferencia|Tarjeta)/gi;
                             let match;
                             while ((match = regexAbonos.exec(notaCompleta)) !== null) {
                               const metodoDetectado = match[1].charAt(0).toUpperCase() + match[1].slice(1).toLowerCase();
-                              listaMetodos.push(metodoDetectado);
+                              metodosSet.add(metodoDetectado);
                             }
 
-                            if (item.comprobante_url && !listaMetodos.some(m => m.toLowerCase().includes('transferencia'))) {
-                              listaMetodos.push('Transferencia');
+                            if (item.comprobante_url && !Array.from(metodosSet).some(m => m.toLowerCase().includes('transferencia'))) {
+                              metodosSet.add('Transferencia');
                             }
 
-                            const metodosReales = listaMetodos.length > 0 ? listaMetodos : ['Efectivo'];
+                            const metodosReales = Array.from(metodosSet);
+                            if (metodosReales.length === 0) metodosReales.push('Efectivo');
 
                             return (
                               <div className="pt-1 text-[11px]">
                                 <div className="text-gray-700 flex items-center gap-1.5 flex-wrap">
                                   <strong>Método(s) de pago:</strong>
                                   <div className="inline-flex items-center gap-1.5 flex-wrap">
-                                    {metodosReales.map((metodo, idx) => {
-                                      const esTransferencia = metodo.toLowerCase().includes('transferencia');
-                                      const tieneFoto = esTransferencia && Boolean(item.comprobante_url);
-
-                                      if (tieneFoto) {
-                                        return (
-                                          <span key={idx} className="inline-flex items-center">
-                                            <BotonComprobante
-                                              ruta={item.comprobante_url}
-                                              refId={item.pedido_id || item.id}
-                                              texto="Transferencia 📄"
-                                              className="font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-2 py-0.5 rounded border border-indigo-300 shadow-sm cursor-pointer transition-colors"
-                                            />
-                                            {idx < metodosReales.length - 1 && <span className="ml-1 text-gray-500">,</span>}
-                                          </span>
-                                        );
-                                      }
-
-                                      return (
-                                        <span key={idx} className="inline-flex items-center font-bold text-gray-900 bg-gray-100 px-2 py-0.5 rounded border border-gray-200">
-                                          {metodo}
-                                          {idx < metodosReales.length - 1 && <span className="ml-0.5 text-gray-500">,</span>}
-                                        </span>
-                                      );
-                                    })}
+                                    {metodosReales.map((metodo, idx) => (
+                                      <span key={idx} className="inline-flex items-center font-bold text-gray-900 bg-gray-100 px-2 py-0.5 rounded border border-gray-200">
+                                        {metodo}
+                                      </span>
+                                    ))}
+                                    
+                                    {/* Un solo botón de comprobante limpio por pedido si existe voucher */}
+                                    {item.comprobante_url && (
+                                      <BotonComprobante
+                                        ruta={item.comprobante_url}
+                                        refId={item.pedido_id || item.id}
+                                        texto="Ver Comprobante 📄"
+                                        className="font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-0.5 rounded border border-indigo-300 shadow-sm cursor-pointer transition-colors"
+                                      />
+                                    )}
                                   </div>
                                 </div>
                               </div>

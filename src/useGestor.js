@@ -518,8 +518,6 @@ export function useGestor() {
         clinicaData.fecha = `${fechaBase} ${horaActual}`;
       }
 
-      // Si editandoId tiene valor, se modifica esa visita puntual.
-      // Si editandoId es null, SIEMPRE se genera un idConsulta nuevo para crear una visita histórica separada.
       const idConsulta = editandoId ? editandoId : generarId();
 
       await guardarConsultaLocal({
@@ -584,6 +582,11 @@ export function useGestor() {
             .filter(p => safeString(p?.cedula).replace(/[^0-9A-Za-z]/g, '').toLowerCase() === cedulaLimpia)
             .delete();
         }
+        if (localDb.cache) {
+          await localDb.cache
+            .filter(r => safeString(r?.cedula).replace(/[^0-9A-Za-z]/g, '').toLowerCase() === cedulaLimpia)
+            .delete();
+        }
         if (localDb.cedulasArchivadas) {
           await localDb.cedulasArchivadas.delete(cedula);
         }
@@ -604,7 +607,6 @@ export function useGestor() {
     }
   };
 
-  // Corrige una consulta existente (el botón lápiz ✏️)
   const cargarParaEditarClinico = (item) => { 
     let itemFormateado = { ...item };
     Object.keys(itemFormateado).forEach(key => { if (itemFormateado[key] === null) itemFormateado[key] = ''; });
@@ -614,7 +616,6 @@ export function useGestor() {
     window.scrollTo({ top: 0, behavior: 'smooth' }); 
   };
 
-  // Inicia una NUEVA consulta/evaluación manteniendo datos personales pero creando un registro nuevo
   const iniciarNuevaConsulta = (item) => {
     const estadoLimpio = crearEstadoPaciente(hoy);
     const nuevaFicha = {
@@ -635,7 +636,7 @@ export function useGestor() {
     setPaciente(nuevaFicha);
     setEditandoId(null);
     setVistaActual('nueva_medicion');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    window.scrollTo({ top: 0, behavior: 'smooth' }); 
   };
 
   const abrirPedido = (item) => {
@@ -868,19 +869,41 @@ export function useGestor() {
         initialPayment
       });
 
+      // ACTUALIZACIÓN INMEDIATA DE ESTADOS EN REACT (Para no tener que recargar dos veces)
+      const ventaActualizada = {
+        ...pedidoSeleccionado,
+        ...venta,
+        id: consultationId,
+        pedido_id: idPedido,
+        abono: String(montoAPagar > 0 ? (safeNum(venta.abono) + montoAPagar).toFixed(2) : venta.abono)
+      };
+
+      setHistorial(prev => {
+        const existe = prev.some(h => String(h.id) === String(consultationId) || (safeString(h.cedula) === cedulaPaciente && !h.pedido_id));
+        if (existe) {
+          return prev.map(h => (String(h.id) === String(consultationId) || (safeString(h.cedula) === cedulaPaciente && !h.pedido_id)) ? { ...h, ...ventaActualizada } : h);
+        }
+        return [ventaActualizada, ...prev];
+      });
+
+      setVentasLocales(prev => {
+        const index = prev.findIndex(v => String(v.id) === String(idPedido));
+        if (index >= 0) {
+          const copia = [...prev];
+          copia[index] = { ...copia[index], ...ventaActualizada };
+          return copia;
+        }
+        return [ventaActualizada, ...prev];
+      });
+
       setPedidoSeleccionado(null);
       setVistaActual('pedidos_lista');
       
+      // Sincronización transparente en segundo plano
       void obtenerDatos({ sync: true });
-      const estadoSync = await sincronizarAhora({ pull: false });
-      const subio = (estadoSync?.pending || 0) === 0;
-      
-      mostrarToast(
-        subio
-          ? 'Venta guardada y sincronizada con la nube.'
-          : 'Venta guardada en este dispositivo. Se subirá a la nube en unos segundos.',
-        subio ? 'success' : 'warning'
-      );
+      void sincronizarAhora({ pull: false });
+
+      mostrarToast('Venta guardada exitosamente.', 'success');
       return true;
     } catch (e) {
       mostrarToast('Error al guardar pedido: ' + e.message, 'error');
