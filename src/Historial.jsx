@@ -35,12 +35,10 @@ export default function Historial({
 
     const timer = setTimeout(async () => {
       setBuscando(true);
-      let borradas = new Set();
       let filtradosLocales = [];
       try {
         const snapshot = await obtenerSnapshotLocal();
         const histLocal = snapshot?.historial || historialReciente || [];
-        borradas = new Set(snapshot?.cedulasArchivadas || []);
         const busqueda = termino.toLowerCase();
         const filtrados = histLocal.filter(item => 
           safeString(item.nombre).toLowerCase().includes(busqueda) ||
@@ -49,13 +47,12 @@ export default function Historial({
         );
         filtradosLocales = filtrados;
         if (filtrados.length > 0) setResultadosBusqueda({ termino, datos: filtrados });
-      } catch { /* continuar con la búsqueda remota si la local falla */ }
+      } catch { /* continuar si falla */ }
 
       try {
         if (navigator.onLine) {
           const datos = await buscarPacientesEnSupabase(termino);
-          const enNube = (datos || []).filter(d => !borradas.has(normalizeCedula(d.cedula)));
-          if (enNube.length > 0) setResultadosBusqueda({ termino, datos: enNube });
+          if (datos && datos.length > 0) setResultadosBusqueda({ termino, datos });
           else if (filtradosLocales.length === 0) setResultadosBusqueda({ termino, datos: [] });
         }
       } catch {
@@ -89,42 +86,89 @@ export default function Historial({
       return;
     }
 
+    let mapaVisitas = new Map();
+
+    // 1. Cargar todas las consultas del paciente guardadas en IndexedDB
     try {
       const snapshot = await obtenerSnapshotLocal();
       const histLocal = snapshot?.historial || historialReciente || [];
 
-      // Filtro por cédula: incluye todas las fechas y actualizaciones que no estén archivadas
-      const registrosLocales = histLocal
+      histLocal
         .filter(r => normalizeCedula(r.cedula) === cedulaObjetivo)
         .filter(r => !r.archived_at)
-        .sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')));
+        .forEach(r => {
+          const clave = String(r.id || `${r.fecha}_${r.cedula}`);
+          mapaVisitas.set(clave, r);
+        });
       
-      setRegistrosPaciente(registrosLocales);
-      if (registrosLocales.length > 0) {
-        setCargandoExpediente(false);
+      if (mapaVisitas.size > 0) {
+        const listaInicial = Array.from(mapaVisitas.values())
+          .sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')));
+        setRegistrosPaciente(listaInicial);
       }
     } catch (err) {
       console.warn("Fallo al leer datos locales del paciente:", err);
     }
 
+    // 2. Traer el historial completo desde Supabase (todas las fechas de consultas)
     try {
-      if (!navigator.onLine) return;
+      if (navigator.onLine) {
+        let datosConsultas = [];
 
-      const { data, error } = await supabase
-        .from('vista_pacientes')
-        .select('*')
-        .eq('cedula', paciente.cedula)
-        .order('fecha', { ascending: false });
-        
-      if (error) throw error;
-      if (data && data.length > 0) {
-        const consultasVivas = data.filter(d => !d.archived_at);
-        if (consultasVivas.length > 0) {
-          setRegistrosPaciente(consultasVivas);
+        // Primero consultamos la tabla maestra 'consultas'
+        const { data: resConsultas } = await supabase
+          .from('consultas')
+          .select('*')
+          .eq('cedula', paciente.cedula)
+          .is('archived_at', null)
+          .order('fecha', { ascending: false });
+
+        if (resConsultas && resConsultas.length > 0) {
+          datosConsultas = resConsultas;
+        }
+
+        // Si no trajo resultados, intentamos por paciente_id
+        if (datosConsultas.length === 0 && (paciente.patient_id || paciente.id)) {
+          const resPorPid = await supabase
+            .from('consultas')
+            .select('*')
+            .eq('paciente_id', paciente.patient_id || paciente.id)
+            .is('archived_at', null)
+            .order('fecha', { ascending: false });
+          if (resPorPid.data && resPorPid.data.length > 0) {
+            datosConsultas = resPorPid.data;
+          }
+        }
+
+        // Si no existe la tabla consultas o está vacía, leemos de vista_pacientes
+        if (datosConsultas.length === 0) {
+          const resVista = await supabase
+            .from('vista_pacientes')
+            .select('*')
+            .eq('cedula', paciente.cedula)
+            .order('fecha', { ascending: false });
+          if (resVista.data) datosConsultas = resVista.data;
+        }
+
+        if (datosConsultas && datosConsultas.length > 0) {
+          datosConsultas
+            .filter(d => !d.archived_at)
+            .forEach(d => {
+              const clave = String(d.id || `${d.fecha}_${d.cedula}`);
+              const existente = mapaVisitas.get(clave);
+              mapaVisitas.set(clave, { ...existente, ...d });
+            });
+        }
+
+        const listaFinal = Array.from(mapaVisitas.values())
+          .sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')));
+
+        if (listaFinal.length > 0) {
+          setRegistrosPaciente(listaFinal);
         }
       }
     } catch (e) { 
-      console.warn("Supabase no respondió a tiempo para el expediente:", e);
+      console.warn("Supabase no respondió para el expediente completo:", e);
     } finally {
       setCargandoExpediente(false);
     }
@@ -201,19 +245,16 @@ export default function Historial({
               <div className="overflow-x-auto shadow-sm border border-gray-300 rounded-xl">
                 <table className="w-full text-center text-xs bg-white min-w-[980px]">
                   <thead>
-                    {/* Encabezado Nivel 1: Bloques OD y OI con colores diferenciados */}
                     <tr>
                       <th className="p-2 border-r border-b bg-gray-100 text-gray-700 w-10" rowSpan="2"></th>
                       <th className="p-2 border-r-2 border-b border-gray-300 bg-gray-100 text-gray-800 font-extrabold align-bottom" rowSpan="2">
                         Fecha
                       </th>
                       
-                      {/* BLOQUE OJO DERECHO (AZUL ÍNDIGO) */}
                       <th className="py-2 px-3 border-r-2 border-b-2 border-indigo-300 bg-indigo-100 text-indigo-950 font-black tracking-wider uppercase text-xs" colSpan="8">
                         👁️ Ojo Derecho (OD)
                       </th>
 
-                      {/* BLOQUE OJO IZQUIERDO (VERDE ESMERALDA) */}
                       <th className="py-2 px-3 border-r border-b-2 border-emerald-300 bg-emerald-100 text-emerald-950 font-black tracking-wider uppercase text-xs" colSpan="8">
                         👁️ Ojo Izquierdo (OI)
                       </th>
@@ -221,9 +262,7 @@ export default function Historial({
                       <th className="p-2 border-l border-b bg-red-50 text-red-800" rowSpan="2">Acción</th>
                     </tr>
 
-                    {/* Encabezado Nivel 2: Columnas de cada ojo */}
                     <tr className="text-gray-700 text-[11px]">
-                      {/* Columnas OD */}
                       <th className="p-1 border-r border-b bg-indigo-50/70 font-bold">Esf.</th>
                       <th className="p-1 border-r border-b bg-indigo-50/70 font-bold">Cil.</th>
                       <th className="p-1 border-r border-b bg-indigo-50/70 font-bold">Eje</th>
@@ -233,7 +272,6 @@ export default function Historial({
                       <th className="p-1 border-r border-b bg-indigo-50 text-indigo-800 font-bold">AV.CL</th>
                       <th className="p-1 border-r-2 border-b border-indigo-300 bg-indigo-100 text-indigo-950 font-black">AV.CC</th>
 
-                      {/* Columnas OI */}
                       <th className="p-1 border-r border-b bg-emerald-50/70 font-bold">Esf.</th>
                       <th className="p-1 border-r border-b bg-emerald-50/70 font-bold">Cil.</th>
                       <th className="p-1 border-r border-b bg-emerald-50/70 font-bold">Eje</th>
@@ -264,7 +302,6 @@ export default function Historial({
                             {safeString(reg.fecha)}
                           </td>
                           
-                          {/* VALORES OJO DERECHO (OD) */}
                           <td className="p-2 border-r font-semibold text-gray-900">{safeString(reg.esfera_od) || '—'}</td>
                           <td className="p-2 border-r font-semibold text-gray-900">{safeString(reg.cilindro_od) || '—'}</td>
                           <td className="p-2 border-r font-semibold text-gray-900">{safeString(reg.eje_od) || '—'}</td>
@@ -276,7 +313,6 @@ export default function Historial({
                             {safeString(reg.avcc_od) || '—'}
                           </td>
 
-                          {/* VALORES OJO IZQUIERDO (OI) */}
                           <td className="p-2 border-r font-semibold text-gray-900">{safeString(reg.esfera_oi) || '—'}</td>
                           <td className="p-2 border-r font-semibold text-gray-900">{safeString(reg.cilindro_oi) || '—'}</td>
                           <td className="p-2 border-r font-semibold text-gray-900">{safeString(reg.eje_oi) || '—'}</td>
@@ -318,8 +354,8 @@ export default function Historial({
                                 
                                 <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
                                   <h4 className="font-bold text-indigo-900 border-b border-gray-100 pb-1 mb-2">👁 Queratometría</h4>
-                                  <p className="mb-1"><strong className="text-gray-600">OD:</strong> <span className="text-gray-900 font-semibold">{safeString(reg.k1_d_od) || '-'} | K2: {safeString(reg.k2_d_od) || '-'}</span></p>
-                                  <p><strong className="text-gray-600">OI:</strong> <span className="text-gray-900 font-semibold">{safeString(reg.k1_d_oi) || '-'} | K2: {safeString(reg.k2_d_oi) || '-'}</span></p>
+                                  <p className="mb-1"><strong className="text-gray-600">OD:</strong> <span className="text-gray-900 font-semibold">K1: {safeString(reg.k1_d_od) || '-'} | K2: {safeString(reg.k2_d_od) || '-'}</span></p>
+                                  <p><strong className="text-gray-600">OI:</strong> <span className="text-gray-900 font-semibold">K1: {safeString(reg.k1_d_oi) || '-'} | K2: {safeString(reg.k2_d_oi) || '-'}</span></p>
                                 </div>
 
                                 <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
@@ -416,7 +452,7 @@ export default function Historial({
           onChange={(e) => setBusquedaTexto(e.target.value)} 
           className="flex-1 p-2.5 sm:p-3 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 shadow-sm text-sm font-medium bg-gray-50 focus:bg-white text-gray-900" 
         />
-        {buscando && hayTermino && <div className="flex items-center text-xs font-bold text-blue-700 px-2 shrink-0">Buscando... ☁️️</div>}
+        {buscando && hayTermino && <div className="flex items-center text-xs font-bold text-blue-700 px-2 shrink-0">Buscando... ☁️</div>}
       </div>
 
       <div className="space-y-4 sm:space-y-6">
@@ -485,14 +521,16 @@ export default function Historial({
                     <button 
                       type="button" 
                       onClick={() => confirmarAccion(
-                        `¿Eliminar a ${safeString(item.nombre) || 'este paciente'}?\n\n`
-                        + 'Se archivará TODO su historial, no solo la última visita. '
-                        + 'Las ventas y los pagos ya cobrados no se tocan, pero la ficha '
-                        + 'clínica dejará de aparecer en este y en cualquier otro equipo.',
+                        `¿ELIMINAR DEFINITIVAMENTE A ${safeString(item.nombre) || 'ESTE PACIENTE'}?\n\n`
+                        + '⚠️ ATENCIÓN: Se eliminará permanentemente toda su información:\n'
+                        + '• Ficha clínica y antecedentes\n'
+                        + '• Historial de refracción y consultas\n'
+                        + '• Pedidos, ventas y cobros asociados a esta cédula\n\n'
+                        + 'Esta acción NO se puede deshacer.',
                         () => borrarHistoriaClinica(item)
                       )}
                       className="text-xs sm:text-sm bg-red-50 text-red-700 border border-red-200 px-2.5 py-1.5 rounded-lg font-bold shadow-sm hover:bg-red-100 transition-colors"
-                      title="Eliminar todo el historial de este paciente"
+                      title="Eliminar definitivamente todo el paciente y sus ventas"
                     >
                       🗑️
                     </button>
@@ -525,19 +563,17 @@ export default function Historial({
                     </div>
                   </div>
 
-                  {/* Detalle Comercial / Pedido Actualizado */}
                   <div className={`p-3 sm:p-4 rounded-xl border shadow-inner flex flex-col justify-between transition-colors ${tieneDeuda ? 'bg-red-50/40 border-red-200' : 'bg-gray-50 border-gray-100'}`}>
                     <div>
                       <div className="flex justify-between items-center mb-2">
                         <strong className="text-gray-900 text-sm sm:text-base font-extrabold block">Último Detalle Comercial / Pedido</strong>
-                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold shadow-sm ${item.estado === 'Entregado' ? 'bg-green-100 text-green-900' : item.estado === 'Listo para Entrega' ? 'bg-blue-100 text-blue-900' : 'bg-yellow-100 text-yellow-900'}`}>
+                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold shadow-sm ${item.estado === 'Entregado' ? 'bg-green-100 text-green-900' : item.estado === 'Listo para Entrega' ? 'bg-blue-100 text-blue-900' : item.estado === 'Anulado' ? 'bg-red-100 text-red-900' : 'bg-yellow-100 text-yellow-900'}`}>
                           {safeString(item.estado) || 'Sin estado'}
                         </span>
                       </div>
 
                       {tienePedido ? (
                         <div className="space-y-1.5 text-xs text-gray-800">
-                          {/* 1. Detalle del Producto Vendido */}
                           <div className="bg-white p-2.5 rounded-lg border border-gray-200 shadow-sm space-y-1">
                             <p>
                               <strong className="text-indigo-900">👓 Armazón:</strong>{' '}
@@ -555,7 +591,6 @@ export default function Historial({
                               </p>
                             )}
 
-                            {/* Tratamientos aplicados */}
                             {Boolean(item.tratam_ar === 'SI' || item.tratam_ar_azul === 'SI' || item.tratam_azul === 'SI' || item.tratam_foto === 'SI' || item.tratam_trans === 'SI' || item.tratam_tinturado === 'SI') && (
                               <p className="text-[11px] text-teal-800 font-bold">
                                 ✨ Tratamientos:{' '}
@@ -577,32 +612,31 @@ export default function Historial({
                             )}
                           </div>
 
-                          {/* 2. Métodos de pago con enlace integrado al comprobante */}
                           {(() => {
-                            const metodos = [];
+                            const listaMetodos = [];
                             const inicial = safeString(item.forma_pago).trim();
-                            if (inicial) metodos.push(inicial);
+                            if (inicial) listaMetodos.push(inicial);
 
                             const notaCompleta = safeString(item.pago_nota);
                             const regexAbonos = /\+\s*\$?\s*[\d.]+\s+(Efectivo|Transferencia|Tarjeta)/gi;
                             let match;
                             while ((match = regexAbonos.exec(notaCompleta)) !== null) {
                               const metodoDetectado = match[1].charAt(0).toUpperCase() + match[1].slice(1).toLowerCase();
-                              metodos.push(metodoDetectado);
+                              listaMetodos.push(metodoDetectado);
                             }
 
-                            if (item.comprobante_url && !metodos.some(m => m.toLowerCase().includes('transferencia'))) {
-                              metodos.push('Transferencia');
+                            if (item.comprobante_url && !listaMetodos.some(m => m.toLowerCase().includes('transferencia'))) {
+                              listaMetodos.push('Transferencia');
                             }
 
-                            const listaFinal = metodos.length > 0 ? metodos : ['Efectivo'];
+                            const metodosReales = listaMetodos.length > 0 ? listaMetodos : ['Efectivo'];
 
                             return (
                               <div className="pt-1 text-[11px]">
                                 <div className="text-gray-700 flex items-center gap-1.5 flex-wrap">
                                   <strong>Método(s) de pago:</strong>
                                   <div className="inline-flex items-center gap-1.5 flex-wrap">
-                                    {listaFinal.map((metodo, idx) => {
+                                    {metodosReales.map((metodo, idx) => {
                                       const esTransferencia = metodo.toLowerCase().includes('transferencia');
                                       const tieneFoto = esTransferencia && Boolean(item.comprobante_url);
 
@@ -615,7 +649,7 @@ export default function Historial({
                                               texto="Transferencia 📄"
                                               className="font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-2 py-0.5 rounded border border-indigo-300 shadow-sm cursor-pointer transition-colors"
                                             />
-                                            {idx < listaFinal.length - 1 && <span className="ml-1 text-gray-500">,</span>}
+                                            {idx < metodosReales.length - 1 && <span className="ml-1 text-gray-500">,</span>}
                                           </span>
                                         );
                                       }
@@ -623,7 +657,7 @@ export default function Historial({
                                       return (
                                         <span key={idx} className="inline-flex items-center font-bold text-gray-900 bg-gray-100 px-2 py-0.5 rounded border border-gray-200">
                                           {metodo}
-                                          {idx < listaFinal.length - 1 && <span className="ml-0.5 text-gray-500">,</span>}
+                                          {idx < metodosReales.length - 1 && <span className="ml-0.5 text-gray-500">,</span>}
                                         </span>
                                       );
                                     })}
@@ -644,7 +678,6 @@ export default function Historial({
                       )}
                     </div>
 
-                    {/* 3. Costo final y botón dinámico (Crear Venta vs Ver Venta) */}
                     <div className="mt-3 pt-3 border-t border-gray-200 flex justify-between items-end">
                       <div>
                         {tienePedido ? (
@@ -669,7 +702,6 @@ export default function Historial({
                         )}
                       </div>
 
-                      {/* Botón dinámico según el estado del pedido */}
                       <button 
                         type="button" 
                         onClick={() => abrirPedido(item)} 
@@ -681,7 +713,7 @@ export default function Historial({
                             : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200'
                         }`}
                       >
-                        {tienePedido ? '👁️️ Ver Venta' : '➕ Crear Venta'}
+                        {tienePedido ? '👁️ Ver Venta' : '➕ Crear Venta'}
                       </button>
                     </div>
                   </div>
