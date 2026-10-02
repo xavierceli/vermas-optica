@@ -154,7 +154,6 @@ export function useGestor() {
     }
     const snapshot = await obtenerSnapshotLocal();
 
-    // Leemos directamente las ventas reales de la tabla sales de Dexie
     try {
       const ventasDirectas = await localDb.sales.toArray();
       if (ventasDirectas && ventasDirectas.length > 0) {
@@ -535,31 +534,74 @@ export function useGestor() {
     }
   };
 
+  // Eliminación definitiva en cascada (local y nube)
   const borrarHistoriaClinica = async (item) => {
-    if (item.pedido_id && safeString(item.estado) !== 'Anulado') {
-      return mostrarToast('Esta consulta tiene una venta ACTIVA. Anula la venta primero y luego podrás archivar la consulta.', 'warning');
-    }
-    try {
-      const resultado = await archivarConsultaLocal(item.id);
-      if (resultado?.yaArchivada) {
-        mostrarToast(resultado.motivo || 'La consulta ya estaba archivada.', 'warning');
-        await obtenerDatos({ sync: false });
-        return;
-      }
-      
-      await obtenerDatos({ sync: false });
-      
-      const estadoSync = await sincronizarAhora({ pull: true });
-      const subio = (estadoSync?.pending || 0) === 0;
+    const cedula = safeString(item?.cedula).trim();
+    if (!cedula) return;
 
-      mostrarToast(
-        subio 
-          ? 'Paciente eliminado y archivado en todos los dispositivos.' 
-          : 'Paciente eliminado localmente. Se sincronizará con la nube al reconectar.', 
-        subio ? 'success' : 'warning'
-      );
+    try {
+      // 1. Ejecutar purga total en Supabase (RPC en cascada)
+      if (navigator.onLine) {
+        const { error } = await supabase.rpc('eliminar_paciente_completo', { p_cedula: cedula });
+        if (error) {
+          console.warn('[borrar] Fallo al invocar RPC eliminar_paciente_completo:', error.message);
+        }
+      }
+
+      // 2. Borrado físico local en Dexie (limpieza exhaustiva de tablas)
+      try {
+        const cedulaLimpia = cedula.replace(/[^0-9A-Za-z]/g, '').toLowerCase();
+
+        // Borrar de historial y consultas
+        if (localDb.historial) {
+          await localDb.historial
+            .filter(h => safeString(h?.cedula).replace(/[^0-9A-Za-z]/g, '').toLowerCase() === cedulaLimpia)
+            .delete();
+        }
+        if (localDb.consultations) {
+          await localDb.consultations
+            .filter(c => safeString(c?.cedula).replace(/[^0-9A-Za-z]/g, '').toLowerCase() === cedulaLimpia)
+            .delete();
+        }
+
+        // Borrar de pedidos / ventas
+        if (localDb.sales) {
+          await localDb.sales
+            .filter(s => safeString(s?.cedula).replace(/[^0-9A-Za-z]/g, '').toLowerCase() === cedulaLimpia)
+            .delete();
+        }
+        if (localDb.pedidos) {
+          await localDb.pedidos
+            .filter(p => safeString(p?.cedula).replace(/[^0-9A-Za-z]/g, '').toLowerCase() === cedulaLimpia)
+            .delete();
+        }
+
+        // Borrar de pacientes y cédulas archivadas
+        if (localDb.patients) {
+          await localDb.patients
+            .filter(p => safeString(p?.cedula).replace(/[^0-9A-Za-z]/g, '').toLowerCase() === cedulaLimpia)
+            .delete();
+        }
+        if (localDb.cedulasArchivadas) {
+          await localDb.cedulasArchivadas.delete(cedula);
+        }
+      } catch (errDb) {
+        console.warn('[borrar] Limpieza local completada con advertencias:', errDb);
+      }
+
+      // 3. Purgar estados de memoria de React inmediatamente
+      const matchCedula = c => safeString(c).replace(/[^0-9A-Za-z]/g, '').toLowerCase() === cedula.replace(/[^0-9A-Za-z]/g, '').toLowerCase();
+      setHistorial(prev => prev.filter(h => !matchCedula(h?.cedula)));
+      setVentasLocales(prev => prev.filter(v => !matchCedula(v?.cedula)));
+      setVentasArchivadas(prev => prev.filter(v => !matchCedula(v?.cedula)));
+
+      // 4. Actualizar snapshot local sin traer registros muertos
+      await obtenerDatos({ sync: false });
+
+      mostrarToast('Paciente y todos sus registros fueron eliminados de raíz.', 'success');
     } catch (err) {
-      mostrarToast('No se pudo archivar la consulta: ' + err.message, 'error');
+      console.error('[borrar] Error en eliminación definitiva:', err);
+      mostrarToast('No se pudo completar la eliminación: ' + err.message, 'error');
     }
   };
 
@@ -876,7 +918,6 @@ export function useGestor() {
 
   const queryGlobal = safeString(busqueda).toLowerCase();
   
-  // Unificamos historial + ventasArchivadas + ventasLocales
   const todosLosPedidosUnificados = useMemo(() => {
     const mapa = new Map();
     const fuentes = [
@@ -901,7 +942,6 @@ export function useGestor() {
 
       if (mapa.has(clave)) {
         const existente = mapa.get(clave);
-        // Priorizamos la fila que tenga más información de cobros
         if (ab > safeNum(existente.abono) || v > safeNum(existente.venta)) {
           mapa.set(clave, { ...existente, ...item, venta: v || existente.venta, abono: ab || existente.abono });
         }
@@ -936,7 +976,7 @@ export function useGestor() {
       const fechaActual = new Date();
       const anio = fechaActual.getFullYear();
       const mes = String(fechaActual.getMonth() + 1).padStart(2, '0');
-      const prefijoMesActual = `${anio}-${mes}`; // Ej: "2026-10"
+      const prefijoMesActual = `${anio}-${mes}`;
 
       let ventasMes = 0;
       let gastosMes = 0;
@@ -945,7 +985,6 @@ export function useGestor() {
       let abonosPendientes = 0;
       const cedulasUnicas = new Set();
 
-      // Recorremos las ventas unificadas
       todosLosPedidosUnificados.forEach(p => {
         if (!p) return;
         const estado = safeString(p.estado).trim().toLowerCase();
@@ -955,7 +994,6 @@ export function useGestor() {
         const abonoReal = safeNum(p.abono);
         const saldo = calcularSaldo(p.venta || p.total || 0, p.descuento || 0, abonoReal);
 
-        // Los saldos pendientes siempre son los que están por cobrar a la fecha
         if (saldo > 0) {
           abonosPendientes += saldo;
         }
@@ -966,11 +1004,9 @@ export function useGestor() {
                           safeNum(p.costo_tratamientos_int) + 
                           safeNum(p.costo_varios_int);
 
-        // Histórico Total Acumulado (todo lo vendido históricamente)
         ventasTotal += vFinal;
         gastosTotal += gastoFila;
 
-        // Filtro estricto del mes actual: toma fecha_venta, fecha o created_at
         const fechaRegistro = safeString(p.fecha_venta || p.fecha || p.created_at || '').slice(0, 7);
         if (fechaRegistro === prefijoMesActual) {
           ventasMes += vFinal;
@@ -983,7 +1019,6 @@ export function useGestor() {
         }
       });
 
-      // Total de pacientes únicos del historial clínico
       (historial || []).forEach(h => {
         const c = safeString(h?.cedula).trim().toUpperCase();
         if (c && c !== '9999999999' && safeString(h?.nombre).trim().toUpperCase() !== 'CONSUMIDOR FINAL') {
@@ -992,17 +1027,12 @@ export function useGestor() {
       });
 
       return {
-        // Métricas estrictas del mes en curso (si en octubre no hay ventas, reporta 0.00 con precisión)
         ventasMes: Number(ventasMes.toFixed(2)),
         gastosMes: Number(gastosMes.toFixed(2)),
         utilidadNeta: Number((ventasMes - gastosMes).toFixed(2)),
-
-        // Métricas del histórico total (acumulado de agosto, septiembre, etc.)
         ventasTotal: Number(ventasTotal.toFixed(2)),
         gastosTotal: Number(gastosTotal.toFixed(2)),
         utilidadTotal: Number((ventasTotal - gastosTotal).toFixed(2)),
-
-        // Saldo total pendiente de cobro en caja
         abonosPendientes: Number(abonosPendientes.toFixed(2)),
         totalPacientes: cedulasUnicas.size,
         total: (historial || []).length
