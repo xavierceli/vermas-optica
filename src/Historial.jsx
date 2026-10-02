@@ -203,66 +203,95 @@ export default function Historial({
                 <h3 className="text-base sm:text-lg font-bold text-blue-900">📈 Evolución de Optometría y Refracción</h3>
                 <span className="text-xs text-blue-700 font-medium">Clic en ➕ para ver Lensometría, AutoRef y Queratometría</span>
               </div>
-              <div className="overflow-x-auto shadow-sm border border-gray-200 rounded-lg">
+              <div className="overflow-x-auto shadow-sm border border-gray-300 rounded-xl">
                 <table className="w-full text-center text-xs bg-white min-w-[980px]">
-                  <thead className="bg-blue-50 text-blue-950">
+                  <thead>
+                    {/* Encabezado Nivel 1: Bloques OD y OI con colores diferenciados */}
                     <tr>
-                      <th className="p-2 border-r border-b w-10" rowSpan="2"></th>
-                      <th className="p-2 border-r border-b align-bottom" rowSpan="2">Fecha</th>
-                      <th className="p-2 border-r border-b font-bold text-indigo-950 bg-blue-100/40" colSpan="8">Ojo Derecho (OD)</th>
-                      <th className="p-2 border-b font-bold text-indigo-950 bg-teal-100/30" colSpan="8">Ojo Izquierdo (OI)</th>
+                      <th className="p-2 border-r border-b bg-gray-100 text-gray-700 w-10" rowSpan="2"></th>
+                      <th className="p-2 border-r-2 border-b border-gray-300 bg-gray-100 text-gray-800 font-extrabold align-bottom" rowSpan="2">
+                        Fecha
+                      </th>
+                      
+                      {/* BLOQUE OJO DERECHO (AZUL ÍNDIGO) */}
+                      <th className="py-2 px-3 border-r-2 border-b-2 border-indigo-300 bg-indigo-100 text-indigo-950 font-black tracking-wider uppercase text-xs" colSpan="8">
+                        👁️ Ojo Derecho (OD)
+                      </th>
+
+                      {/* BLOQUE OJO IZQUIERDO (VERDE ESMERALDA) */}
+                      <th className="py-2 px-3 border-r border-b-2 border-emerald-300 bg-emerald-100 text-emerald-950 font-black tracking-wider uppercase text-xs" colSpan="8">
+                        👁️ Ojo Izquierdo (OI)
+                      </th>
+
                       <th className="p-2 border-l border-b bg-red-50 text-red-800" rowSpan="2">Acción</th>
                     </tr>
-                    <tr className="bg-blue-100/60 text-gray-700">
-                      <th className="p-1 border-r border-b">Esf.</th>
-                      <th className="p-1 border-r border-b">Cil.</th>
-                      <th className="p-1 border-r border-b">Eje</th>
-                      <th className="p-1 border-r border-b">Adi.</th>
-                      <th className="p-1 border-r border-b text-indigo-900 font-bold bg-indigo-50/50">DNP</th>
-                      <th className="p-1 border-r border-b text-indigo-900 font-bold bg-indigo-50/50">Alt.</th>
-                      <th className="p-1 border-r border-b text-teal-800 font-bold">AV.CL</th>
-                      <th className="p-1 border-r border-b text-teal-900 font-black bg-teal-50/60">AV.CC</th>
 
-                      <th className="p-1 border-r border-b">Esf.</th>
-                      <th className="p-1 border-r border-b">Cil.</th>
-                      <th className="p-1 border-r border-b">Eje</th>
-                      <th className="p-1 border-r border-b">Adi.</th>
-                      <th className="p-1 border-r border-b text-indigo-900 font-bold bg-indigo-50/50">DNP</th>
-                      <th className="p-1 border-r border-b text-indigo-900 font-bold bg-indigo-50/50">Alt.</th>
-                      <th className="p-1 border-r border-b text-teal-800 font-bold">AV.CL</th>
-                      <th className="p-1 border-b text-teal-900 font-black bg-teal-50/60">AV.CC</th>
+                    {/* Encabezado Nivel 2: Columnas de cada ojo */}
+                    <tr className="text-gray-700 text-[11px]">
+                      {/* Columnas OD */}
+                      <th className="p-1 border-r border-b bg-indigo-50/70 font-bold">Esf.</th>
+                      <th className="p-1 border-r border-b bg-indigo-50/70 font-bold">Cil.</th>
+                      <th className="p-1 border-r border-b bg-indigo-50/70 font-bold">Eje</th>
+                      <th className="p-1 border-r border-b bg-indigo-50/70 font-bold">Adi.</th>
+                      <th className="p-1 border-r border-b bg-indigo-100/50 text-indigo-900 font-black">DNP</th>
+                      <th className="p-1 border-r border-b bg-indigo-100/50 text-indigo-900 font-black">Alt.</th>
+                      <th className="p-1 border-r border-b bg-indigo-50 text-indigo-800 font-bold">AV.CL</th>
+                      <th className="p-1 border-r-2 border-b border-indigo-300 bg-indigo-100 text-indigo-950 font-black">AV.CC</th>
+
+                      {/* Columnas OI */}
+                      <th className="p-1 border-r border-b bg-emerald-50/70 font-bold">Esf.</th>
+                      <th className="p-1 border-r border-b bg-emerald-50/70 font-bold">Cil.</th>
+                      <th className="p-1 border-r border-b bg-emerald-50/70 font-bold">Eje</th>
+                      <th className="p-1 border-r border-b bg-emerald-50/70 font-bold">Adi.</th>
+                      <th className="p-1 border-r border-b bg-emerald-100/50 text-emerald-900 font-black">DNP</th>
+                      <th className="p-1 border-r border-b bg-emerald-100/50 text-emerald-900 font-black">Alt.</th>
+                      <th className="p-1 border-r border-b bg-emerald-50 text-emerald-800 font-bold">AV.CL</th>
+                      <th className="p-1 border-r border-b bg-emerald-100 text-emerald-950 font-black">AV.CC</th>
                     </tr>
                   </thead>
+
                   <tbody>
                     {registrosPaciente.map(reg => (
                       <Fragment key={reg.id}>
-                        <tr className={`border-b hover:bg-gray-50 transition-colors ${filasExpandidas[reg.id] ? 'bg-blue-50/30' : ''}`}>
+                        <tr className={`border-b hover:bg-gray-50/80 transition-colors ${filasExpandidas[reg.id] ? 'bg-indigo-50/20' : ''}`}>
                           <td className="p-2 border-r text-center">
-                            <button type="button" onClick={() => toggleExpandir(reg.id)} className={`w-6 h-6 flex items-center justify-center rounded-full font-bold transition-all shadow-sm ${filasExpandidas[reg.id] ? 'bg-blue-600 text-white' : 'bg-blue-100 text-blue-800 hover:bg-blue-200'}`}>
+                            <button 
+                              type="button" 
+                              onClick={() => toggleExpandir(reg.id)} 
+                              className={`w-6 h-6 flex items-center justify-center rounded-full font-bold transition-all shadow-sm ${
+                                filasExpandidas[reg.id] ? 'bg-indigo-600 text-white' : 'bg-indigo-100 text-indigo-800 hover:bg-indigo-200'
+                              }`}
+                            >
                               {filasExpandidas[reg.id] ? '−' : '＋'}
                             </button>
                           </td>
-                          <td className="p-2 border-r font-bold text-gray-800 whitespace-nowrap">{safeString(reg.fecha)}</td>
+                          <td className="p-2 border-r-2 border-gray-300 font-bold text-gray-800 whitespace-nowrap bg-gray-50/40">
+                            {safeString(reg.fecha)}
+                          </td>
                           
-                          {/* Ojo Derecho */}
+                          {/* VALORES OJO DERECHO (OD) */}
                           <td className="p-2 border-r font-semibold text-gray-900">{safeString(reg.esfera_od) || '—'}</td>
                           <td className="p-2 border-r font-semibold text-gray-900">{safeString(reg.cilindro_od) || '—'}</td>
                           <td className="p-2 border-r font-semibold text-gray-900">{safeString(reg.eje_od) || '—'}</td>
                           <td className="p-2 border-r font-semibold text-gray-900">{safeString(reg.adicion_od) || '—'}</td>
-                          <td className="p-2 border-r font-semibold text-indigo-900 bg-indigo-50/30">{safeString(reg.dnp_od) || '—'}</td>
-                          <td className="p-2 border-r font-semibold text-indigo-900 bg-indigo-50/30">{safeString(reg.altura_od) || '—'}</td>
-                          <td className="p-2 border-r font-bold text-teal-700">{safeString(reg.avcl_od) || '—'}</td>
-                          <td className="p-2 border-r font-black text-teal-900 bg-teal-50/40">{safeString(reg.avcc_od) || '-'}</td>
+                          <td className="p-2 border-r font-semibold text-indigo-950 bg-indigo-50/40">{safeString(reg.dnp_od) || '—'}</td>
+                          <td className="p-2 border-r font-semibold text-indigo-950 bg-indigo-50/40">{safeString(reg.altura_od) || '—'}</td>
+                          <td className="p-2 border-r font-bold text-indigo-900 bg-indigo-50/20">{safeString(reg.avcl_od) || '—'}</td>
+                          <td className="p-2 border-r-2 border-indigo-300 font-black text-indigo-950 bg-indigo-100/60 no-underline">
+                            {safeString(reg.avcc_od) || '—'}
+                          </td>
 
-                          {/* Ojo Izquierdo */}
+                          {/* VALORES OJO IZQUIERDO (OI) */}
                           <td className="p-2 border-r font-semibold text-gray-900">{safeString(reg.esfera_oi) || '—'}</td>
                           <td className="p-2 border-r font-semibold text-gray-900">{safeString(reg.cilindro_oi) || '—'}</td>
                           <td className="p-2 border-r font-semibold text-gray-900">{safeString(reg.eje_oi) || '—'}</td>
                           <td className="p-2 border-r font-semibold text-gray-900">{safeString(reg.adicion_oi) || '—'}</td>
-                          <td className="p-2 border-r font-semibold text-indigo-900 bg-indigo-50/30">{safeString(reg.dnp_oi) || '—'}</td>
-                          <td className="p-2 border-r font-semibold text-indigo-900 bg-indigo-50/30">{safeString(reg.altura_oi) || '—'}</td>
-                          <td className="p-2 border-r font-bold text-teal-700">{safeString(reg.avcl_oi) || '—'}</td>
-                          <td className="p-2 font-black text-teal-900 bg-teal-50/40">{safeString(reg.avcc_oi) || '-'}</td>
+                          <td className="p-2 border-r font-semibold text-emerald-950 bg-emerald-50/40">{safeString(reg.dnp_oi) || '—'}</td>
+                          <td className="p-2 border-r font-semibold text-emerald-950 bg-emerald-50/40">{safeString(reg.altura_oi) || '—'}</td>
+                          <td className="p-2 border-r font-bold text-emerald-900 bg-emerald-50/20">{safeString(reg.avcl_oi) || '—'}</td>
+                          <td className="p-2 border-r font-black text-emerald-950 bg-emerald-100/60 no-underline">
+                            {safeString(reg.avcc_oi) || '—'}
+                          </td>
                           
                           <td className="p-2 border-l text-center bg-red-50/20">
                             <button 
@@ -280,7 +309,6 @@ export default function Historial({
                           <tr className="bg-slate-50 border-b shadow-inner">
                             <td colSpan="19" className="p-3 sm:p-4">
                               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 text-xs text-left">
-                                
                                 <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
                                   <h4 className="font-bold text-teal-900 border-b border-gray-100 pb-1 mb-2">👓 Lensometría Anterior</h4>
                                   <p className="mb-1"><strong className="text-gray-600">OD:</strong> <span className="text-gray-900 font-semibold">{safeString(reg.lenso_esf_od) || '-'} | {safeString(reg.lenso_cil_od) || '-'} | {safeString(reg.lenso_eje_od) || '-'}</span></p>
@@ -295,15 +323,14 @@ export default function Historial({
                                 
                                 <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
                                   <h4 className="font-bold text-indigo-900 border-b border-gray-100 pb-1 mb-2">👁 Queratometría</h4>
-                                  <p className="mb-1"><strong className="text-gray-600">OD:</strong> <span className="text-gray-900 font-semibold">K1: {safeString(reg.k1_d_od) || '-'} | K2: {safeString(reg.k2_d_od) || '-'}</span></p>
-                                  <p><strong className="text-gray-600">OI:</strong> <span className="text-gray-900 font-semibold">K1: {safeString(reg.k1_d_oi) || '-'} | K2: {safeString(reg.k2_d_oi) || '-'}</span></p>
+                                  <p className="mb-1"><strong className="text-gray-600">OD:</strong> <span className="text-gray-900 font-semibold">{safeString(reg.k1_d_od) || '-'} | K2: {safeString(reg.k2_d_od) || '-'}</span></p>
+                                  <p><strong className="text-gray-600">OI:</strong> <span className="text-gray-900 font-semibold">{safeString(reg.k1_d_oi) || '-'} | K2: {safeString(reg.k2_d_oi) || '-'}</span></p>
                                 </div>
 
                                 <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
                                   <h4 className="font-bold text-amber-900 border-b border-gray-100 pb-1 mb-2">📝 Notas Clínicas</h4>
                                   <p className="text-gray-800 italic leading-relaxed">{safeString(reg.notas_clinicas) || 'Sin notas registradas en esta visita.'}</p>
                                 </div>
-
                               </div>
                             </td>
                           </tr>
@@ -561,6 +588,7 @@ export default function Historial({
                             const inicial = safeString(item.forma_pago).trim();
                             if (inicial) metodos.push(inicial);
 
+                            // Extraemos métodos de pago registrados en las notas de abono (ej: "[01/10] +$20.00 Transferencia")
                             const notaCompleta = safeString(item.pago_nota);
                             const regexAbonos = /\+\s*\$?\s*[\d.]+\s+(Efectivo|Transferencia|Tarjeta)/gi;
                             let match;
@@ -569,6 +597,7 @@ export default function Historial({
                               metodos.push(metodoDetectado);
                             }
 
+                            // Si tiene comprobante adjunto y no se detectó transferencia, la agregamos
                             if (item.comprobante_url && !metodos.some(m => m.toLowerCase().includes('transferencia'))) {
                               metodos.push('Transferencia');
                             }
