@@ -83,50 +83,45 @@ export default function Historial({
     setFilasExpandidas({});
     setCargandoExpediente(true);
     
-    let borradas = new Set();
+    const cedulaObjetivo = normalizeCedula(paciente?.cedula);
+    if (!cedulaObjetivo) {
+      setCargandoExpediente(false);
+      return;
+    }
+
     try {
       const snapshot = await obtenerSnapshotLocal();
-      borradas = new Set((snapshot?.cedulasArchivadas || []).map(normalizeCedula));
       const histLocal = snapshot?.historial || historialReciente || [];
 
-      // Filtro local estricto: solo consultas del paciente que NO estén archivadas
+      // Filtro por cédula: incluye todas las fechas y actualizaciones que no estén archivadas
       const registrosLocales = histLocal
-        .filter(r => safeString(r.cedula) === safeString(paciente.cedula))
+        .filter(r => normalizeCedula(r.cedula) === cedulaObjetivo)
         .filter(r => !r.archived_at)
-        .filter(r => !paciente.id || !r.patient_id || String(r.patient_id) === String(paciente.patient_id || paciente.id))
         .sort((a, b) => String(b.fecha || '').localeCompare(String(a.fecha || '')));
       
       setRegistrosPaciente(registrosLocales);
       if (registrosLocales.length > 0) {
         setCargandoExpediente(false);
       }
-    } catch {
-      console.warn("Fallo al leer datos locales del paciente.");
+    } catch (err) {
+      console.warn("Fallo al leer datos locales del paciente:", err);
     }
 
     try {
       if (!navigator.onLine) return;
 
-      let query = supabase
+      const { data, error } = await supabase
         .from('vista_pacientes')
         .select('*')
-        .eq('cedula', paciente.cedula);
-
-      try {
-        query = query.is('archived_at', null);
-      } catch {}
-
-      const { data, error } = await query.order('fecha', { ascending: false });
+        .eq('cedula', paciente.cedula)
+        .order('fecha', { ascending: false });
         
       if (error) throw error;
       if (data && data.length > 0) {
-        const filtradosNube = data.filter(d => !d.archived_at);
-        
-        const porPaciente = paciente.patient_id || paciente.id
-          ? filtradosNube.filter(d => !d.patient_id || String(d.patient_id) === String(paciente.patient_id || paciente.id))
-          : filtradosNube;
-
-        setRegistrosPaciente(porPaciente.length > 0 ? porPaciente : filtradosNube);
+        const consultasVivas = data.filter(d => !d.archived_at);
+        if (consultasVivas.length > 0) {
+          setRegistrosPaciente(consultasVivas);
+        }
       }
     } catch (e) { 
       console.warn("Supabase no respondió a tiempo para el expediente:", e);
@@ -421,7 +416,7 @@ export default function Historial({
           onChange={(e) => setBusquedaTexto(e.target.value)} 
           className="flex-1 p-2.5 sm:p-3 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 shadow-sm text-sm font-medium bg-gray-50 focus:bg-white text-gray-900" 
         />
-        {buscando && hayTermino && <div className="flex items-center text-xs font-bold text-blue-700 px-2 shrink-0">Buscando... ☁️</div>}
+        {buscando && hayTermino && <div className="flex items-center text-xs font-bold text-blue-700 px-2 shrink-0">Buscando... ☁️️</div>}
       </div>
 
       <div className="space-y-4 sm:space-y-6">
@@ -588,7 +583,6 @@ export default function Historial({
                             const inicial = safeString(item.forma_pago).trim();
                             if (inicial) metodos.push(inicial);
 
-                            // Extraemos métodos de pago registrados en las notas de abono (ej: "[01/10] +$20.00 Transferencia")
                             const notaCompleta = safeString(item.pago_nota);
                             const regexAbonos = /\+\s*\$?\s*[\d.]+\s+(Efectivo|Transferencia|Tarjeta)/gi;
                             let match;
@@ -597,7 +591,6 @@ export default function Historial({
                               metodos.push(metodoDetectado);
                             }
 
-                            // Si tiene comprobante adjunto y no se detectó transferencia, la agregamos
                             if (item.comprobante_url && !metodos.some(m => m.toLowerCase().includes('transferencia'))) {
                               metodos.push('Transferencia');
                             }
@@ -688,7 +681,7 @@ export default function Historial({
                             : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200'
                         }`}
                       >
-                        {tienePedido ? '👁️ Ver Venta' : '➕ Crear Venta'}
+                        {tienePedido ? '👁️️ Ver Venta' : '➕ Crear Venta'}
                       </button>
                     </div>
                   </div>
