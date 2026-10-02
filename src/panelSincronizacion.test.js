@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const fuente = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'PanelSincronizacion.jsx'), 'utf8');
+const app = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'App.jsx'), 'utf8');
 
 test('descartar siempre libera los botones aunque la operación falle', () => {
   const inicio = fuente.indexOf('const descartar = async op => {');
@@ -24,4 +25,10 @@ test('el panel explica la conexión y muestra la sincronización más reciente d
 test('un error al consultar la cola se comunica en lugar de quedar sin explicación', () => {
   assert.match(fuente, /No se pudo consultar la cola de sincronización/);
   assert.match(fuente, /role="alert"/);
+});
+
+test('el panel de sincronización y respaldo siempre tiene un acceso visible', () => {
+  const boton = app.match(/<button\s+type="button"\s+onClick=\{\(\) => setPanelSync\(true\)\}[\s\S]*?aria-label="Abrir sincronización y respaldo"[\s\S]*?<\/button>/);
+  assert.ok(boton, 'debe existir un botón permanente que abra el panel');
+  assert.match(boton[0], /Sincronización y respaldo/);
 });
