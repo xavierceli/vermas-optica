@@ -62,10 +62,14 @@ export default function RespaldoDatos() {
     setAviso(null);
     try {
       const respaldo = parsearRespaldo(await archivo.text());
-      const conteos = await restaurarRespaldo(localDb, respaldo);
+      const { conteos, omitidos } = await restaurarRespaldo(localDb, respaldo);
+      const agregados = Object.values(conteos).reduce((total, cantidad) => total + cantidad, 0);
+      const resumen = agregados
+        ? `Agregados ${resumenRespaldo(conteos)}.`
+        : 'No había registros nuevos para agregar.';
       setAviso({
         tipo: 'ok',
-        texto: `Restaurado ${resumenRespaldo(conteos)}. Recarga la página (Ctrl+Shift+R) para verlo.`
+        texto: `${resumen}${omitidos ? ` Se omitieron ${omitidos} registros que ya existían para conservar los datos actuales.` : ''} Recarga la página para ver los datos.`
       });
       void medir();
     } catch (e) {
@@ -141,8 +145,8 @@ export default function RespaldoDatos() {
 
       {confirmando && !ocupado && (
         <p className="text-xs text-gray-600 mt-2">
-          Al restaurar se <strong>actualizan</strong> los registros que ya existan. No se borra
-          nada de este dispositivo.
+          La restauración solo agrega registros que falten. Si uno ya existe, se conserva tal como
+          está: no se reemplaza ni se borra ningún dato de este dispositivo.
         </p>
       )}
 

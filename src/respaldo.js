@@ -13,9 +13,8 @@
 // Decisiones importantes:
 //   - No se respaldan `meta` (estado de la maquina: PIN, errores) ni `cache`
 //     (copia de lo que ya esta en la nube y se regenera al sincronizar).
-//   - Restaurar USA bulkPut, que es un "si existe, actualiza": nunca borra lo
-//     que ya esta en el dispositivo. Restaurar un respaldo viejo no puede
-//     destruir trabajo mas reciente.
+//   - Restaurar agrega solo registros ausentes: nunca reemplaza ni borra lo
+//     que ya existe en el dispositivo.
 export const FORMATO_RESPALDO = 'verplus-respaldo';
 export const VERSION_RESPALDO = 1;
 
@@ -97,28 +96,94 @@ export const parsearRespaldo = texto => {
   if (Number(datos.version) > VERSION_RESPALDO) {
     throw new Error('El respaldo es de una versión más nueva de la app. Actualiza la app antes de restaurarlo.');
   }
+  if (!Number.isInteger(Number(datos.version)) || Number(datos.version) < 1) {
+    throw new Error('La versión de este respaldo no es válida.');
+  }
+  if (!datos.tablas || typeof datos.tablas !== 'object' || Array.isArray(datos.tablas)) {
+    throw new Error('El respaldo está incompleto y no se puede restaurar con seguridad.');
+  }
+  for (const nombre of TABLAS) {
+    const filas = datos.tablas[nombre];
+    if (filas !== undefined && !Array.isArray(filas)) {
+      throw new Error('El respaldo está incompleto y no se puede restaurar con seguridad.');
+    }
+    const ids = new Set();
+    for (const fila of filas || []) {
+      if (!fila || typeof fila !== 'object' || Array.isArray(fila) ||
+          !['string', 'number'].includes(typeof fila.id) || fila.id === '' ||
+          (typeof fila.id === 'number' && !Number.isFinite(fila.id))) {
+        throw new Error('El respaldo contiene un registro incompleto y no se puede restaurar con seguridad.');
+      }
+      if (ids.has(fila.id)) {
+        throw new Error('El respaldo contiene identificadores repetidos y no se puede restaurar con seguridad.');
+      }
+      ids.add(fila.id);
+    }
+  }
+  if (datos.binarios !== undefined && !Array.isArray(datos.binarios)) {
+    throw new Error('Los archivos adjuntos del respaldo no tienen un formato válido.');
+  }
   return datos;
 };
-/**
- * Escribe el respaldo en el dispositivo. NUNCA borra: bulkPut actualiza lo que
- * ya existe por clave primaria. Restaurar el respaldo del lunes no puede
- * destruir la venta del martes.
- */
+/** Agrega solo filas ausentes; una restauración nunca reemplaza filas locales. */
 export const restaurarRespaldo = async (db, respaldo) => {
-  const conteos = {};
+  if (respaldo?.formato !== FORMATO_RESPALDO || Number(respaldo.version) !== VERSION_RESPALDO) {
+    throw new Error('El formato del respaldo no es compatible con esta versión de VER+.');
+  }
+  if (!respaldo.tablas || typeof respaldo.tablas !== 'object' || Array.isArray(respaldo.tablas)) {
+    throw new Error('El respaldo está incompleto y no se puede restaurar con seguridad.');
+  }
+
+  // Preparar y validar todo antes de abrir la transacción evita una restauración parcial.
+  const binarios = new Map();
+  for (const binario of respaldo.binarios || []) {
+    if (!binario || binario.id === undefined || typeof binario.base64 !== 'string' || binarios.has(binario.id)) {
+      throw new Error('Los archivos adjuntos del respaldo no tienen un formato válido.');
+    }
+    binarios.set(binario.id, binario);
+  }
+
+  const listas = {};
   for (const nombre of TABLAS) {
     const filas = respaldo?.tablas?.[nombre];
-    if (!Array.isArray(filas) || filas.length === 0) continue;
-    const registros = nombre === 'attachments'
-      ? filas.map(fila => {
-        const binario = (respaldo.binarios || []).find(b => b.id === fila.id);
-        return binario?.base64 ? { ...fila, blob: base64ABlob(binario.base64, binario.mime) } : { ...fila };
-      })
-      : filas;
-    await db[nombre].bulkPut(registros);
-    conteos[nombre] = registros.length;
+    if (filas !== undefined && !Array.isArray(filas)) {
+      throw new Error('El respaldo está incompleto y no se puede restaurar con seguridad.');
+    }
+    const ids = new Set();
+    listas[nombre] = (filas || []).map(fila => {
+      if (!fila || typeof fila !== 'object' || Array.isArray(fila) ||
+          !['string', 'number'].includes(typeof fila.id) || fila.id === '' ||
+          (typeof fila.id === 'number' && !Number.isFinite(fila.id)) || ids.has(fila.id)) {
+        throw new Error('El respaldo contiene un registro incompleto o repetido y no se puede restaurar con seguridad.');
+      }
+      ids.add(fila.id);
+      if (nombre !== 'attachments') return fila;
+      const binario = binarios.get(fila.id);
+      return binario?.base64 ? { ...fila, blob: base64ABlob(binario.base64, binario.mime) } : { ...fila };
+    });
   }
-  return conteos;
+
+  const conteos = {};
+  let omitidos = 0;
+  const tablasDexie = TABLAS.map(nombre => db[nombre]);
+  if (typeof db.transaction !== 'function') {
+    throw new Error('No se pudo iniciar una restauración segura en este dispositivo.');
+  }
+  await db.transaction('rw', ...tablasDexie, async () => {
+    for (const nombre of TABLAS) {
+      const filas = listas[nombre];
+      if (!filas.length) continue;
+      const existentes = new Set((await db[nombre].toArray()).map(fila => fila.id));
+      const nuevas = filas.filter(fila => !existentes.has(fila.id));
+      const omitidas = filas.length - nuevas.length;
+      if (nuevas.length) {
+        await db[nombre].bulkAdd(nuevas);
+        conteos[nombre] = nuevas.length;
+      }
+      omitidos += omitidas;
+    }
+  });
+  return { conteos, omitidos };
 };
 
 /** "24 pacientes, 31 consultas, 12 ventas": que hay dentro, en una linea. */

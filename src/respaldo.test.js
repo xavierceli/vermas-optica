@@ -30,11 +30,31 @@ const crearDb = (sembrado = {}) => {
         llamadas.push(['bulkPut', nombre, nuevos.length]);
         nuevos.forEach(f => filas.set(f.id, f));
       },
+      bulkAdd: async nuevos => {
+        llamadas.push(['bulkAdd', nombre, nuevos.length]);
+        for (const fila of nuevos) {
+          if (filas.has(fila.id)) throw new Error(`Clave duplicada: ${fila.id}`);
+          filas.set(fila.id, fila);
+        }
+      },
       clear: async () => { llamadas.push(['clear', nombre]); filas.clear(); },
-      delete: async id => { llamadas.push(['delete', nombre]); filas.delete(id); }
+      delete: async id => { llamadas.push(['delete', nombre]); filas.delete(id); },
+      snapshot: () => new Map(filas),
+      restore: copia => { filas.clear(); for (const [id, fila] of copia) filas.set(id, fila); }
     });
   }
-  return { llamadas, db: Object.fromEntries(tablas) };
+  const db = Object.fromEntries(tablas);
+  db.transaction = async (_modo, ...argumentos) => {
+    const ejecutar = argumentos.pop();
+    const copias = argumentos.map(tabla => [tabla, tabla.snapshot()]);
+    try {
+      return await ejecutar();
+    } catch (error) {
+      copias.forEach(([tabla, copia]) => tabla.restore(copia));
+      throw error;
+    }
+  };
+  return { llamadas, db };
 };
 
 test('un Blob sobrevive al viaje de ida y vuelta sin perder un byte', async () => {
@@ -77,34 +97,64 @@ test('un archivo que no es respaldo se rechaza con un mensaje entendible', () =>
     /versión más nueva/
   );
 });
-test('restaurar escribe lo que viene y NO borra nada de lo que ya hay', async () => {
-  const { db, llamadas } = crearDb({ patients: [{ id: 'p9', nombre: 'Local' }] });
-  const conteos = await restaurarRespaldo(db, {
+test('restaurar solo agrega registros ausentes y conserva intactos los que ya existen', async () => {
+  const { db, llamadas } = crearDb({ patients: [{ id: 'p1', nombre: 'Local actualizado' }] });
+  const resultado = await restaurarRespaldo(db, {
     formato: FORMATO_RESPALDO,
     version: 1,
-    tablas: { patients: [{ id: 'p1', nombre: 'Ana' }] },
+    tablas: { patients: [
+      { id: 'p1', nombre: 'Ana del respaldo antiguo' },
+      { id: 'p9', nombre: 'Luis' }
+    ] },
     binarios: []
   });
 
-  assert.deepEqual(conteos, { patients: 1 });
-  assert.deepEqual((await db.patients.toArray()).map(f => f.id).sort(), ['p1', 'p9']);
+  assert.deepEqual(resultado, { conteos: { patients: 1 }, omitidos: 1 });
+  assert.deepEqual(await db.patients.toArray(), [
+    { id: 'p1', nombre: 'Local actualizado' },
+    { id: 'p9', nombre: 'Luis' }
+  ]);
   assert.ok(
-    llamadas.every(([operacion]) => operacion === 'bulkPut'),
-    'restaurar solo puede escribir: ' + JSON.stringify(llamadas)
+    llamadas.every(([operacion]) => operacion === 'bulkAdd'),
+    'restaurar solo agrega claves nuevas: ' + JSON.stringify(llamadas)
   );
 });
 
 test('restaurar devuelve los adjuntos con su binario', async () => {
   const { db } = crearDb();
-  await restaurarRespaldo(db, {
+  const resultado = await restaurarRespaldo(db, {
     formato: FORMATO_RESPALDO,
     version: 1,
     tablas: { attachments: [{ id: 'a1', refId: 'p1' }] },
     binarios: [{ id: 'a1', mime: 'image/jpeg', base64: await blobABase64(new Blob(['FOTO'])) }]
   });
+  assert.deepEqual(resultado, { conteos: { attachments: 1 }, omitidos: 0 });
   const [adjunto] = await db.attachments.toArray();
   assert.equal(adjunto.blob.type, 'image/jpeg');
   assert.equal(await adjunto.blob.text(), 'FOTO');
+});
+
+test('un respaldo con identificadores repetidos se rechaza antes de importar', () => {
+  assert.throws(() => parsearRespaldo(JSON.stringify({
+    formato: FORMATO_RESPALDO,
+    version: VERSION_RESPALDO,
+    tablas: { patients: [{ id: 'p1' }, { id: 'p1' }] }
+  })), /identificadores repetidos/);
+});
+
+test('si falla una tabla, la transacción revierte las filas anteriores', async () => {
+  const { db } = crearDb();
+  db.attachments.bulkAdd = async () => { throw new Error('fallo de prueba'); };
+  await assert.rejects(restaurarRespaldo(db, {
+    formato: FORMATO_RESPALDO,
+    version: VERSION_RESPALDO,
+    tablas: {
+      patients: [{ id: 'p1', nombre: 'Ana' }],
+      attachments: [{ id: 'a1', refId: 'p1' }]
+    },
+    binarios: []
+  }), /fallo de prueba/);
+  assert.deepEqual(await db.patients.toArray(), []);
 });
 
 test('el resumen dice que contiene el archivo, no un numero suelto', () => {
@@ -136,7 +186,7 @@ test('la interfaz de respaldo jamas borra datos', () => {
     'la pantalla de respaldo no puede borrar nada'
   );
   assert.ok(fuente.includes('construirRespaldo'), 'debe ofrecer la descarga del respaldo');
-  assert.ok(fuente.includes('restaurarRespaldo'), 'debe usar la restauracion que hace upsert');
+  assert.ok(fuente.includes('restaurarRespaldo'), 'debe usar la restauracion segura');
 });
 
 test('la interfaz explica que el respaldo es local y puede incluir datos clinicos', () => {
