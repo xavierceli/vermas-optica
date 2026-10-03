@@ -17,7 +17,7 @@ import {
   enrolarDispositivo, leerEnrolamiento, intentarDesbloqueo, 
   revocarEnrolamiento, pinValido 
 } from './seguridad';
-import { aplicarAvisoQueratometria, calcularTotal, calcularSaldo } from './reglas';
+import { aplicarAvisoQueratometria, calcularTotal, calcularSaldo, validarMontosVenta } from './reglas';
 import { limpiarHtml } from './escape';
 import { validarFichaClinica, motivoDocumentoInvalido } from './validacion';
 import { aplicarCedula, crearEstadoPaciente, hoyISO, INV_INICIAL, PRECIO_INICIAL, CAMPOS_DE_VENTA, TRATAMIENTOS } from './fichaClinica';
@@ -810,6 +810,12 @@ export function useGestor() {
       const nombrePedido = safeString(pedidoSeleccionado.nombre).trim() || (cedulaPedido === '9999999999' ? 'CONSUMIDOR FINAL' : '');
       if (!nombrePedido) {
         mostrarToast('Falta el nombre del paciente. Sin nombre no se puede emitir el recibo.', 'warning', 7000);
+        return false;
+      }
+
+      const problemaMontos = validarMontosVenta({ venta: pedidoSeleccionado.venta, descuento: pedidoSeleccionado.descuento });
+      if (problemaMontos) {
+        mostrarToast('No se puede guardar el pedido: ' + problemaMontos, 'warning', 7000);
         return false;
       }
 

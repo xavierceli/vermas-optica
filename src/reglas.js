@@ -136,3 +136,26 @@ export const esFalloDeRed = (error) => {
   return /failed to fetch|network|load failed|aborted|tiempo agotado|timeout|conexion|conexión|dns|socket|502|503|504|offline|err_|internet connection/i.test(texto)
     || error?.name === 'TypeError';
 };
+/**
+ * Revisa el valor de la venta y el descuento con las mismas reglas del servidor:
+ * venta >= 0, descuento entre 0 y 100, y como maximo dos decimales en ambos.
+ * Los campos vacios cuentan como 0. Devuelve el mensaje del problema, o null si todo esta bien.
+ */
+export const validarMontosVenta = ({ venta, descuento } = {}) => {
+  const dosDecimales = n => Math.abs(n * 100 - Math.round(n * 100)) < 1e-6;
+  const vacio = v => v === null || v === undefined || String(v).trim() === '';
+
+  if (!vacio(venta)) {
+    const n = aNumero(venta);
+    if (!Number.isFinite(n)) return 'El valor de la venta no es un número válido.';
+    if (n < 0) return 'El valor de la venta no puede ser negativo.';
+    if (!dosDecimales(n)) return 'El valor de la venta admite como máximo dos decimales.';
+  }
+  if (!vacio(descuento)) {
+    const d = aNumero(descuento);
+    if (!Number.isFinite(d)) return 'El descuento no es un número válido.';
+    if (d < 0 || d > 100) return 'El descuento debe estar entre 0 y 100.';
+    if (!dosDecimales(d)) return 'El descuento admite como máximo dos decimales.';
+  }
+  return null;
+};
