@@ -188,8 +188,9 @@ const markOperation = async (operation, nextStatus, error = null) => {
 };
 
 const reconciliarStockVenta = async serverResult => {
-  const ids = (serverResult?.items || [])
-    .map(item => Number(item.inventory_id))
+    const ids = (serverResult?.items || [])
+    // El servidor devuelve cada producto como inventario_id (crear) o inventory_id (editar).
+    .map(item => Number(item.inventario_id ?? item.inventory_id))
     .filter(Number.isFinite);
   if (ids.length === 0) return;
   const { data, error } = await supabase
