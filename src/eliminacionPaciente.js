@@ -13,7 +13,7 @@
 // Es IRREVERSIBLE. Por eso la pantalla pide escribir la cedula y ofrece descargar
 // antes una copia del paciente.
 // ---------------------------------------------------------------------------
-import { localDb, getMeta, setMeta } from './localDb.js';
+import { localDb } from './localDb.js';
 import { extraerRutaArchivo } from './rutaImagen.js';
 
 // El cliente de Supabase se carga solo cuando hace falta. Asi este modulo se puede
@@ -23,7 +23,6 @@ export const usarClienteDePrueba = cliente => { clienteDePrueba = cliente; };
 const obtenerCliente = async () => clienteDePrueba || (await import('./supabaseClient.js')).supabase;
 
 const BUCKET_COMPROBANTES = 'comprobantes_pagos';
-const META_ELIMINACIONES = 'eliminaciones_aplicadas_hasta';
 
 const normalizar = valor => String(valor ?? '').replace(/[^0-9A-Za-z]/g, '').toLowerCase();
 
@@ -246,39 +245,112 @@ export const eliminarPacienteDefinitivo = async (cedula, { descargarCopia = fals
 
 // --- Borrados hechos desde otros dispositivos --------------------------------
 
+const PAGINA_BITACORA = 1000;
+const MAX_PAGINAS_BITACORA = 10;
+
 /**
- * Lee la bitacora de borrados definitivos y limpia la copia local de lo que se borro
- * desde otro dispositivo. Es seguro repetirla. Si falla (por ejemplo, sin conexion o
- * sin la migracion 018), no interrumpe la sincronizacion.
+ * Lee TODA la bitacora de borrados definitivos y limpia de este equipo lo que se borro
+ * desde cualquier dispositivo. Se lee completa en cada sincronizacion (es una tabla
+ * pequena) para que una copia restaurada o datos que reaparezcan se limpien de nuevo.
+ * Debe llamarse ANTES de subir operaciones pendientes. Es seguro repetirla. Si falla
+ * (sin conexion, sin la migracion 018), no interrumpe la sincronizacion.
  */
 export const aplicarEliminacionesRemotas = async () => {
   try {
     const supabase = await obtenerCliente();
-    const desde = await getMeta(META_ELIMINACIONES, null);
-    let consulta = supabase
-      .from('registros_eliminados')
-      .select('paciente_ids, consulta_ids, pedido_ids, eliminado_en')
-      .order('eliminado_en', { ascending: true })
-      .limit(500);
-    if (desde) consulta = consulta.gte('eliminado_en', desde);
-    const { data, error } = await consulta;
-    if (error) throw error;
-
-    let aplicadas = 0;
-    let ultima = desde;
-    for (const fila of data || []) {
-      await purgarPacienteLocal({
-        pacienteIds: fila.paciente_ids || [],
-        consultaIds: fila.consulta_ids || [],
-        pedidoIds: fila.pedido_ids || []
-      });
-      aplicadas += 1;
-      if (!ultima || fila.eliminado_en > ultima) ultima = fila.eliminado_en;
+    const filas = [];
+    for (let pagina = 0; pagina < MAX_PAGINAS_BITACORA; pagina += 1) {
+      const desde = pagina * PAGINA_BITACORA;
+      const { data, error } = await supabase
+        .from('registros_eliminados')
+        .select('paciente_ids, consulta_ids, pedido_ids')
+        .order('eliminado_en', { ascending: true })
+        .range(desde, desde + PAGINA_BITACORA - 1);
+      if (error) throw error;
+      filas.push(...(data || []));
+      if (!data || data.length < PAGINA_BITACORA) break;
     }
-    if (ultima && ultima !== desde) await setMeta(META_ELIMINACIONES, ultima);
-    return aplicadas;
+    if (filas.length === 0) return 0;
+
+    await purgarPacienteLocal({
+      pacienteIds: filas.flatMap(fila => fila.paciente_ids || []),
+      consultaIds: filas.flatMap(fila => fila.consulta_ids || []),
+      pedidoIds: filas.flatMap(fila => fila.pedido_ids || [])
+    });
+    return filas.length;
   } catch (error) {
     console.warn('No se pudieron aplicar los borrados de otros dispositivos:', error?.message || error);
     return 0;
   }
+};
+
+// --- Reconciliacion con el servidor -------------------------------------------
+
+/**
+ * El servidor es la verdad para lo que ya esta sincronizado. Despues de una descarga
+ * COMPLETA del historial, se borra de este equipo toda consulta, venta, cobro, movimiento,
+ * dato de cache y ficha marcados como 'synced' que el servidor ya no tiene. Asi, aunque algo
+ * se haya borrado desde otro equipo, por una funcion antigua o por una copia restaurada,
+ * deja de aparecer. Nunca toca lo pendiente de subir (syncStatus distinto de 'synced').
+ *
+ * filas: el historial completo descargado (vista_pacientes).
+ * permitirVacio: solo si hay otra senal de que la sesion funciona; una lista vacia se trata
+ * como error de lectura y no se borra nada.
+ */
+export const reconciliarConServidor = async (filas, { permitirVacio = false } = {}) => {
+  if (!Array.isArray(filas)) return null;
+  if (filas.length === 0 && !permitirVacio) return null;
+
+  const idsConsulta = new Set();
+  const idsPedido = new Set();
+  const idsPaciente = new Set();
+  for (const fila of filas) {
+    if (fila?.id !== undefined && fila?.id !== null) idsConsulta.add(String(fila.id));
+    if (fila?.pedido_id) idsPedido.add(String(fila.pedido_id));
+    const paciente = fila?.paciente_id || fila?.patient_id;
+    if (paciente) idsPaciente.add(String(paciente));
+  }
+
+  const tablas = [
+    localDb.patients, localDb.consultations, localDb.sales, localDb.saleItems,
+    localDb.payments, localDb.inventoryMovements, localDb.cache
+  ];
+  return localDb.transaction('rw', tablas, async () => {
+    const consultasFantasma = await localDb.consultations
+      .filter(c => c.syncStatus === 'synced' && !idsConsulta.has(String(c.id))).toArray();
+    const ventasFantasma = await localDb.sales
+      .filter(v => v.syncStatus === 'synced' && !idsPedido.has(String(v.id))).toArray();
+    const ventaIds = new Set(ventasFantasma.map(v => String(v.id)));
+
+    const items = await localDb.saleItems.filter(i => ventaIds.has(String(i.saleId))).toArray();
+    const cobros = await localDb.payments
+      .filter(p => ventaIds.has(String(p.saleId)) && p.syncStatus !== 'pending').toArray();
+    const movimientos = await localDb.inventoryMovements
+      .filter(m => ventaIds.has(String(m.saleId)) && m.syncStatus !== 'pending').toArray();
+    const enCache = await localDb.cache.filter(fila => (
+      fila.kind === 'historial' && String(fila.id ?? '').startsWith('remote:')
+      && !idsConsulta.has(String(fila.id).replace(/^remote:/, ''))
+    )).toArray();
+
+    await localDb.consultations.bulkDelete(consultasFantasma.map(c => c.id));
+    await localDb.sales.bulkDelete(ventasFantasma.map(v => v.id));
+    await localDb.saleItems.bulkDelete(items.map(i => i.id));
+    await localDb.payments.bulkDelete(cobros.map(p => p.id));
+    await localDb.inventoryMovements.bulkDelete(movimientos.map(m => m.id));
+    await localDb.cache.bulkDelete(enCache.map(fila => fila.id));
+
+    // Una ficha sincronizada que el servidor ya no tiene y que ninguna consulta ni venta local usa.
+    const consultasQuedan = await localDb.consultations.toArray();
+    const ventasQuedan = await localDb.sales.toArray();
+    const enUso = new Set([...consultasQuedan.map(c => String(c.patientId)), ...ventasQuedan.map(v => String(v.patientId))]);
+    const fichasFantasma = await localDb.patients
+      .filter(p => p.syncStatus === 'synced' && !idsPaciente.has(String(p.id)) && !enUso.has(String(p.id))).toArray();
+    await localDb.patients.bulkDelete(fichasFantasma.map(p => p.id));
+
+    return {
+      consultas: consultasFantasma.length, ventas: ventasFantasma.length, items: items.length,
+      cobros: cobros.length, movimientos: movimientos.length, cache: enCache.length,
+      fichas: fichasFantasma.length
+    };
+  });
 };
