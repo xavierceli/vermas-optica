@@ -99,6 +99,21 @@ export const descargarCopiaPaciente = async cedula => {
 
 // --- Limpieza local ----------------------------------------------------------
 
+/** ¿Alguna operacion pendiente menciona esta cedula en cualquier parte de su contenido? */
+const mencionaCedula = (contenido, cedulaNorm) => {
+  if (!cedulaNorm || contenido === null || contenido === undefined) return false;
+  if (typeof contenido === 'string' || typeof contenido === 'number') {
+    return normalizar(contenido) === cedulaNorm;
+  }
+  if (Array.isArray(contenido)) return contenido.some(valor => mencionaCedula(valor, cedulaNorm));
+  if (typeof contenido === 'object') {
+    return Object.entries(contenido).some(([clave, valor]) => (
+      (clave === 'cedula' && normalizar(valor) === cedulaNorm) || mencionaCedula(valor, cedulaNorm)
+    ));
+  }
+  return false;
+};
+
 /**
  * Borra de ESTE dispositivo todo lo ligado a un paciente: ficha, consultas, ventas,
  * productos de venta, cobros, movimientos, adjuntos, operaciones pendientes de subir
@@ -139,10 +154,13 @@ export const purgarPacienteLocal = async ({ pacienteIds = [], consultaIds = [], 
       .filter(a => ventas.has(String(a.refId)) || cobroIds.has(String(a.refId)) || consultas.has(String(a.refId))).toArray();
 
     const codigos = [...pacientes, ...consultas, ...ventas, ...cobroIds].filter(Boolean);
-    const operaciones = codigos.length === 0 ? [] : await localDb.outbox.filter(op => {
+    // Tambien por cedula: una operacion atascada de un borrado anterior puede nombrar
+    // al paciente solo por su cedula, y al sincronizar lo volveria a crear en el servidor.
+    const operaciones = (codigos.length === 0 && !cedulaNorm) ? [] : await localDb.outbox.filter(op => {
       if (codigos.includes(String(op.entityId))) return true;
       const texto = JSON.stringify(op.payload ?? {});
-      return codigos.some(codigo => texto.includes(codigo));
+      if (codigos.some(codigo => texto.includes(codigo))) return true;
+      return mencionaCedula(op.payload, cedulaNorm);
     }).toArray();
 
     const enCache = await localDb.cache.filter(fila => {
@@ -186,6 +204,15 @@ export const eliminarPacienteDefinitivo = async (cedula, { descargarCopia = fals
   if (error) throw new Error(traducirErrorEliminacion(error));
   const resultado = data || {};
 
+  // Primero se limpia ESTE equipo (incluidas las operaciones pendientes): si una sincronizacion
+  // automatica corriera ahora, no debe volver a subir datos del paciente recien borrado.
+  const local = await purgarPacienteLocal({
+    pacienteIds: resultado.paciente_ids || [],
+    consultaIds: resultado.consulta_ids || [],
+    pedidoIds: resultado.pedido_ids || [],
+    cedula: limpia
+  });
+
   // Archivos de comprobantes. El servidor ya borro los datos; si esto falla no se
   // deshace nada, se avisa para que no queden archivos sueltos sin que se sepa.
   const rutas = [...new Set((resultado.archivos || [])
@@ -205,13 +232,6 @@ export const eliminarPacienteDefinitivo = async (cedula, { descargarCopia = fals
       archivosPendientes = rutas;
     }
   }
-
-  const local = await purgarPacienteLocal({
-    pacienteIds: resultado.paciente_ids || [],
-    consultaIds: resultado.consulta_ids || [],
-    pedidoIds: resultado.pedido_ids || [],
-    cedula: limpia
-  });
 
   return {
     encontrado: resultado.encontrado !== false,
