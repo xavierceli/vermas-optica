@@ -19,6 +19,7 @@ import {
   revocarEnrolamiento, pinValido 
 } from './seguridad';
 import { aplicarAvisoQueratometria, calcularTotal, calcularSaldo, validarMontosVenta } from './reglas';
+import { autocompletarArmazon, fechaDelPedido, problemaFechaPedido } from './pedidos';
 import { limpiarHtml } from './escape';
 import { validarFichaClinica, motivoDocumentoInvalido } from './validacion';
 import { aplicarCedula, crearEstadoPaciente, hoyISO, INV_INICIAL, PRECIO_INICIAL, CAMPOS_DE_VENTA, TRATAMIENTOS } from './fichaClinica';
@@ -753,6 +754,14 @@ export function useGestor() {
     setPedidoSeleccionado(prev => {
       const nuevo = { ...prev, [name]: val };
 
+      
+      // Al elegir un armazon del inventario, sus datos (tipo y medidas) se copian al pedido.
+      if (name === 'codigo_armazon') {
+        Object.assign(nuevo, autocompletarArmazon({
+          codigoAnterior: prev.codigo_armazon, codigoNuevo: val, actuales: prev, inventario
+        }));
+      }
+
       if (fieldsQueAfectanPrecio(name)) {
         if (name === 'tratam_ninguno' && val === 'SI') {
           nuevo.tratam_ar = 'NO'; nuevo.tratam_ar_azul = 'NO'; nuevo.tratam_azul = 'NO'; 
@@ -816,7 +825,12 @@ export function useGestor() {
       venta.pedido_id = idPedido;
       venta.patient_id = patientId;
       venta.consultation_id = consultationId;
-      venta.fecha = hoy;
+            const problemaFecha = problemaFechaPedido(pedidoSeleccionado, hoy);
+      if (problemaFecha) {
+        mostrarToast('No se puede guardar el pedido: ' + problemaFecha, 'warning', 7000);
+        return false;
+      }
+      venta.fecha = fechaDelPedido(pedidoSeleccionado, hoy);
       venta.abono = pedidoSeleccionado._nueva_venta ? '0' : safeString(pedidoSeleccionado.abono || '0');
       venta.pago_nota = pedidoSeleccionado.pago_nota || '';
       venta.descuento = venta.descuento ?? '0';

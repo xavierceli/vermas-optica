@@ -209,7 +209,7 @@ export default function PedidosLista({
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
                   <div>
                     <h3 className="font-extrabold text-lg text-indigo-950">{safeString(item.nombre)}</h3>
-                    <p className="text-xs sm:text-sm text-gray-700 font-semibold mb-1">Registro: {safeString(item.fecha)} | 🆔 {safeString(item.cedula)}</p>
+                    <p className="text-xs sm:text-sm text-gray-700 font-semibold mb-1">{safeString(item.pedido_id) ? `Pedido: ${safeString(item.fecha_venta || item.fecha).slice(0, 10)} | ` : ''}Registro: {safeString(item.fecha)} | 🆔 {safeString(item.cedula)}</p>
                     <div className="flex gap-2 items-center flex-wrap mt-1">
                       
                       <select 
