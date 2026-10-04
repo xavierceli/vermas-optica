@@ -1,5 +1,7 @@
 import { useState, useMemo, useRef } from 'react';
 import { safeString, safeNum, comprimirImagen } from './utilidades';
+import { hoyISO } from './fichaClinica';
+import { fechaDelPedido } from './pedidos';
 import { mostrarAviso } from './avisos';
 import { validarMontoCobro } from './cobros';
 import { calcularTotal, calcularSaldo, calcularMontoDescuento, normalizarDescuento } from './reglas';
@@ -144,6 +146,18 @@ export default function PedidosForm({
           ) : (
             <p className="text-indigo-800 font-semibold text-sm">Paciente: {safeString(pedidoSeleccionado.nombre)} ({safeString(pedidoSeleccionado.cedula)})</p>
           )}
+                    <div className="mt-2 flex items-center gap-2 flex-wrap">
+            <label htmlFor="pedido-fecha" className="text-xs sm:text-sm font-bold text-gray-800">Fecha del pedido</label>
+            <input
+              id="pedido-fecha"
+              name="fecha_pedido"
+              type="date"
+              max={hoyISO()}
+              value={fechaDelPedido(pedidoSeleccionado, hoyISO())}
+              onChange={manejarCambioPedido}
+              className="p-1.5 border border-gray-300 rounded-lg text-xs sm:text-sm text-gray-900 bg-white outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
         </div>
         <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto justify-end">
           <button 
