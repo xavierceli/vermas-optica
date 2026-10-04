@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { supabase } from './supabaseClient';
 import { safeString, safeNum, comprimirImagen, calcularEdad } from './utilidades';
 import { localDb, createUuid as generarId } from './localDb';
+import { eliminarPacienteDefinitivo } from './eliminacionPaciente';
 import { 
   archivarConsultaIndividualLocal, guardarConsultaLocal, guardarInventarioLocal,
   guardarPrecioLocal, guardarVentaLocal, obtenerSnapshotLocal, 
@@ -547,68 +548,40 @@ export function useGestor() {
     }
   };
 
-  const borrarHistoriaClinica = async (item) => {
+    const borrarHistoriaClinica = async (item, { descargarCopia = false } = {}) => {
     const cedula = safeString(item?.cedula).trim();
-    if (!cedula) return;
+    if (!cedula) return false;
 
     try {
-      if (navigator.onLine) {
-        const { error } = await supabase.rpc('eliminar_paciente_completo', { p_cedula: cedula });
-        if (error) {
-          console.warn('[borrar] Fallo al invocar RPC eliminar_paciente_completo:', error.message);
-        }
-      }
-
-      try {
-        const cedulaLimpia = cedula.replace(/[^0-9A-Za-z]/g, '').toLowerCase();
-
-        if (localDb.historial) {
-          await localDb.historial
-            .filter(h => safeString(h?.cedula).replace(/[^0-9A-Za-z]/g, '').toLowerCase() === cedulaLimpia)
-            .delete();
-        }
-        if (localDb.consultations) {
-          await localDb.consultations
-            .filter(c => safeString(c?.cedula).replace(/[^0-9A-Za-z]/g, '').toLowerCase() === cedulaLimpia)
-            .delete();
-        }
-        if (localDb.sales) {
-          await localDb.sales
-            .filter(s => safeString(s?.cedula).replace(/[^0-9A-Za-z]/g, '').toLowerCase() === cedulaLimpia)
-            .delete();
-        }
-        if (localDb.pedidos) {
-          await localDb.pedidos
-            .filter(p => safeString(p?.cedula).replace(/[^0-9A-Za-z]/g, '').toLowerCase() === cedulaLimpia)
-            .delete();
-        }
-        if (localDb.patients) {
-          await localDb.patients
-            .filter(p => safeString(p?.cedula).replace(/[^0-9A-Za-z]/g, '').toLowerCase() === cedulaLimpia)
-            .delete();
-        }
-        if (localDb.cache) {
-          await localDb.cache
-            .filter(r => safeString(r?.cedula).replace(/[^0-9A-Za-z]/g, '').toLowerCase() === cedulaLimpia)
-            .delete();
-        }
-        if (localDb.cedulasArchivadas) {
-          await localDb.cedulasArchivadas.delete(cedula);
-        }
-      } catch (errDb) {
-        console.warn('[borrar] Limpieza local completada con advertencias:', errDb);
-      }
+      const resumen = await eliminarPacienteDefinitivo(cedula, { descargarCopia });
 
       const matchCedula = c => safeString(c).replace(/[^0-9A-Za-z]/g, '').toLowerCase() === cedula.replace(/[^0-9A-Za-z]/g, '').toLowerCase();
       setHistorial(prev => prev.filter(h => !matchCedula(h?.cedula)));
       setVentasLocales(prev => prev.filter(v => !matchCedula(v?.cedula)));
       setVentasArchivadas(prev => prev.filter(v => !matchCedula(v?.cedula)));
 
-      await obtenerDatos({ sync: false });
-      mostrarToast('Paciente y todos sus registros fueron eliminados de raíz.', 'success');
+      await obtenerDatos({ sync: true });
+
+      if (resumen.archivosPendientes.length > 0) {
+        mostrarToast(
+          'Paciente eliminado, pero ' + resumen.archivosPendientes.length
+          + ' archivo(s) de comprobante no se pudieron confirmar como borrados del almacenamiento. Avísale a soporte.',
+          'warning', 9000
+        );
+      } else if (!resumen.encontrado) {
+        mostrarToast('El paciente ya no estaba en el servidor. Se limpió la copia de este equipo.', 'success');
+      } else {
+        mostrarToast(
+          'Paciente eliminado definitivamente: ' + resumen.consultas + ' consulta(s), '
+          + resumen.ventas + ' venta(s) y ' + resumen.cobros + ' movimiento(s) de pago.',
+          'success', 7000
+        );
+      }
+      return true;
     } catch (err) {
-      console.error('[borrar] Error en eliminación definitiva:', err);
-      mostrarToast('No se pudo completar la eliminación: ' + err.message, 'error');
+      console.error('[borrar] No se pudo eliminar al paciente:', err);
+      mostrarToast('No se eliminó nada: ' + err.message, 'error', 8000);
+      return false;
     }
   };
 
