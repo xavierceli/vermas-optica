@@ -5,6 +5,7 @@ import { imprimirInforme, imprimirRecetaSimple } from './impresiones';
 import { obtenerSnapshotLocal, normalizeCedula } from './localRepository';
 import { generarDiagnosticos, listaSegunBusqueda, resumenConsulta } from './historial';
 import BotonComprobante from './BotonComprobante';
+import BotonEliminarPaciente from './BotonEliminarPaciente';
 
 export default function Historial({
   historialReciente,
@@ -174,13 +175,16 @@ export default function Historial({
     );
   };
 
-  const manejarBorradoCompleto = async (item) => {
+  const manejarBorradoCompleto = async (item, opciones) => {
     const cedula = normalizeCedula(item?.cedula);
-    setResultadosBusqueda(prev => ({
-      ...prev,
-      datos: (prev.datos || []).filter(d => normalizeCedula(d.cedula) !== cedula)
-    }));
-    await borrarHistoriaClinica(item);
+    const eliminado = await borrarHistoriaClinica(item, opciones);
+    if (eliminado) {
+      setResultadosBusqueda(prev => ({
+        ...prev,
+        datos: (prev.datos || []).filter(d => normalizeCedula(d.cedula) !== cedula)
+      }));
+    }
+    return eliminado;
   };
 
   if (expedienteActivo) {
