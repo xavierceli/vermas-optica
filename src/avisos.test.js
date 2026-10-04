@@ -418,14 +418,21 @@ test('archivar una consulta desde el expediente no elimina al paciente completo'
 });
 
 test('eliminar un paciente pide confirmacion y dice lo que hace', () => {
-  // Antes era un boton sin confirmar: un toque de más y sin aviso. Y el mensaje
-  // decia "Consulta archivada", que no es lo que hace: archiva todo el historial.
+  // Antes era un boton sin confirmar: un toque de más y sin aviso. Ahora la pantalla
+  // muestra que se va a borrar con numeros reales y exige escribir la cedula.
   const vista = leer('Historial.jsx');
-  assert.match(vista, /confirmarAccion\(/, 'eliminar un paciente debe pedir confirmacion');
-  assert.match(vista, /Se eliminará permanentemente toda su información/, 'y el aviso debe explicar claramente el alcance');
+  assert.match(vista, /<BotonEliminarPaciente/, 'eliminar un paciente debe pasar por la ventana de confirmacion');
+  const boton = leer('BotonEliminarPaciente.jsx');
+  assert.match(boton, /Se borrará para siempre/, 'el aviso debe explicar claramente el alcance');
+  assert.match(boton, /escribe la cédula/, 'debe exigir escribir la cedula para confirmar');
+  assert.match(boton, /NO se puede deshacer/, 'y advertir que es irreversible');
   const gestor = leer('../src/useGestor.js');
-  assert.match(gestor, /Paciente y todos sus registros fueron eliminados de raíz/,
-    'el mensaje debe dejar claro que se eliminó todo el expediente');
+  assert.match(gestor, /Paciente eliminado definitivamente/,
+    'el mensaje debe decir lo que realmente se borro');
+  assert.ok(!/eliminados de raíz/.test(gestor),
+    'no debe prometer un borrado que el servidor pudo no hacer');
+  assert.ok(!/eliminar_paciente_completo/.test(gestor),
+    'la funcion antigua, que dejaba registros huerfanos, ya no se usa');
   assert.ok(!/mostrarToast\('Consulta archivada\.'/.test(gestor),
     '"Consulta archivada" hacia creer que solo se habia escondido una visita');
 });
