@@ -3,7 +3,7 @@ import { localDb, nowIso, requestPersistentStorage } from './localDb';
 import { cacheServerCatalog, cacheServerHistorial, enColaEscritura, markLocalOperationSynced } from './localRepository';
 import { paginarConsulta } from './paginacion';
 import { esFalloDeRed } from './reglas';
-import { aplicarEliminacionesRemotas } from './eliminacionPaciente';
+import { aplicarEliminacionesRemotas, reconciliarConServidor } from './eliminacionPaciente';
 
 // Topes de paginación declarados al inicio para evitar valores indefinidos
 const TAMPAGINA_HISTORIAL = 200;
@@ -407,19 +407,28 @@ const pullServerCache = async () => {
   if (pricesResult.error) console.warn('Tarifario local no actualizado:', pricesResult.error.message);
 
   let historialRows = [];
+  let historialCompleto = false;
   try {
     const descargado = await descargarHistorialPaginado();
     historialRows = descargado.filas;
     status.historialDescargadas = descargado.filas.length;
     status.historialParcial = descargado.paginasDescargadas >= MAX_PAGINAS_HISTORIAL;
+    historialCompleto = !status.historialParcial;
   } catch (error) {
     console.warn('Historial local no actualizado:', error?.message || error);
   }
 
   await leerCedulasArchivadasDelServidor();
-    // Limpia lo que se borro definitivamente desde otro dispositivo, antes de guardar lo descargado.
-  await aplicarEliminacionesRemotas();
   await cacheServerHistorial(historialRows);
+  // El servidor es la verdad para lo ya sincronizado: se quita de este equipo lo que ya no existe alli.
+  // Solo con una descarga completa; una lista vacia solo cuenta si el catalogo tambien se leyo bien.
+  if (historialCompleto) {
+    try {
+      await reconciliarConServidor(historialRows, { permitirVacio: (inventoryResult.data || []).length > 0 });
+    } catch (error) {
+      console.warn('No se pudo reconciliar con el servidor:', error?.message || error);
+    }
+  }
   await cacheServerCatalog({ inventory: inventoryResult.data || [], prices: pricesResult.data || [] });
   
 };
@@ -443,6 +452,9 @@ export const sincronizarAhora = async ({ pull = true } = {}) => {
       return status;
     }
 
+        // Antes de subir nada: lo borrado definitivamente (desde este u otro equipo) no debe volver a subirse.
+    await aplicarEliminacionesRemotas();
+    await refreshCounts();
     await subirAdjuntosPendientes();
     await refreshCounts();
 
