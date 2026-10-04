@@ -3,6 +3,7 @@ import { localDb, nowIso, requestPersistentStorage } from './localDb';
 import { cacheServerCatalog, cacheServerHistorial, enColaEscritura, markLocalOperationSynced } from './localRepository';
 import { paginarConsulta } from './paginacion';
 import { esFalloDeRed } from './reglas';
+import { aplicarEliminacionesRemotas } from './eliminacionPaciente';
 
 // Topes de paginación declarados al inicio para evitar valores indefinidos
 const TAMPAGINA_HISTORIAL = 200;
@@ -416,6 +417,8 @@ const pullServerCache = async () => {
   }
 
   await leerCedulasArchivadasDelServidor();
+    // Limpia lo que se borro definitivamente desde otro dispositivo, antes de guardar lo descargado.
+  await aplicarEliminacionesRemotas();
   await cacheServerHistorial(historialRows);
   await cacheServerCatalog({ inventory: inventoryResult.data || [], prices: pricesResult.data || [] });
   

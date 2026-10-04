@@ -546,22 +546,7 @@ export default function Historial({
                     <button type="button" onClick={() => cargarParaEditarClinico(item)} className="text-xs sm:text-sm bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-1.5 rounded-lg font-bold shadow-sm hover:bg-blue-100 transition-colors" title="Editar / Corregir esta consulta">
                       ✏️
                     </button>
-                    <button 
-                      type="button" 
-                      onClick={() => confirmarAccion(
-                        `¿ELIMINAR DEFINITIVAMENTE A ${safeString(item.nombre) || 'ESTE PACIENTE'}?\n\n`
-                        + '⚠️ ATENCIÓN: Se eliminará permanentemente toda su información:\n'
-                        + '• Ficha clínica y antecedentes\n'
-                        + '• Historial de refracción y consultas\n'
-                        + '• Pedidos, ventas y cobros asociados a esta cédula\n\n'
-                        + 'Esta acción NO se puede deshacer.',
-                        () => manejarBorradoCompleto(item)
-                      )}
-                      className="text-xs sm:text-sm bg-red-50 text-red-700 border border-red-200 px-2.5 py-1.5 rounded-lg font-bold shadow-sm hover:bg-red-100 transition-colors"
-                      title="Eliminar definitivamente todo el paciente y sus ventas"
-                    >
-                      🗑️
-                    </button>
+                    <BotonEliminarPaciente item={item} onEliminar={manejarBorradoCompleto} />
                   </div>
                 </div>
                 
