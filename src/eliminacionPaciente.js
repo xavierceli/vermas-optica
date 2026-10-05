@@ -57,6 +57,58 @@ export const contarRegistrosPaciente = async cedula => {
 
 // --- Copia previa del paciente (solo lo que hay en este dispositivo) ---------
 
+/**
+ * Los comprobantes van DENTRO del .json de la copia, en base64.
+ *
+ * Por que: al borrar un paciente se borran tambien sus comprobantes (es lo
+ * correcto para la privacidad), asi que despues no hay forma de recuperarlos.
+ * Copiarlos ANTES es la unica ventana para tener la evidencia de los pagos.
+ *
+ * Van en el mismo archivo y no en una carpeta aparte a proposito: una carpeta
+ * con varios archivos se descarga mal en celular (a veces baja solo el primero,
+ * en silencio), y una copia incompleta de un borrado irreversible es peor que
+ * no tener copia. Un solo .json baja entero o no baja.
+ *
+ * Nota: los comprobantes que ya se subieron al servidor y no quedaron en este
+ * equipo NO se pueden copiar (no hay red en este punto). Por eso la pantalla
+ * avisa de cuantos se incluyen.
+ */
+const adjuntosDelPaciente = async (cedulaNorm, ventaIds, consultaIds) => {
+  const cobros = await localDb.payments.filter(p => ventaIds.has(String(p.saleId))).toArray();
+  const cobroIds = new Set(cobros.map(p => String(p.id)));
+  return localDb.attachments.filter(a => (
+    ventaIds.has(String(a.refId)) || cobroIds.has(String(a.refId)) || consultaIds.has(String(a.refId))
+  )).toArray();
+};
+
+/** Convierte un Blob en base64 para poder meterlo dentro del .json. */
+const blobABase64Local = async blob => {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  let binario = '';
+  const TROZO = 0x8000;
+  for (let i = 0; i < bytes.length; i += TROZO) {
+    binario += String.fromCharCode.apply(null, bytes.subarray(i, i + TROZO));
+  }
+  return btoa(binario);
+};
+
+/** Prepara los comprobantes para el .json. Los que no tengan blob se omiten. */
+const prepararComprobantes = async adjuntos => {
+  const comprobantes = [];
+  for (const adjunto of adjuntos) {
+    // Sin blob no hay nada que copiar (p.ej. solo quedo la ruta en el servidor).
+    if (!adjunto.blob) continue;
+    comprobantes.push({
+      refId: String(adjunto.refId ?? ''),
+      refType: adjunto.refType || '',
+      nombre: adjunto.nombre || adjunto.ruta || 'comprobante.jpg',
+      mime: adjunto.mime || 'image/jpeg',
+      base64: await blobABase64Local(adjunto.blob)
+    });
+  }
+  return comprobantes;
+};
+
 export const armarCopiaPaciente = async cedula => {
   const cedulaNorm = normalizar(cedula);
   const pacientes = new Set();
@@ -72,13 +124,46 @@ export const armarCopiaPaciente = async cedula => {
   const items = await localDb.saleItems.filter(i => ventaIds.has(String(i.saleId))).toArray();
   const cobros = await localDb.payments.filter(p => ventaIds.has(String(p.saleId))).toArray();
   const movimientos = await localDb.inventoryMovements.filter(m => ventaIds.has(String(m.saleId))).toArray();
+
+  // Los comprobantes se buscan con la misma logica que usa el borrado, para que
+  // la copia incluya exactamente los archivos que despues se van a borrar.
+  const adjuntos = await adjuntosDelPaciente(cedulaNorm, ventaIds, consultaIds);
+  const comprobantes = await prepararComprobantes(adjuntos);
+
   return {
     formato: 'verplus-copia-paciente',
-    version: 1,
+    version: 2,
     generadoEn: new Date().toISOString(),
-    aviso: 'Contiene datos personales y clínicos. Guárdalo en un lugar privado.',
-    pacientes: fichas, consultas, ventas, items, cobros, movimientos
+    aviso: 'Contiene datos personales y clínicos, incluidos los comprobantes de pago. '
+      + 'Guárdalo en un lugar privado. Los comprobantes van en base64 dentro de este mismo archivo.',
+    pacientes: fichas,
+    consultas,
+    ventas,
+    items,
+    cobros,
+    movimientos,
+    comprobantes
   };
+};
+
+/**
+ * Cuantos comprobantes incluira la copia, para poder avisar ANTES de borrar.
+ * Es la misma busqueda que hace armarCopiaPaciente, pero sin convertir a base64:
+ * contar es barato y no retiene los archivos en memoria.
+ */
+export const contarComprobantesCopia = async cedula => {
+  const cedulaNorm = normalizar(cedula);
+  const fichas = await localDb.patients.filter(p => cedulaNorm && normalizar(p.cedula) === cedulaNorm).toArray();
+  const pacientes = new Set(fichas.map(p => String(p.id)));
+  const consultas = await localDb.consultations
+    .filter(c => pacientes.has(String(c.patientId)) || (cedulaNorm && normalizar(c.cedula) === cedulaNorm)).toArray();
+  const consultaIds = new Set(consultas.map(c => String(c.id)));
+  const ventas = await localDb.sales
+    .filter(v => pacientes.has(String(v.patientId)) || consultaIds.has(String(v.consultationId))
+      || (cedulaNorm && normalizar(v.cedula) === cedulaNorm)).toArray();
+  const ventaIds = new Set(ventas.map(v => String(v.id)));
+  const adjuntos = await adjuntosDelPaciente(cedulaNorm, ventaIds, consultaIds);
+  return adjuntos.filter(a => a.blob).length;
 };
 
 export const descargarCopiaPaciente = async cedula => {

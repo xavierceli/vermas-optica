@@ -1,0 +1,37 @@
+Incluye los comprobantes de pago en la copia previa al borrar un paciente
+
+Al borrar un paciente se borran tambien sus comprobantes: es lo correcto para
+la privacidad del paciente y asi quedo decidido. Pero entonces no hay forma de
+recuperarlos, y la copia que se descargaba antes de guardar los montos y las
+fechas pero NO la foto del comprobante. Es decir: sin la evidencia de que ese
+dinero entro.
+
+Este commit copia los comprobantes ANTES de destruirlos. No cambia la decision de
+borrado: sigue siendo total. Copiar antes no es conservar despues.
+
+Cambios:
+
+- armarCopiaPaciente ahora incluye "comprobantes": [{refId, refType, nombre,
+  mime, base64}]. Los busca con la misma logica que usa el borrado, para que la
+  copia lleve exactamente los archivos que despues se van a destruir.
+- La copia pasa a version 2 y su aviso explica que los comprobantes van en
+  base64 dentro del mismo archivo.
+- BotonEliminarPaciente consulta cuantos comprobantes se van a copiar y lo dice
+  junto a la casilla: "Tu copia incluira 3 comprobantes de pago".
+- Si no hay comprobantes en este equipo, avisa en amarillo que la copia NO los
+  incluye. Es el caso peligroso: creer que se guarda todo cuando no es cierto.
+
+Por que van dentro del mismo .json y no en una carpeta con varios archivos:
+
+Una carpeta con varios archivos se descarga mal en celular (a veces baja solo el
+primero, en silencio). Una copia incompleta de un borrado irreversible es peor
+que no tener copia. Un solo .json baja entero o no baja.
+
+Medido con 3 comprobantes de 25 KB: el archivo queda en 101 KB.
+
+Pruebas: 377 -> 391
+- El comprobante vuelve byte a byte al reconstruirlo del base64: una foto
+  alterada no serviria como evidencia.
+- El conteo previo y la copia dicen EXACTAMENTE lo mismo, o el aviso mentiria.
+- Un comprobante sin archivo local no se promete en el aviso.
+- Los comprobantes de otro paciente no se cuelan en la copia.
