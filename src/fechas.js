@@ -11,6 +11,30 @@
 
 const FECHA_SOLO = /^\d{4}[-/.]\d{2}[-/.]\d{2}$/;
 
+/** Nombres de mes en espanol. Fuente unica para toda la app. */
+const NOMBRES_MES = [
+  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
+];
+
+/**
+ * Nombre del mes y anio de una fecha, p. ej. "Octubre 2026".
+ * Se usa en el panel de estadisticas. Antes el texto estaba escrito a mano
+ * ("Octubre 2026") y nunca cambiaba: en noviembre el panel seguia rotulado con
+ * octubre mientras mostraba los numeros de noviembre.
+ * @param {Date} fecha
+ */
+export const nombreDelMes = (fecha = new Date()) => {
+  const d = fecha instanceof Date && !Number.isNaN(fecha.getTime()) ? fecha : new Date();
+  return `${NOMBRES_MES[d.getMonth()]} ${d.getFullYear()}`;
+};
+
+/** Solo el nombre del mes, para etiquetas cortas como "Ingresos Mes (Oct)". */
+export const nombreCortoDelMes = (fecha = new Date()) => {
+  const d = fecha instanceof Date && !Number.isNaN(fecha.getTime()) ? fecha : new Date();
+  return NOMBRES_MES[d.getMonth()].slice(0, 3);
+};
+
 /**
  * Convierte un valor de fecha en un objeto Date a la medianoche LOCAL.
  * Acepta 'AAAA-MM-DD' e impide desbordamientos silenciosos (ej: 1990-02-31).

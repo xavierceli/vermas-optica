@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import { contarRegistrosPaciente, traducirErrorEliminacion } from './eliminacionPaciente';
+import {
+  contarRegistrosPaciente, contarComprobantesCopia, traducirErrorEliminacion
+} from './eliminacionPaciente';
 
 const normalizar = valor => String(valor ?? '').replace(/[^0-9A-Za-z]/g, '').toLowerCase();
 const dinero = valor => '$' + (Number(valor) || 0).toFixed(2).replace('.', ',');
@@ -18,6 +20,7 @@ export default function BotonEliminarPaciente({ item, onEliminar }) {
   const [error, setError] = useState('');
   const [escrita, setEscrita] = useState('');
   const [descargarCopia, setDescargarCopia] = useState(true);
+  const [comprobantes, setComprobantes] = useState(null);
   const [ejecutando, setEjecutando] = useState(false);
 
   const nombre = String(item?.nombre ?? '').trim() || 'ESTE PACIENTE';
@@ -31,8 +34,14 @@ export default function BotonEliminarPaciente({ item, onEliminar }) {
     setError('');
     setEscrita('');
     setDescargarCopia(true);
+    setComprobantes(null);
     try {
       setResumen(await contarRegistrosPaciente(cedula));
+      // Que comprobantes se van a poder copiar. Si falla, el borrado sigue igual:
+      // solo se pierde el aviso previo, no la operacion.
+      try {
+        setComprobantes(await contarComprobantesCopia(cedula));
+      } catch { setComprobantes(null); }
     } catch (err) {
       setError(traducirErrorEliminacion(err));
     } finally {
@@ -131,7 +140,22 @@ export default function BotonEliminarPaciente({ item, onEliminar }) {
                 onChange={e => setDescargarCopia(e.target.checked)}
                 className="mt-1"
               />
-              <span>Descargar una copia de este paciente antes de borrar (guárdala en un lugar privado).</span>
+              <span>
+                Descargar una copia de este paciente antes de borrar (guárdala en un lugar privado).
+                {comprobantes !== null && comprobantes > 0 && (
+                  <span className="block mt-1 text-xs text-gray-700">
+                    Tu copia incluirá{' '}
+                    <strong>{plural(comprobantes, 'comprobante de pago', 'comprobantes de pago')}</strong>,{' '}
+                    guardados dentro del mismo archivo.
+                  </span>
+                )}
+                {comprobantes === 0 && (
+                  <span className="block mt-1 text-xs text-amber-800">
+                    ⚠️ No hay comprobantes guardados en este equipo. Si ya se subieron al servidor, esta copia{' '}
+                    <strong>no</strong> los incluya y no quedará copia de ellos.
+                  </span>
+                )}
+              </span>
             </label>
 
             <label htmlFor="confirmar-cedula-eliminar" className="block text-sm font-bold text-gray-800 mb-1">

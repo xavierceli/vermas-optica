@@ -1,6 +1,7 @@
 import { supabase } from './supabaseClient';
 import { mostrarAviso } from './avisos';
 import { neutralizarFormula } from './escape';
+import { construirFiltroBusqueda } from './busquedaServidor';
 
 export const safeString = (val) => {
   if (val === null || val === undefined) return '';
@@ -155,23 +156,10 @@ export const descargarCSV = (datos, nombreArchivo) => {
 
 export const buscarPacientesEnSupabase = async (textoBusqueda, { incluirArchivados = false } = {}) => {
   try {
-    const crudo = String(textoBusqueda || '').trim();
-    if (crudo.length < 2) return [];
-
-    const sanitizado = crudo
-      .toUpperCase()
-      .replace(/[(),%*\\]/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-
-    if (sanitizado.length < 2) return [];
-
-    // Reemplaza espacios por comodín % para que PostgREST busque nombres compuestos sin romper el DSL
-    const terminoPostgrest = sanitizado.replace(/\s+/g, '%');
-    const esNumero = /^\d+$/.test(sanitizado);
-    const filtro = esNumero 
-      ? `cedula.ilike.${terminoPostgrest}%,nombre.ilike.%${terminoPostgrest}%` 
-      : `nombre.ilike.%${terminoPostgrest}%,cedula.ilike.${terminoPostgrest}%`;
+    // El filtro lo arma construirFiltroBusqueda: es el unico sitio por donde
+    // pasa lo que escribe el usuario. Ver busquedaServidor.js para el por que.
+    const filtro = construirFiltroBusqueda(textoBusqueda);
+    if (filtro === null) return [];
 
     const { data, error } = await supabase
       .from('vista_pacientes')

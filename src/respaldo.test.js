@@ -5,8 +5,8 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
   FORMATO_RESPALDO, TABLAS, VERSION_RESPALDO, base64ABlob, blobABase64,
-  construirRespaldo, formatearMB, nivelEspacio, nombreArchivoRespaldo,
-  parsearRespaldo, resumenRespaldo, restaurarRespaldo
+  construirRespaldo, estimarRespaldo, formatearMB, nivelEspacio,
+  nombreArchivoRespaldo, parsearRespaldo, resumenRespaldo, restaurarRespaldo
 } from './respaldo.js';
 
 const SRC = join(dirname(fileURLToPath(import.meta.url)));
@@ -26,6 +26,7 @@ const crearDb = (sembrado = {}) => {
     const filas = new Map((sembrado[nombre] || []).map(f => [f.id, f]));
     tablas.set(nombre, {
       toArray: async () => [...filas.values()],
+      count: async () => filas.size,
       bulkPut: async nuevos => {
         llamadas.push(['bulkPut', nombre, nuevos.length]);
         nuevos.forEach(f => filas.set(f.id, f));
@@ -199,4 +200,75 @@ test('la interfaz explica que el respaldo es local y puede incluir datos clinico
 
 test('el panel de sincronizacion incluye el respaldo', () => {
   assert.match(leer('PanelSincronizacion.jsx'), /<RespaldoDatos/);
+});
+
+// --- Peso antes de generar ---------------------------------------------------
+// La interfaz dice "este respaldo pesara unos X MB" ANTES de generarlo. Si la
+// estimacion se quedara corta, el usuario leeria un numero que no es el real y
+// perderia la confianza en el aviso. Estas pruebas miden la estimacion contra el
+// archivo de verdad.
+
+test('la estimacion acierta con el archivo realmente generado', async () => {
+  const { db } = crearDb({
+    patients: [{ id: 'p1', nombre: 'JUAN', cedula: '171' }],
+    sales: [{ id: 's1', venta: '100' }],
+    attachments: [{ id: 'a1', blob: new Blob(['F'.repeat(60 * 1024)]), ruta: 'f.jpg' }]
+  });
+
+  const estimado = await estimarRespaldo(db);
+  const real = JSON.stringify(await construirRespaldo(db)).length;
+
+  const diferencia = Math.abs(estimado - real) / real;
+  assert.ok(
+    diferencia < 0.15,
+    `estimado ${estimado} vs real ${real} (${(diferencia * 100).toFixed(1)}% de diferencia)`
+  );
+});
+
+test('estimar no escribe nada: solo lee conteos y tamanos', async () => {
+  const { llamadas, db } = crearDb({
+    patients: [{ id: 'p1', nombre: 'JUAN' }],
+    attachments: [{ id: 'a1', blob: new Blob(['F'.repeat(1024)]), ruta: 'f.jpg' }]
+  });
+  await estimarRespaldo(db);
+  const operaciones = llamadas.map(([operacion]) => operacion);
+  assert.ok(
+    !operaciones.includes('clear') && !operaciones.includes('bulkPut'),
+    'estimar solo debe LEER: no puede tocar los datos del dispositivo'
+  );
+});
+
+test('una base vacia no rompe la estimacion', async () => {
+  const { db } = crearDb();
+  const peso = await estimarRespaldo(db);
+  assert.ok(Number.isFinite(peso) && peso >= 0);
+});
+
+test('la estimacion crece cuando se anaden fotos', async () => {
+  const { db: vacia } = crearDb();
+  const { db: conFotos } = crearDb({
+    attachments: [{ id: 'a1', blob: new Blob(['F'.repeat(2 * MB)]), ruta: 'f.jpg' }]
+  });
+  assert.ok(
+    await estimarRespaldo(conFotos) > await estimarRespaldo(vacia),
+    'las fotos tienen que aparecer en el peso estimado'
+  );
+});
+
+// --- La pantalla avisa antes de generar ---------------------------------------
+// node --test no renderiza React, asi que el peso se comprueba leyendo el fuente:
+// si alguien quita el aviso, estas pruebas lo detectan.
+
+test('la pantalla avisa del peso antes de generar el respaldo', () => {
+  const fuente = leer('RespaldoDatos.jsx');
+  assert.match(fuente, /estimarRespaldo/, 'debe estimar el peso al abrir');
+  assert.match(fuente, /mensajeDePeso/, 'debe convertirlo en un aviso para el usuario');
+  assert.match(fuente, /avisoPeso/, 'debe mostrarlo en pantalla');
+});
+
+test('el respaldo se sigue generando igual que antes', () => {
+  // La estimacion es solo informativa: no puede cambiar lo que se descarga.
+  const fuente = leer('RespaldoDatos.jsx');
+  assert.match(fuente, /construirRespaldo\(localDb\)/);
+  assert.match(fuente, /nombreArchivoRespaldo\(\)/);
 });

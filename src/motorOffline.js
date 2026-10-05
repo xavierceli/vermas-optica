@@ -30,11 +30,3 @@ export const leerBoveda = async (llave) => {
     return null;
   }
 };
-
-export const escribirBoveda = async (llave, datos) => {
-  try {
-    await localforage.setItem(llave, datos);
-  } catch (e) {
-    console.warn(`Error escribiendo en la bóveda [${llave}]:`, e);
-  }
-};

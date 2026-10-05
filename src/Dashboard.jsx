@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { safeNum, safeString } from './utilidades';
+import { nombreDelMes, nombreCortoDelMes } from './fechas.js';
 
 export default function Dashboard({ stats, historial, inventario }) {
   const [periodo, setPeriodo] = useState('total'); // Por defecto 'total' para ver tu histórico completo
@@ -45,6 +46,9 @@ export default function Dashboard({ stats, historial, inventario }) {
   }, [historial, inventario]);
 
   const esMesActual = periodo === 'mes';
+  // La etiqueta se calcula con la fecha REAL del sistema, no con un texto fijo.
+  const etiquetaMes = useMemo(() => nombreDelMes(), []);
+  const etiquetaMesCorta = useMemo(() => nombreCortoDelMes(), []);
   const ingresos = esMesActual ? (stats?.ventasMes || 0) : (stats?.ventasTotal || 0);
   const costos = esMesActual ? (stats?.gastosMes || 0) : (stats?.gastosTotal || 0);
   const utilidad = esMesActual ? (stats?.utilidadNeta || 0) : (stats?.utilidadTotal || 0);
@@ -57,7 +61,7 @@ export default function Dashboard({ stats, historial, inventario }) {
         <div>
           <h2 className="text-xl sm:text-2xl font-bold text-gray-900">📊 Panel de Inteligencia de Negocios</h2>
           <p className="text-gray-600 text-xs sm:text-sm">
-            {esMesActual ? 'Viendo resultados del mes de Octubre 2026.' : 'Viendo resultados acumulados históricos.'}
+            {esMesActual ? `Viendo resultados del mes de ${etiquetaMes}.` : 'Viendo resultados acumulados históricos.'}
           </p>
         </div>
 
@@ -70,7 +74,7 @@ export default function Dashboard({ stats, historial, inventario }) {
               esMesActual ? 'bg-white text-teal-900 shadow-sm' : 'text-gray-600 hover:text-gray-900'
             }`}
           >
-            📅 Octubre 2026 (Mes Actual)
+            📅 {etiquetaMes} (Mes Actual)
           </button>
           <button
             type="button"
@@ -85,7 +89,7 @@ export default function Dashboard({ stats, historial, inventario }) {
       </div>
 
       <h3 className="font-bold text-amber-900 mb-3 sm:mb-4 uppercase tracking-wider text-xs sm:text-sm">
-        Resumen Estratégico {esMesActual ? '(Mes Actual: Octubre 2026)' : '(Histórico Total)'}
+        Resumen Estratégico {esMesActual ? `(Mes Actual: ${etiquetaMes})` : '(Histórico Total)'}
       </h3>
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4 mb-8 sm:mb-10">
         
@@ -96,14 +100,14 @@ export default function Dashboard({ stats, historial, inventario }) {
 
         <div className="bg-gradient-to-br from-green-50 to-green-100 p-4 sm:p-5 rounded-xl border border-green-200 shadow-sm flex flex-col justify-between">
           <p className="text-emerald-900 font-bold text-xs uppercase tracking-tight">
-            {esMesActual ? 'Ingresos Mes (Oct)' : 'Ingresos Totales'}
+            {esMesActual ? `Ingresos Mes (${etiquetaMesCorta})` : 'Ingresos Totales'}
           </p>
           <p className="text-2xl sm:text-3xl font-black text-emerald-950 mt-2">${ingresos.toFixed(2)}</p>
         </div>
         
         <div className="bg-gradient-to-br from-red-50 to-red-100 p-4 sm:p-5 rounded-xl border border-red-200 shadow-sm flex flex-col justify-between">
           <p className="text-red-900 font-bold text-xs uppercase tracking-tight">
-            {esMesActual ? 'Costos Lab. (Oct)' : 'Costos Totales'}
+            {esMesActual ? `Costos Lab. (${etiquetaMesCorta})` : 'Costos Totales'}
           </p>
           <p className="text-2xl sm:text-3xl font-black text-red-950 mt-2">${costos.toFixed(2)}</p>
         </div>

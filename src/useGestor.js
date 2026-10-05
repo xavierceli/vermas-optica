@@ -7,7 +7,7 @@ import {
   archivarConsultaIndividualLocal, guardarConsultaLocal, guardarInventarioLocal,
   guardarPrecioLocal, guardarVentaLocal, obtenerSnapshotLocal, 
   importLegacyCache, anularVentaLocal, eliminarInventarioLocal, 
-  eliminarPrecioLocal, guardarAdjuntoLocal, anularVentaConReembolso 
+  eliminarPrecioLocal, anularVentaConReembolso
 } from './localRepository';
 import { 
   iniciarMotorSync, suscribirSync, sincronizarAhora, 
@@ -18,8 +18,10 @@ import {
   enrolarDispositivo, leerEnrolamiento, intentarDesbloqueo, 
   revocarEnrolamiento, pinValido 
 } from './seguridad';
-import { aplicarAvisoQueratometria, calcularTotal, calcularSaldo, validarMontosVenta } from './reglas';
+import { aplicarAvisoQueratometria, validarMontosVenta } from './reglas';
 import { autocompletarArmazon, fechaDelPedido, problemaFechaPedido } from './pedidos';
+import { autoCalcularPrecio as calcularPrecioBase, fieldsQueAfectanPrecio } from './calculoPrecio';
+import { unificarPedidos, filtrarPedidos, filtrarTarifario, calcularEstadisticas, prefijoDelMesActual } from './estadisticas';
 import { limpiarHtml } from './escape';
 import { validarFichaClinica, motivoDocumentoInvalido } from './validacion';
 import { aplicarCedula, crearEstadoPaciente, hoyISO, INV_INICIAL, PRECIO_INICIAL, CAMPOS_DE_VENTA, TRATAMIENTOS } from './fichaClinica';
@@ -340,32 +342,29 @@ export function useGestor() {
       let urlImagen = nuevoItemInv.imagen_url || null;
 
       if (imagenSeleccionada) {
+        // DECISIÓN DEL USUARIO: la foto de un armazón identifica el producto y se
+        // consulta todo el tiempo (al vender, al imprimir la etiqueta). Antes se
+        // guardaba "para subirla luego" y, como la app no encontraba el archivo
+        // (ver src/imagenesInventario.js), el producto quedaba sin foto; y si el
+        // equipo se perdia, la imagen se perdia con el. Ahora la foto se sube
+        // SIEMPRE con conexion: sin internet se avisa y NO se guarda el producto
+        // a medias, para no dejar un armazon sin la foto que lo identifica.
+        if (!navigator.onLine) {
+          mostrarToast('Sin conexión: no se pueden subir fotos de armazones. Conéctate y vuelve a intentar.', 'warning', 6000);
+          return;
+        }
         const archivoComprimido = await comprimirImagen(imagenSeleccionada);
         const nombreArchivo = `producto_${Date.now()}_${generarId().substring(0, 8)}.jpg`;
-        let subido = false;
-        if (navigator.onLine) {
-          try {
-            const { error: errSubida } = await supabase.storage
-              .from('inventario_imagenes')
-              .upload(nombreArchivo, archivoComprimido, { contentType: 'image/jpeg', upsert: true });
-            if (errSubida) throw new Error(errSubida.message);
-            urlImagen = nombreArchivo;
-            subido = true;
-          } catch (errImg) {
-            console.warn('No se pudo subir la foto ahora, se guardará localmente:', errImg);
-          }
-        }
-        if (!subido) {
-          await guardarAdjuntoLocal({
-            blob: archivoComprimido,
-            nombre: nombreArchivo,
-            mime: 'image/jpeg',
-            bucket: 'inventario_imagenes',
-            refType: 'inventario',
-            refId: editandoInvId || nuevoItemInv.id || generarId()
-          });
-          urlImagen = null;
-          mostrarToast('Sin conexión: la foto quedó guardada en este dispositivo y se subirá sola.', 'warning');
+        try {
+          const { error: errSubida } = await supabase.storage
+            .from('inventario_imagenes')
+            .upload(nombreArchivo, archivoComprimido, { contentType: 'image/jpeg', upsert: true });
+          if (errSubida) throw new Error(errSubida.message);
+          urlImagen = nombreArchivo;
+        } catch (errImg) {
+          // Con internet pero sin exito: tampoco se guarda el producto a medias.
+          mostrarToast('No se pudo subir la foto: ' + (errImg?.message || 'error desconocido') + '. El producto no se guardó.', 'error', 7000);
+          return;
         }
       }
 
@@ -686,60 +685,12 @@ export function useGestor() {
     }
   };
 
-  const autoCalcularPrecio = (pedidoActual) => {
-    if (!pedidoActual) return 0;
-    let total = 0;
-
-    if (pedidoActual.codigo_armazon) {
-      const armazonEncontrado = (inventario || []).find(
-        item => String(item.codigo).trim().toUpperCase() === String(pedidoActual.codigo_armazon).trim().toUpperCase()
-      );
-      if (armazonEncontrado && armazonEncontrado.precio) {
-        total += safeNum(armazonEncontrado.precio);
-      }
-    }
-
-    if (pedidoActual.accesorio_id) {
-      const accesorioEncontrado = (inventario || []).find(
-        item => String(item.id) === String(pedidoActual.accesorio_id)
-      );
-      if (accesorioEncontrado && accesorioEncontrado.precio) {
-        total += safeNum(accesorioEncontrado.precio);
-      }
-    }
-
-    const bases = (listaPrecios || []).filter(p => safeString(p.tipo_lente) === 'CALCULO' && safeString(p.rango_medida) === 'BASE');
-    const precioDe = (material) => {
-      const fila = bases.find(b => safeString(b.material).trim().toUpperCase() === String(material).trim().toUpperCase());
-      if (fila) return safeNum(fila.precio_sugerido);
-      return 0;
-    };
-
-    if (pedidoActual.material_lente && pedidoActual.material_lente !== 'Otros') {
-      total += precioDe(pedidoActual.material_lente);
-    }
-
-    const mapaTratamientos = {
-      tratam_ar: 'AR Verde', tratam_ar_azul: 'AR Azul', tratam_azul: 'Filtro Azul',
-      tratam_tinturado: 'Tinturado', tratam_foto: 'Fotocromático', tratam_trans: 'Transition'
-    };
-    Object.keys(mapaTratamientos).forEach(k => {
-      if (pedidoActual[k] === 'SI') total += precioDe(mapaTratamientos[k]);
-    });
-
-    return Number(total.toFixed(2));
-  };
 
   const forzarRecalculo = () => { 
     if (!pedidoSeleccionado) return; 
-    setPedidoSeleccionado(prev => ({ ...prev, venta: autoCalcularPrecio(prev) || '' })); 
+    setPedidoSeleccionado(prev => ({ ...prev, venta: calcularPrecioBase(prev, inventario, listaPrecios) || '' })); 
   };
 
-  const fieldsQueAfectanPrecio = (name) => [
-    'codigo_armazon', 'material_lente', 'accesorio_id', 'tratam_ar', 
-    'tratam_ar_azul', 'tratam_azul', 'tratam_tinturado', 'tratam_foto', 
-    'tratam_trans', 'tratam_ninguno'
-  ].includes(name);
 
   const manejarCambioPedido = (e) => {
     let { name, value, type, checked, tagName } = e.target;
@@ -769,7 +720,7 @@ export function useGestor() {
         } else if (name.startsWith('tratam_') && name !== 'tratam_ninguno' && val === 'SI') {
           nuevo.tratam_ninguno = 'NO';
         }
-        nuevo.venta = autoCalcularPrecio(nuevo);
+        nuevo.venta = calcularPrecioBase(nuevo, inventario, listaPrecios);
       }
       return nuevo;
     });
@@ -897,12 +848,41 @@ export function useGestor() {
 
       setPedidoSeleccionado(null);
       setVistaActual('pedidos_lista');
-      
-      // Sincronización transparente en segundo plano
-      void obtenerDatos({ sync: true });
-      void sincronizarAhora({ pull: false });
 
-      mostrarToast('Venta guardada exitosamente.', 'success');
+      // HONESTIDAD AL GUARDAR (IMPORTANTE 5)
+      // Antes se lanzaba la sincronizacion con `void` (sin esperar) y se mostraba
+      // SIEMPRE "Venta guardada exitosamente". Eso miente: la venta queda guardada en
+      // el dispositivo, pero puede no haber llegado al servidor. Sin internet, o si
+      // el servidor la rechaza, el usuario se iba creyendo que estaba en la nube.
+      // `guardarPacienteClinico` ya hacia esto bien; aqui se iguala.
+      // No se bloquea la interfaz: se espera a la cola (que es rapido) y luego se
+      // recarga en segundo plano.
+      const estadoSync = await sincronizarAhora({ pull: false });
+      void obtenerDatos({ sync: true });
+
+      const pendientes = estadoSync?.pending || 0;
+      const descartadas = estadoSync?.descartadas || 0;
+      const fallos = (estadoSync?.fallos || []).length;
+
+      if (fallos > 0 || descartadas > 0) {
+        // El servidor la rechazo: sigue guardada aqui, pero no llego a la nube.
+        mostrarToast(
+          'Venta guardada SOLO en este dispositivo: el servidor la rechazó. Revisa el panel de sincronización antes de cerrar el equipo.',
+          'error', 9000
+        );
+      } else if (pendientes > 0 || estadoSync?.phase === 'offline') {
+        mostrarToast(
+          'Venta guardada en este dispositivo. Se subirá a la nube al recuperar conexión. No cierres la app todavía.',
+          'warning', 7000
+        );
+      } else if (estadoSync?.phase === 'error') {
+        mostrarToast(
+          'Venta guardada en este dispositivo, pero la subida falló: ' + String(estadoSync.lastError || 'sin detalle') + '. Se reintentará sola.',
+          'warning', 8000
+        );
+      } else {
+        mostrarToast('Venta guardada y sincronizada con la nube.', 'success');
+      }
       return true;
     } catch (e) {
       mostrarToast('Error al guardar pedido: ' + e.message, 'error');
@@ -964,136 +944,28 @@ export function useGestor() {
   };
 
   const queryGlobal = safeString(busqueda).toLowerCase();
-  
-  const todosLosPedidosUnificados = useMemo(() => {
-    const mapa = new Map();
-    const fuentes = [
-      ...(historial || []),
-      ...(ventasArchivadas || []),
-      ...(ventasLocales || [])
-    ];
 
-    fuentes.forEach((item, index) => {
-      if (!item) return;
-      const clave = safeString(item.pedido_id) || safeString(item.id) || `temp_${index}`;
-      
-      const v = safeNum(item.venta || item.total || item.precio_total);
-      const ab = safeNum(item.abono);
-      const tieneDatosVenta = Boolean(safeString(item.pedido_id).trim())
-        || v > 0
-        || ab > 0
-        || safeString(item.codigo_armazon).trim() !== ''
-        || safeString(item.accesorio_id).trim() !== '';
+  const todosLosPedidosUnificados = useMemo(
+    () => unificarPedidos({ historial, ventasArchivadas, ventasLocales }),
+    [historial, ventasArchivadas, ventasLocales]
+  );
 
-      if (!tieneDatosVenta) return;
+  const pedidosFiltrados = useMemo(
+    () => filtrarPedidos(todosLosPedidosUnificados, queryGlobal),
+    [todosLosPedidosUnificados, queryGlobal]
+  );
 
-      if (mapa.has(clave)) {
-        const existente = mapa.get(clave);
-        if (ab > safeNum(existente.abono) || v > safeNum(existente.venta)) {
-          mapa.set(clave, { ...existente, ...item, venta: v || existente.venta, abono: ab || existente.abono });
-        }
-      } else {
-        mapa.set(clave, { ...item, venta: v, abono: ab });
-      }
-    });
+  const listaPreciosFiltrada = useMemo(
+    () => filtrarTarifario(listaPrecios, busquedaPrecio),
+    [listaPrecios, busquedaPrecio]
+  );
 
-    return Array.from(mapa.values());
-  }, [historial, ventasArchivadas, ventasLocales]);
+  const mesActual = useMemo(() => prefijoDelMesActual(), []);
 
-  const pedidosFiltrados = useMemo(() => {
-    return todosLosPedidosUnificados.filter(item => {
-      if (!item) return false;
-      const matchSearch = safeString(item.nombre).toLowerCase().includes(queryGlobal) || safeString(item.cedula).includes(queryGlobal);
-      return queryGlobal ? matchSearch : true;
-    });
-  }, [todosLosPedidosUnificados, queryGlobal]);
-
-  const listaPreciosFiltrada = useMemo(() => {
-    const q = safeString(busquedaPrecio).toLowerCase();
-    return (listaPrecios || []).filter(item => {
-      if (!item) return false;
-      return safeString(item.tipo_lente).toLowerCase().includes(q)
-        || safeString(item.material).toLowerCase().includes(q)
-        || safeString(item.rango_medida).toLowerCase().includes(q);
-    });
-  }, [listaPrecios, busquedaPrecio]);
-
-  const stats = useMemo(() => {
-    try {
-      const fechaActual = new Date();
-      const anio = fechaActual.getFullYear();
-      const mes = String(fechaActual.getMonth() + 1).padStart(2, '0');
-      const prefijoMesActual = `${anio}-${mes}`;
-
-      let ventasMes = 0;
-      let gastosMes = 0;
-      let ventasTotal = 0;
-      let gastosTotal = 0;
-      let abonosPendientes = 0;
-      const cedulasUnicas = new Set();
-
-      todosLosPedidosUnificados.forEach(p => {
-        if (!p) return;
-        const estado = safeString(p.estado).trim().toLowerCase();
-        if (estado === 'anulado') return;
-
-        const vFinal = calcularTotal(p.venta || p.total || 0, p.descuento || 0);
-        const abonoReal = safeNum(p.abono);
-        const saldo = calcularSaldo(p.venta || p.total || 0, p.descuento || 0, abonoReal);
-
-        if (saldo > 0) {
-          abonosPendientes += saldo;
-        }
-
-        const gastoFila = safeNum(p.costo_lunas_int) + 
-                          safeNum(p.costo_armazon_int) + 
-                          safeNum(p.costo_accesorio_int) + 
-                          safeNum(p.costo_tratamientos_int) + 
-                          safeNum(p.costo_varios_int);
-
-        ventasTotal += vFinal;
-        gastosTotal += gastoFila;
-
-        const fechaRegistro = safeString(p.fecha_venta || p.fecha || p.created_at || '').slice(0, 7);
-        if (fechaRegistro === prefijoMesActual) {
-          ventasMes += vFinal;
-          gastosMes += gastoFila;
-        }
-
-        const cedula = safeString(p.cedula).trim().toUpperCase();
-        if (cedula && cedula !== '9999999999' && safeString(p.nombre).trim().toUpperCase() !== 'CONSUMIDOR FINAL') {
-          cedulasUnicas.add(cedula);
-        }
-      });
-
-      (historial || []).forEach(h => {
-        const c = safeString(h?.cedula).trim().toUpperCase();
-        if (c && c !== '9999999999' && safeString(h?.nombre).trim().toUpperCase() !== 'CONSUMIDOR FINAL') {
-          cedulasUnicas.add(c);
-        }
-      });
-
-      return {
-        ventasMes: Number(ventasMes.toFixed(2)),
-        gastosMes: Number(gastosMes.toFixed(2)),
-        utilidadNeta: Number((ventasMes - gastosMes).toFixed(2)),
-        ventasTotal: Number(ventasTotal.toFixed(2)),
-        gastosTotal: Number(gastosTotal.toFixed(2)),
-        utilidadTotal: Number((ventasTotal - gastosTotal).toFixed(2)),
-        abonosPendientes: Number(abonosPendientes.toFixed(2)),
-        totalPacientes: cedulasUnicas.size,
-        total: (historial || []).length
-      };
-    } catch (err) {
-      console.error('[stats] Error calculando estadísticas:', err);
-      return { 
-        ventasMes: 0, gastosMes: 0, utilidadNeta: 0, 
-        ventasTotal: 0, gastosTotal: 0, utilidadTotal: 0, 
-        abonosPendientes: 0, totalPacientes: 0, total: 0 
-      }; 
-    }
-  }, [todosLosPedidosUnificados, historial]);
-
+  const stats = useMemo(
+    () => calcularEstadisticas({ pedidos: todosLosPedidosUnificados, historial, mesActual }),
+    [todosLosPedidosUnificados, historial, mesActual]
+  );
   const edadActual = calcularEdad(paciente?.fecha_nacimiento);
   const claseInputRef = (campo, clasesExtra) => {
     const estaVacio = safeString(paciente[campo]).trim() === '';

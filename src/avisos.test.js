@@ -314,7 +314,7 @@ test('nunca se envia un item de venta sin inventario resuelto', () => {
   // El filtro dejaba pasar items con `inventario_id: null` (solo codigo), y el
   // servidor los rechaza con 22023. El optometria no tenia forma de saber que
   // el problema era un armazon sin correspondencia en el inventario.
-  const fuente = leer('localRepository.js');
+  const fuente = leer('repositorio/ventas.js');
   const i = fuente.indexOf('items: resolvedItems');
   const bloque = fuente.slice(i, i + 420);
   assert.match(bloque, /filter\(item => item\.inventoryId !== null\)/,
@@ -384,7 +384,7 @@ test('el borrado de un paciente es un hecho del SERVIDOR, no del dispositivo', (
   assert.match(motor, /\.is\('archived_at', null\)/,
     'y hay que distinguir las consultas VIVAS: un paciente sigue existiendo si tiene alguna viva');
 
-  const repo = leer('localRepository.js');
+  const repo = leer('repositorio/consultas.js');
   assert.match(repo, /getMeta\('cedulasArchivadasServidor', \[\]\)/,
     'el snapshot debe mezclar las archivadas del servidor con las locales');
 });
@@ -394,7 +394,7 @@ test('eliminar un paciente archiva TODO su historial, no solo la ultima visita',
   // consultas, se archivaba 1. Las otras 9 seguian VIVAS en el servidor, asi que
   // el paciente existia de verdad y volvia a salir en cada sincronizacion. El
   // boton de la tarjeta solo escondia la visita que se estaba viendo.
-  const fuente = leer('localRepository.js');
+  const fuente = leer('repositorio/consultas.js');
   const i = fuente.indexOf('const idsAArchivar = new Set');
   const bloque = fuente.slice(i, i + 1400);
   assert.match(bloque, /localDb\.consultations\.toArray\(\)/,
@@ -420,7 +420,9 @@ test('archivar una consulta desde el expediente no elimina al paciente completo'
 test('eliminar un paciente pide confirmacion y dice lo que hace', () => {
   // Antes era un boton sin confirmar: un toque de más y sin aviso. Ahora la pantalla
   // muestra que se va a borrar con numeros reales y exige escribir la cedula.
-  const vista = leer('Historial.jsx');
+  // La tarjeta se pinto en src/componentes/ListaTarjetas.jsx al separar las vistas
+  // de Historial.jsx; el boton y sus comprobaciones viven ahi.
+  const vista = leer('componentes/ListaTarjetas.jsx');
   assert.match(vista, /<BotonEliminarPaciente/, 'eliminar un paciente debe pasar por la ventana de confirmacion');
   const boton = leer('BotonEliminarPaciente.jsx');
   assert.match(boton, /Se borrará para siempre/, 'el aviso debe explicar claramente el alcance');
@@ -443,24 +445,30 @@ test('archivar un paciente NO hace desaparecer su venta de Pedidos', () => {
   // venta sigue viva sujetando el stock, el inventario se comia el producto y no
   // habia ninguna forma de anularla desde la app: "Stock insuficiente" sin
   // salida. La ficha clinica se oculta; la venta, no.
-  const repo = leer('localRepository.js');
+  const repo = leer('repositorio/lectura.js');
   assert.match(repo, /ventasArchivadas: sales/,
     'el snapshot debe devolver las ventas de pacientes archivados');
   assert.match(repo, /_pacienteArchivado: true/,
     'marcadas como tales, para distinguirlas de una venta corriente');
 
+  // La combinacion de las tres fuentes (historial, ventas archivadas y ventas
+  // locales) vive ahora en src/estadisticas.js, en unificarPedidos(). Aqui se
+  // comprueba que el hook le pase las tres y que ese modulo las junte de verdad.
   const gestor = leer('../src/useGestor.js');
-  const i = gestor.indexOf('const todosLosPedidosUnificados');
-  const bloque = gestor.slice(i, i + 900);
-  assert.match(bloque, /\.\.\.\(ventasArchivadas \|\| \[\]\)/,
+  assert.match(gestor, /unificarPedidos\(\{\s*historial,\s*ventasArchivadas,\s*ventasLocales\s*\}\)/,
     'la lista de pedidos debe combinar ventas archivadas con las demás');
+
+  const modulo = leer('../src/estadisticas.js');
+  assert.match(modulo, /\.\.\.\(historial \|\| \[\]\)/, 'toma el historial');
+  assert.match(modulo, /\.\.\.\(ventasArchivadas \|\| \[\]\)/, 'toma las ventas archivadas');
+  assert.match(modulo, /\.\.\.\(ventasLocales \|\| \[\]\)/, 'toma las ventas locales');
 });
 
 test('el archivado se reconoce en los dos idiomas', () => {
   // La app escribe `archivedAt` (camelCase) y la base devuelve `archived_at`
   // (snake_case). Mirar solo uno de los dos hacía que un borrado hecho en otro
   // equipo no ocultase nada aquí: la mitad de la causa de este bug.
-  const repo = leer('localRepository.js');
+  const repo = leer('repositorio/base.js');
   assert.match(repo, /archivada = fila => Boolean\(fila\?\.archivedAt \|\| fila\?\.archived_at\)/,
     'el archivado se debe reconocer en las dos grafias');
   assert.ok(!/!c\.archivedAt\b/.test(repo),
@@ -516,7 +524,10 @@ test('las estadísticas se recalculan cuando se actualizan los datos de pedidos'
   const fuente = leer('../src/useGestor.js');
   assert.match(fuente, /const todosLosPedidosUnificados = useMemo/,
     'pedidos debe consolidar las fuentes locales actualizadas');
-  assert.match(fuente, /const stats = useMemo\(\(\) => \{[\s\S]*?\}, \[todosLosPedidosUnificados, historial\]\)/,
+  // El calculo vive ahora en src/estadisticas.js (funcion pura, probada aparte en
+  // estadisticas.test.js). Aqui se comprueba lo que ese modulo no puede: que React
+  // lo recalcule cuando cambian los datos de pedidos o historial.
+  assert.match(fuente, /const stats = useMemo\([\s\S]*?todosLosPedidosUnificados[\s\S]*?historial[\s\S]*?mesActual[\s\S]*?\]\)/,
     'las estadísticas deben recalcularse a partir del pedido e historial vigentes');
 });
 test('imprimir no depende SOLO del evento load de la ventana', () => {
