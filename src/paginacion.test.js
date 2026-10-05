@@ -88,6 +88,42 @@ test('un error de red se propaga para que el sync lo reporte', async () => {
   );
 });
 
+// ESCALA: la optica apunta a 10.000+ pacientes. syncEngine.js usa
+// pageSize 200 y maxPaginas 100 (antes 25), asi que el tope son 20.000
+// consultas. Estos tests fijan ese comportamiento para que nadie lo baje sin
+// darse cuenta y deje pacientes sin ver en los equipos nuevos.
+test('el tope real del sync alcanza para 10.000 pacientes', async () => {
+  const TAMPAGINA = 200;
+  const MAX_PAGINAS = 100; // debe coincidir con syncEngine.js
+  const resultado = await paginarConsulta({
+    fetchPagina: crearVista(10000),
+    pageSize: TAMPAGINA,
+    maxPaginas: MAX_PAGINAS
+  });
+  assert.equal(resultado.filas.length, 10000, 'los 10.000 pacientes deben descargarse completos');
+  assert.equal(resultado.completa, true, 'no debe quedar historial parcial');
+});
+
+test('por encima de 10.000 sigue descargando sin cortarse', async () => {
+  const resultado = await paginarConsulta({
+    fetchPagina: crearVista(15000),
+    pageSize: 200,
+    maxPaginas: 100
+  });
+  assert.equal(resultado.filas.length, 15000);
+  assert.equal(resultado.completa, true);
+});
+
+test('si hay mas consultas que el tope, avisa que el historial quedo parcial', async () => {
+  const resultado = await paginarConsulta({
+    fetchPagina: crearVista(25000), // 125 paginas: supera el tope de 100
+    pageSize: 200,
+    maxPaginas: 100
+  });
+  assert.equal(resultado.filas.length, 20000, 'descarga hasta el tope y se detiene');
+  assert.equal(resultado.completa, false, 'debe avisar que es parcial, no fingir que esta completo');
+});
+
 test('informa cada pagina descargada para poder mostrar progreso', async () => {
   const vistas = [];
   await paginarConsulta({

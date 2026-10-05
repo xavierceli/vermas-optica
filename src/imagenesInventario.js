@@ -30,13 +30,17 @@ const limpiarCacheExpirada = () => {
   }
 };
 
-const buscarBlobLocalInventario = async (ruta) => {
+// La tabla `attachments` se creo en src/localDb.js con la clave
+// 'id,refType,refId,status,createdAt,[status+createdAt]'.
+// NO incluye `bucket`, asi que consultar por ese campo lanzaba
+//   SchemaError: KeyPath bucket on object store attachments is not indexed
+// y el try/catch de abajo convertia ese error en un `null` silencioso:
+// la foto existia en el dispositivo pero la app mostraba "Sin foto".
+// Se consulta por `refType` (que SI esta indexado) y se filtra en memoria,
+// igual que comprobantes.js ya hace con `refId` para los comprobantes de pago.
+const buscarBlobLocalInventario = async ruta => {
   try {
-    const lista = await localDb.attachments
-      .where('bucket')
-      .equals(BUCKET)
-      .toArray();
-
+    const lista = await localDb.attachments.where('refType').equals('inventario').toArray();
     const hallado = lista.find(a => a.blob && (a.ruta === ruta || a.nombre === ruta));
     return hallado?.blob || null;
   } catch {
@@ -108,34 +112,6 @@ export const resolverUrlImagenInventario = async (valor) => {
     const blobUrl = URL.createObjectURL(blobLocal);
     cacheBlobsLocales.set(ruta, blobUrl);
     return blobUrl;
-  }
-
-  return null;
-};
-
-/**
- * Firma una foto recién seleccionada o subida para visualizarla inmediatamente.
- * @param {string} valor Ruta de la imagen
- * @returns {Promise<string|null>}
- */
-export const urlInmediataParaVista = async (valor) => {
-  const ruta = extraerRutaImagen(valor);
-  if (!ruta) return null;
-
-  try {
-    const { data } = await supabase.storage
-      .from(BUCKET)
-      .createSignedUrl(ruta, DURACION_FIRMA_SEGUNDOS);
-
-    if (data?.signedUrl) {
-      cacheFirmas.set(ruta, {
-        url: data.signedUrl,
-        expira: Date.now() + DURACION_CACHE_MS - MARGEN_SEGURIDAD_MS
-      });
-      return data.signedUrl;
-    }
-  } catch {
-    /* Fallo silencioso */
   }
 
   return null;

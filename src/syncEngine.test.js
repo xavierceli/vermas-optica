@@ -68,9 +68,11 @@ test('las operaciones enviadas son las unicas reintentables', () => {
 // cargando los datos una y otra vez.
 
 test('la migración del cache antiguo se marca como hecha incluso si falla', () => {
-  const repo = readFileSync(join(SRC, 'localRepository.js'), 'utf8');
+  // El codigo vive en src/repositorio/ desde el reparto en modulos; las pruebas
+  // de contrato siguen comprobando el mismo invariante, solo que alli.
+  const repo = readFileSync(join(SRC, 'repositorio', 'lectura.js'), 'utf8');
   const bloque = repo.slice(repo.indexOf('const importLegacyCacheImpl'));
-  const cuerpo = bloque.slice(0, bloque.indexOf('export const obtenerSnapshotLocal'));
+  const cuerpo = bloque.slice(0, bloque.indexOf('obtenerSnapshotLocal'));
   // El bucle venía de que el flag 'legacyCacheImported' solo se escribía al
   // final del éxito. Con un fallo, el flag nunca se guardaba y cada carga de
   // datos volvía a intentarlo.
@@ -95,7 +97,7 @@ test('un fallo en la migración no impide cargar los datos', () => {
 // a 18 operaciones dependientes ("El pedido X no existe").
 
 test('un id no numérico no se convierte en NaN (que el JSON serializa como null)', () => {
-  const repo = readFileSync(join(SRC, 'localRepository.js'), 'utf8');
+  const repo = readFileSync(join(SRC, 'repositorio', 'base.js'), 'utf8');
   const linea = repo.split('\n').find(l => l.includes('const numericId'));
   assert.ok(linea, 'debe existir numericId');
   // La version antigua era: value => ... ? null : Number(value), que devuelve
@@ -107,7 +109,7 @@ test('un id no numérico no se convierte en NaN (que el JSON serializa como null
 });
 
 test('los items sin id ni codigo no se envian al servidor', () => {
-  const repo = readFileSync(join(SRC, 'localRepository.js'), 'utf8');
+  const repo = readFileSync(join(SRC, 'repositorio', 'ventas.js'), 'utf8');
   // Se ancla en el serializado del payload, no en la primera aparicion de
   // createOutboxOperation (hay varias y la del filtro esta mas abajo).
   const bloque = repo.slice(repo.indexOf('items: resolvedItems'));

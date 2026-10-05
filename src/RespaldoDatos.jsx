@@ -11,15 +11,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { localDb } from './localDb';
 import {
-  construirRespaldo, espacioEnDisco, formatearMB, nombreArchivoRespaldo,
-  parsearRespaldo, resumenRespaldo, restaurarRespaldo
+  construirRespaldo, espacioEnDisco, estimarRespaldo, formatearMB,
+  nombreArchivoRespaldo, parsearRespaldo, resumenRespaldo, restaurarRespaldo
 } from './respaldo.js';
+import { mensajeDePeso } from './pesoRespaldo.js';
 
 const BOTON = 'text-xs font-bold px-4 py-2 rounded-lg transition-colors disabled:opacity-50';
 const COLOR_AVISO = { ok: 'text-teal-700', error: 'text-red-700', info: 'text-gray-600' };
 
 export default function RespaldoDatos() {
   const [espacio, setEspacio] = useState(null);
+  const [peso, setPeso] = useState(null);
   const [aviso, setAviso] = useState(null);
   const [ocupado, setOcupado] = useState(false);
   const [confirmando, setConfirmando] = useState(false);
@@ -29,9 +31,19 @@ export default function RespaldoDatos() {
     try {
       setEspacio(await espacioEnDisco());
     } catch { /* sin dato de espacio: no se avisa de nada */ }
+    // Cuanto pesara el .json. Se calcula ANTES de generarlo: el boton puede decir
+    // "pesara unos 8 MB" y el usuario decide si espera, en vez de clickear a ciegas.
+    try {
+      setPeso(await estimarRespaldo(localDb));
+    } catch { /* sin peso estimado: la app sigue funcionando igual */ }
   }, []);
 
   useEffect(() => { void Promise.resolve().then(medir); }, [medir]);
+
+  // Aviso a mostrar antes de generar. Solo aparece si hay algo que avisar de verdad.
+  const avisoPeso = peso === null
+    ? null
+    : mensajeDePeso(peso, espacio?.libre ?? null);
 
   const descargar = async () => {
     setOcupado(true);
@@ -115,10 +127,20 @@ export default function RespaldoDatos() {
         </p>
       )}
 
+      {avisoPeso?.tipo === 'aviso' && (
+        <p className="text-xs text-amber-800 bg-amber-100 border border-amber-300 rounded-lg p-2 mt-2">
+          ⚠️ {avisoPeso.texto}
+        </p>
+      )}
+
       <div className="flex flex-wrap gap-2 mt-3">
         <button type="button" onClick={descargar} disabled={ocupado}
+          title={avisoPeso?.texto}
           className={`${BOTON} bg-teal-600 hover:bg-teal-700 text-white`}>
           {ocupado ? 'Preparando...' : '⬇ Descargar respaldo'}
+          {!ocupado && avisoPeso?.tipo === 'ok' && (
+            <span className="font-normal opacity-80"> ({avisoPeso.texto.replace('El respaldo pesará unos ', '')})</span>
+          )}
         </button>
 
         {!confirmando ? (

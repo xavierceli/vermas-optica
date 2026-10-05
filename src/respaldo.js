@@ -15,6 +15,8 @@
 //     (copia de lo que ya esta en la nube y se regenera al sincronizar).
 //   - Restaurar agrega solo registros ausentes: nunca reemplaza ni borra lo
 //     que ya existe en el dispositivo.
+import { estimarPesoRespaldo } from './pesoRespaldo.js';
+
 export const FORMATO_RESPALDO = 'verplus-respaldo';
 export const VERSION_RESPALDO = 1;
 
@@ -219,6 +221,27 @@ export const nivelEspacio = (usado = 0, cuota = 0) => {
   if (libre < 50 * MB) return 'critico';
   if (libre < 200 * MB) return 'poco';
   return 'ok';
+};
+
+/**
+ * Cuanto pesara el respaldo, SIN generarlo.
+ * Generar el archivo entero (convertir cada foto a base64) tarda y ocupa memoria,
+ * asi que la interfaz lo pregunta antes de tiempo para poder avisar con numeros.
+ *
+ * Solo cuenta las filas y mide el tamano de los Blobs: no convierte nada a base64.
+ */
+export const estimarRespaldo = async (db) => {
+  const conteos = {};
+  for (const nombre of TABLAS) {
+    conteos[nombre] = await db[nombre].count();
+  }
+  // El peso real de los archivos sale de la fila del adjunto, sin leer el Blob a
+  // memoria: el navegador guarda tamano y tipo, que es justo lo que hace falta.
+  let pesoAdjuntos = 0;
+  for (const fila of await db.attachments.toArray()) {
+    pesoAdjuntos += fila.blob?.size || fila.tamano || 0;
+  }
+  return estimarPesoRespaldo(conteos, pesoAdjuntos);
 };
 
 export const espacioEnDisco = async () => {

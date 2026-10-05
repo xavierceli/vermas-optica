@@ -7,7 +7,14 @@ import { aplicarEliminacionesRemotas, reconciliarConServidor } from './eliminaci
 
 // Topes de paginación declarados al inicio para evitar valores indefinidos
 const TAMPAGINA_HISTORIAL = 200;
-const MAX_PAGINAS_HISTORIAL = 25;
+// 100 paginas x 200 = 20.000 consultas. Antes eran 25 paginas (5.000), tope que se
+// alcanzaba con unos 2.500 pacientes: a partir de ahi la app avisaba "Historial
+// parcial" y el usuario no veía pacientes ni consultas anteriores en el equipo nuevo.
+// La optica apunta a 10.000+ pacientes, asi que el tope deja de dar.
+// Importante: subir este numero NO cambia la seguridad. Si la descarga se queda
+// corta, `historialCompleto` sigue en false y NO se ejecuta la reconciliacion
+// (ver pullServerCache), de modo que jamas se borra nada local por una descarga parcial.
+const MAX_PAGINAS_HISTORIAL = 100;
 const TIEMPO_LIMITE_MS = 10000;
 const DIAS_RETENCION_DESCARTADAS = 7;
 const MAX_INTENTOS = 5;

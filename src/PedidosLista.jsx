@@ -6,6 +6,7 @@ import { supabase } from './supabaseClient';
 import { createUuid as generarId } from './localDb';
 import { cambiarEstadoVentaLocal, registrarPagoLocal, guardarAdjuntoLocal } from './localRepository';
 import { calcularTotal, calcularSaldo } from './reglas';
+import { contarSoloLocales } from './estadoSincronizacion';
 import BotonComprobante from './BotonComprobante';
 
 export default function PedidosLista({
@@ -152,6 +153,8 @@ export default function PedidosLista({
     return true;
   });
 
+  const { total: soloLocales } = contarSoloLocales(pedidosFiltrados);
+
   return (
     <div className="bg-white rounded-xl shadow-lg p-4 sm:p-6 border-t-4 border-indigo-600">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4 mb-6">
@@ -163,6 +166,18 @@ export default function PedidosLista({
           🛒 Nueva Venta Directa
         </button>
       </div>
+
+      {soloLocales > 0 && (
+        <div role="status" className="flex items-start gap-2 mb-4 p-3 rounded-lg bg-amber-50 border border-amber-300 text-amber-900 text-xs sm:text-sm">
+          <span aria-hidden="true">⏳</span>
+          <p className="font-semibold">
+            {soloLocales === 1
+              ? '1 venta de esta lista está solo en este equipo.'
+              : `${soloLocales} ventas de esta lista están solo en este equipo.`}
+            {' '}Aún no están en la nube; se subirán solas. Si el equipo se apaga o se daña, se pierden.
+          </p>
+        </div>
+      )}
 
       <div className="flex gap-3 mb-4">
         <input 
