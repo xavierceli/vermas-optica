@@ -40,27 +40,43 @@ export const imprimirInforme = (item) => {
           <meta charset="utf-8">
           <title>Informe - ${txt(item?.nombre || 'Paciente')}</title>
           <style>
-            @page { size: A4 portrait; margin: 8mm 12mm; }
+            @page { 
+              size: A4 portrait; 
+              margin: 12mm 15mm 10mm 15mm; 
+            }
             * { box-sizing: border-box; }
+            html, body {
+              height: 100%;
+              margin: 0;
+              padding: 0;
+            }
             body { 
-              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; 
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; 
               color: #1e293b; 
-              margin: 0; 
-              padding: 0; 
               font-size: 11px; 
               line-height: 1.35;
+              display: flex;
+              flex-direction: column;
+              justify-content: space-between;
+              min-height: 98vh;
+            }
+            .content-wrapper {
+              flex: 1;
+              display: flex;
+              flex-direction: column;
+              justify-content: space-between;
             }
             .header { 
               text-align: center; 
               border-bottom: 2px solid #0f766e; 
-              padding-bottom: 8px; 
+              padding-bottom: 6px; 
               margin-bottom: 12px; 
             }
             .header h1 { 
               color: #0f766e; 
               margin: 0; 
-              font-size: 20px; 
-              letter-spacing: 1.5px;
+              font-size: 21px; 
+              letter-spacing: 2px;
               font-weight: 900;
             }
             .header h2 { 
@@ -69,135 +85,161 @@ export const imprimirInforme = (item) => {
               font-size: 12px; 
               text-transform: uppercase; 
               letter-spacing: 1px;
+              font-weight: 700;
             }
             .info-card {
               display: grid;
-              grid-template-columns: repeat(3, 1fr);
+              grid-template-columns: 2fr 1.2fr 1fr;
               gap: 8px;
               background-color: #f8fafc;
-              border: 1px solid #e2e8f0;
+              border: 1px solid #cbd5e1;
               border-radius: 6px;
               padding: 8px 12px;
               margin-bottom: 12px;
-              font-size: 11px;
             }
-            .info-item strong { color: #0f766e; display: block; font-size: 10px; text-transform: uppercase; }
-            .info-item span { font-weight: bold; color: #0f172a; }
-            .section { margin-bottom: 10px; page-break-inside: avoid; }
+            .info-item strong { color: #0f766e; display: block; font-size: 9.5px; text-transform: uppercase; margin-bottom: 1px; }
+            .info-item span { font-weight: 700; color: #0f172a; font-size: 11.5px; }
+            
+            .section { margin-bottom: 11px; page-break-inside: avoid; }
             .section h3 { 
               color: #0f766e; 
               border-bottom: 1px solid #cbd5e1; 
-              padding-bottom: 2px; 
-              margin: 0 0 5px 0; 
+              padding-bottom: 3px; 
+              margin: 0 0 6px 0; 
               font-size: 11px;
               text-transform: uppercase;
               letter-spacing: 0.5px;
+              font-weight: 800;
             }
-            table { width: 100%; border-collapse: collapse; text-align: center; font-size: 10.5px; }
-            th, td { border: 1px solid #cbd5e1; padding: 4px 5px; }
+            table { width: 100%; border-collapse: collapse; text-align: center; font-size: 11px; }
+            th, td { border: 1px solid #cbd5e1; padding: 5px 6px; }
             th { background-color: #f1f5f9; color: #334155; font-weight: 700; font-size: 10px; }
             td strong { color: #0f766e; }
+            
             .text-box { 
               background: #f8fafc; 
-              padding: 6px 10px; 
-              border: 1px solid #e2e8f0; 
+              padding: 7px 10px; 
+              border: 1px solid #cbd5e1; 
               font-size: 11px; 
-              border-radius: 4px; 
-              font-weight: 600;
+              border-radius: 5px; 
+              font-weight: 700;
               color: #0f172a;
             }
             .recs-box {
               background: #fafaf9;
-              border: 1px solid #e7e5e4;
-              border-radius: 4px;
-              padding: 6px 10px;
+              border: 1px solid #e2e8f0;
+              border-radius: 5px;
+              padding: 7px 10px;
               font-size: 10.5px;
-              color: #292524;
+              color: #334155;
               line-height: 1.45;
             }
-            .firma-container { 
-              margin-top: 24px; 
-              text-align: center; 
+            .nota-importante {
+              font-size: 9px;
+              color: #64748b;
+              text-align: justify;
+              line-height: 1.3;
+              margin-top: 6px;
+            }
+
+            .firma-area {
+              margin-top: 18px;
+              padding-top: 55px;
+              text-align: center;
               page-break-inside: avoid;
             }
             .firma-line { 
               border-top: 1.5px solid #334155; 
-              width: 220px; 
+              width: 250px; 
               margin: 0 auto; 
-              padding-top: 4px; 
+              padding-top: 5px; 
               font-weight: 800; 
-              font-size: 11px; 
+              font-size: 12px; 
               color: #0f172a;
+              text-transform: uppercase;
+              letter-spacing: 0.5px;
             }
-            .firma-reg { margin: 1px 0 0; font-size: 9.5px; color: #475569; }
+            .firma-sub { 
+              margin: 2px 0 0; 
+              font-size: 10px; 
+              color: #475569; 
+              font-weight: 600;
+            }
           </style>
         </head>
         <body>
-          <div class="header">
-            <h1>VER+ ÓPTICA</h1>
-            <h2>Informe Optométrico</h2>
-          </div>
-          
-          <div class="info-card">
-            <div class="info-item">
-              <strong>Paciente</strong>
-              <span>${txt(item?.nombre) || '-'}</span>
+          <div class="content-wrapper">
+            <div>
+              <div class="header">
+                <h1>VER+ ÓPTICA</h1>
+                <h2>Informe Optométrico</h2>
+              </div>
+              
+              <div class="info-card">
+                <div class="info-item">
+                  <strong>Nombre del Paciente</strong>
+                  <span>${txt(item?.nombre) || '-'}</span>
+                </div>
+                <div class="info-item">
+                  <strong>Cédula de Identidad</strong>
+                  <span>${txt(item?.cedula) || '-'}</span>
+                </div>
+                <div class="info-item">
+                  <strong>Fecha de Examen</strong>
+                  <span>${txt(item?.fecha) || '-'}</span>
+                </div>
+              </div>
+
+              <div class="section">
+                <h3>Lensometría (RX Anterior)</h3>
+                <table>
+                  <tr><th>Ojo</th><th>Esfera</th><th>Cilindro</th><th>Eje</th><th>Add</th><th>A.V.L</th><th>A.V.C</th></tr>
+                  <tr><td><strong>OD</strong></td><td>${txt(item?.lenso_esf_od) || '-'}</td><td>${txt(item?.lenso_cil_od) || '-'}</td><td>${txt(item?.lenso_eje_od) || '-'}</td><td>${txt(item?.lenso_add_od) || '-'}</td><td>${txt(item?.lenso_avl_od) || '-'}</td><td>${txt(item?.lenso_avc_od) || '-'}</td></tr>
+                  <tr><td><strong>OI</strong></td><td>${txt(item?.lenso_esf_oi) || '-'}</td><td>${txt(item?.lenso_cil_oi) || '-'}</td><td>${txt(item?.lenso_eje_oi) || '-'}</td><td>${txt(item?.lenso_add_oi) || '-'}</td><td>${txt(item?.lenso_avl_oi) || '-'}</td><td>${txt(item?.lenso_avc_oi) || '-'}</td></tr>
+                </table>
+              </div>
+
+              <div class="section">
+                <h3>Agudeza Visual (Sin Corrección)</h3>
+                <table>
+                  <tr><th>Ojo</th><th>A.V.S.L (Lejos)</th><th>A.V.S.C (Cerca)</th></tr>
+                  <tr><td><strong>OD</strong></td><td>${txt(item?.avsl_od) || '-'}</td><td>${txt(item?.avsc_od) || '-'}</td></tr>
+                  <tr><td><strong>OI</strong></td><td>${txt(item?.avsl_oi) || '-'}</td><td>${txt(item?.avsc_oi) || '-'}</td></tr>
+                </table>
+              </div>
+
+              <div class="section">
+                <h3>Refracción Final Prescrita</h3>
+                <table>
+                  <tr><th>Ojo</th><th>Esfera</th><th>Cilindro</th><th>Eje</th><th>Add</th><th>DNP</th><th>Cerca (Add)</th><th>A.V.C.L</th><th>A.V.C.C</th></tr>
+                  <tr><td><strong>OD</strong></td><td>${txt(item?.esfera_od) || '-'}</td><td>${txt(item?.cilindro_od) || '-'}</td><td>${txt(item?.eje_od) || '-'}</td><td>${txt(item?.adicion_od) || '-'}</td><td>${txt(item?.dnp_od) || '-'}</td><td>${txt(calcularCerca(item?.esfera_od, item?.adicion_od)) || '-'}</td><td>${txt(item?.avcl_od) || '-'}</td><td>${txt(item?.avcc_od) || '-'}</td></tr>
+                  <tr><td><strong>OI</strong></td><td>${txt(item?.esfera_oi) || '-'}</td><td>${txt(item?.cilindro_oi) || '-'}</td><td>${txt(item?.eje_oi) || '-'}</td><td>${txt(item?.adicion_oi) || '-'}</td><td>${txt(item?.dnp_oi) || '-'}</td><td>${txt(calcularCerca(item?.esfera_oi, item?.adicion_oi)) || '-'}</td><td>${txt(item?.avcl_oi) || '-'}</td><td>${txt(item?.avcc_oi) || '-'}</td></tr>
+                </table>
+              </div>
+
+              <div class="section">
+                <h3>Diagnóstico</h3>
+                <div class="text-box">${txt(diagnosticos)}</div>
+              </div>
+
+              <div class="section">
+                <h3>Recomendaciones y Conclusiones</h3>
+                <div class="recs-box">
+                  Utilizar la corrección óptica prescrita, de acuerdo con la fórmula indicada en el presente informe.<br>
+                  Incluir tratamientos de lentes como Antirreflejo y Protección UV.<br>
+                  Uso de Lágrimas Artificiales sin conservantes cada 4/6 H.<br><br>
+                  La fórmula óptica consignada corresponde al estado refractivo del paciente al momento de la evaluación. Se aconseja realizar controles periódicos.
+                </div>
+                <div class="nota-importante">
+                  <strong>Nota Importante:</strong> Se recomienda verificar las medidas de la refracción final al momento de la elaboración de los lentes para garantizar la precisión y la adaptación visual del paciente. Se expide el presente documento a solicitud del interesado, para los fines pertinentes.
+                </div>
+              </div>
             </div>
-            <div class="info-item">
-              <strong>Cédula de Identidad</strong>
-              <span>${txt(item?.cedula) || '-'}</span>
+
+            <div class="firma-area">
+              <div class="firma-line">Darwin Xavier Celi</div>
+              <p class="firma-sub">Optómetra | Reg. 2250-2024-8005219</p>
             </div>
-            <div class="info-item">
-              <strong>Fecha de Examen</strong>
-              <span>${txt(item?.fecha) || '-'}</span>
-            </div>
-          </div>
-
-          <div class="section">
-            <h3>Lensometría (RX Anterior)</h3>
-            <table>
-              <tr><th>Ojo</th><th>Esfera</th><th>Cilindro</th><th>Eje</th><th>Add</th><th>A.V.L</th><th>A.V.C</th></tr>
-              <tr><td><strong>OD</strong></td><td>${txt(item?.lenso_esf_od) || '-'}</td><td>${txt(item?.lenso_cil_od) || '-'}</td><td>${txt(item?.lenso_eje_od) || '-'}</td><td>${txt(item?.lenso_add_od) || '-'}</td><td>${txt(item?.lenso_avl_od) || '-'}</td><td>${txt(item?.lenso_avc_od) || '-'}</td></tr>
-              <tr><td><strong>OI</strong></td><td>${txt(item?.lenso_esf_oi) || '-'}</td><td>${txt(item?.lenso_cil_oi) || '-'}</td><td>${txt(item?.lenso_eje_oi) || '-'}</td><td>${txt(item?.lenso_add_oi) || '-'}</td><td>${txt(item?.lenso_avl_oi) || '-'}</td><td>${txt(item?.lenso_avc_oi) || '-'}</td></tr>
-            </table>
-          </div>
-
-          <div class="section">
-            <h3>Agudeza Visual (Sin Corrección)</h3>
-            <table>
-              <tr><th>Ojo</th><th>A.V.S.L (Lejos)</th><th>A.V.S.C (Cerca)</th></tr>
-              <tr><td><strong>OD</strong></td><td>${txt(item?.avsl_od) || '-'}</td><td>${txt(item?.avsc_od) || '-'}</td></tr>
-              <tr><td><strong>OI</strong></td><td>${txt(item?.avsl_oi) || '-'}</td><td>${txt(item?.avsc_oi) || '-'}</td></tr>
-            </table>
-          </div>
-
-          <div class="section">
-            <h3>Refracción Final Prescrita</h3>
-            <table>
-              <tr><th>Ojo</th><th>Esfera</th><th>Cilindro</th><th>Eje</th><th>Add</th><th>DNP</th><th>Cerca (Add)</th><th>A.V.C.L</th><th>A.V.C.C</th></tr>
-              <tr><td><strong>OD</strong></td><td>${txt(item?.esfera_od) || '-'}</td><td>${txt(item?.cilindro_od) || '-'}</td><td>${txt(item?.eje_od) || '-'}</td><td>${txt(item?.adicion_od) || '-'}</td><td>${txt(item?.dnp_od) || '-'}</td><td>${txt(calcularCerca(item?.esfera_od, item?.adicion_od)) || '-'}</td><td>${txt(item?.avcl_od) || '-'}</td><td>${txt(item?.avcc_od) || '-'}</td></tr>
-              <tr><td><strong>OI</strong></td><td>${txt(item?.esfera_oi) || '-'}</td><td>${txt(item?.cilindro_oi) || '-'}</td><td>${txt(item?.eje_oi) || '-'}</td><td>${txt(item?.adicion_oi) || '-'}</td><td>${txt(item?.dnp_oi) || '-'}</td><td>${txt(calcularCerca(item?.esfera_oi, item?.adicion_oi)) || '-'}</td><td>${txt(item?.avcl_oi) || '-'}</td><td>${txt(item?.avcc_oi) || '-'}</td></tr>
-            </table>
-          </div>
-
-          <div class="section">
-            <h3>Diagnóstico</h3>
-            <div class="text-box">${txt(diagnosticos)}</div>
-          </div>
-
-          <div class="section">
-            <h3>Recomendaciones y Conclusiones</h3>
-            <div class="recs-box">
-              Utilizar la corrección óptica prescrita, de acuerdo con la fórmula indicada en el presente informe.<br>
-              Incluir tratamientos de lentes como Antirreflejo y Protección UV.<br>
-              Uso de Lágrimas Artificiales sin conservantes cada 4/6 H.<br><br>
-              La fórmula óptica consignada corresponde al estado refractivo del paciente al momento de la evaluación. Se aconseja realizar controles periódicos.
-            </div>
-          </div>
-
-          <div class="firma-container">
-            <div class="firma-line">Darwin Xavier Celi</div>
-            <p class="firma-reg">Optómetra | Reg. 2250-2024-8005219</p>
           </div>
         </body>
       </html>

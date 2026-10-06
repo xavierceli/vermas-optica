@@ -31,6 +31,22 @@ export default function ListaTarjetas({
   manejarBorradoCompleto,
   crearNuevoPaciente
 }) {
+  const prepararNuevaVenta = (item) => {
+    const itemParaNuevaVenta = {
+      ...item,
+      pedido_id: '',
+      estado: 'En laboratorio',
+      venta: '',
+      abono: '0',
+      descuento: '0',
+      codigo_armazon: '',
+      tipo_lente: '',
+      accesorio_id: '',
+      _nueva_venta: true
+    };
+    abrirPedido(itemParaNuevaVenta);
+  };
+
   return (
     <div className="bg-white rounded-xl shadow-lg p-4 sm:p-6 border-t-4 border-blue-600">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4 mb-6">
@@ -307,15 +323,12 @@ export default function ListaTarjetas({
                         )}
                       </div>
 
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5 flex-wrap justify-end">
                         {esAnulado ? (
                           <>
                             <button
                               type="button"
-                              onClick={() => {
-                                // Abre la venta anulada en modo consulta
-                                abrirPedido(item);
-                              }}
+                              onClick={() => abrirPedido(item)}
                               className="text-xs px-2.5 py-1.5 rounded-lg font-bold transition-all shadow-sm bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300"
                               title="Ver los datos del pedido anulado"
                             >
@@ -324,21 +337,18 @@ export default function ListaTarjetas({
                             <button
                               type="button"
                               onClick={() => {
-                                // Prepara una venta nueva desde cero para el mismo paciente
-                                const itemParaNuevaVenta = {
-                                  ...item,
-                                  pedido_id: '',
-                                  estado: 'En laboratorio',
-                                  venta: '',
-                                  abono: '0',
-                                  descuento: '0',
-                                  codigo_armazon: '',
-                                  tipo_lente: '',
-                                  accesorio_id: '',
-                                  _nueva_venta: true
-                                };
-                                abrirPedido(itemParaNuevaVenta);
+                                if (window.confirm("Esta venta está anulada. ¿Deseas abrirla para editarla y reactivarla?")) {
+                                  abrirPedido(item);
+                                }
                               }}
+                              className="text-xs px-2.5 py-1.5 rounded-lg font-bold transition-all shadow-sm bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300"
+                              title="Editar pedido anulado"
+                            >
+                              ✏️ Editar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => prepararNuevaVenta(item)}
                               className="text-xs px-3 py-1.5 rounded-lg font-bold transition-all shadow-sm bg-emerald-600 hover:bg-emerald-700 text-white active:scale-95 flex items-center gap-1"
                               title="Crear una nueva venta para este paciente"
                             >
@@ -346,19 +356,31 @@ export default function ListaTarjetas({
                             </button>
                           </>
                         ) : (
-                          <button 
-                            type="button" 
-                            onClick={() => abrirPedido(item)} 
-                            className={`text-xs px-3.5 py-1.5 rounded-lg font-bold transition-all shadow-sm flex items-center gap-1.5 ${
-                              !tienePedido
-                                ? 'bg-teal-600 hover:bg-teal-700 text-white active:scale-95'
-                                : tieneDeudaReal 
-                                ? 'bg-red-600 hover:bg-red-700 text-white active:scale-95' 
-                                : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 active:scale-95'
-                            }`}
-                          >
-                            {tienePedido ? '👁️ Ver Venta' : '➕ Crear Venta'}
-                          </button>
+                          <>
+                            <button 
+                              type="button" 
+                              onClick={() => abrirPedido(item)} 
+                              className={`text-xs px-3.5 py-1.5 rounded-lg font-bold transition-all shadow-sm flex items-center gap-1.5 ${
+                                !tienePedido
+                                  ? 'bg-teal-600 hover:bg-teal-700 text-white active:scale-95'
+                                  : tieneDeudaReal 
+                                  ? 'bg-red-600 hover:bg-red-700 text-white active:scale-95' 
+                                  : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 active:scale-95'
+                              }`}
+                            >
+                              {tienePedido ? '👁️ Ver Venta' : '➕ Crear Venta'}
+                            </button>
+                            {tieneDeudaReal && (
+                              <button
+                                type="button"
+                                onClick={() => prepararNuevaVenta(item)}
+                                className="text-xs px-3 py-1.5 rounded-lg font-bold transition-all shadow-sm bg-emerald-600 hover:bg-emerald-700 text-white active:scale-95 flex items-center gap-1"
+                                title="Crear otra venta adicional para este paciente con saldo pendiente"
+                              >
+                                🛒 Nueva Venta
+                              </button>
+                            )}
+                          </>
                         )}
                       </div>
                     </div>

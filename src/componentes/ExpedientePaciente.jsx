@@ -3,11 +3,8 @@
 // ---------------------------------------------------------------------------
 // Es la pantalla que se abre al tocar una tarjeta del historial: la cabecera con
 // sus datos, el resumen clinico de cada visita y la tabla de sus compras.
-// Antes vivia dentro de Historial.jsx, que superaba las 700 lineas. Aqui solo
-// se pinta; la logica (busqueda, expediente, acciones) sigue en Historial.jsx,
-// que le pasa los datos y los manejadores como props.
 // ---------------------------------------------------------------------------
-import { Fragment } from 'react';
+import { Fragment, useMemo } from 'react';
 import { safeString, safeNum, calcularEdad } from '../utilidades.js';
 import { resumenConsulta } from '../historial.js';
 
@@ -16,8 +13,8 @@ export default function ExpedientePaciente({
   claveExpediente,
   aliasVisibles,
   cargando,
-  registros,
-  filasExpandidas,
+  registros = [],
+  filasExpandidas = {},
   onToggleAlias,
   onToggleExpandir,
   onEliminarRegistro,
@@ -26,29 +23,78 @@ export default function ExpedientePaciente({
   onAbrirPedido,
   onVolver
 }) {
+  // DEDUPLICACIÓN ESTRICTA EN VISTA
+  const registrosUnicos = useMemo(() => {
+    const mapa = new Map();
+
+    for (const reg of registros) {
+      if (!reg) continue;
+      const fecha = safeString(reg.fecha).trim();
+      const esfOD = safeString(reg.esfera_od).trim();
+      const cilOD = safeString(reg.cilindro_od).trim();
+      
+      const claveFirma = reg.id && !String(reg.id).startsWith('temp_') 
+        ? String(reg.id) 
+        : `${fecha}_${esfOD}_${cilOD}`;
+
+      if (mapa.has(claveFirma)) {
+        const actual = mapa.get(claveFirma);
+        mapa.set(claveFirma, { ...actual, ...reg });
+      } else {
+        let duplicadoPorFecha = false;
+        for (const [k, v] of mapa.entries()) {
+          if (safeString(v.fecha).trim() === fecha && fecha !== '') {
+            mapa.set(k, { ...v, ...reg });
+            duplicadoPorFecha = true;
+            break;
+          }
+        }
+        if (!duplicadoPorFecha) {
+          mapa.set(claveFirma, reg);
+        }
+      }
+    }
+
+    return Array.from(mapa.values()).sort((a, b) => 
+      safeString(b?.fecha).localeCompare(safeString(a?.fecha))
+    );
+  }, [registros]);
+
+  // FILTRO ESTRICTO DE VENTAS: Solo compras reales con pedido_id o venta > 0
+  const comprasReales = useMemo(() => {
+    return registrosUnicos.filter(r => {
+      const tienePedidoId = Boolean(safeString(r.pedido_id).trim() || safeString(r.saleId).trim());
+      const tieneMontoVenta = safeNum(r.venta) > 0;
+      const estado = safeString(r.estado).trim().toLowerCase();
+      const tieneEstadoValido = estado !== '' && estado !== 'ninguno';
+
+      return (tienePedidoId || tieneMontoVenta) && tieneEstadoValido;
+    });
+  }, [registrosUnicos]);
+
   return (
     <div className="bg-white rounded-xl shadow-lg border-t-4 border-teal-600 overflow-hidden">
       <div className="bg-teal-50 p-4 sm:p-6 border-b border-teal-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
-          <h2 className="text-xl sm:text-2xl font-black text-teal-900 uppercase tracking-wide">{safeString(expediente.nombre)}</h2>
+          <h2 className="text-xl sm:text-2xl font-black text-teal-900 uppercase tracking-wide">{safeString(expediente?.nombre)}</h2>
           
-          {safeString(expediente.alias) && (
+          {safeString(expediente?.alias) && (
             <div className="mt-2">
               <button 
-                type="button"
+                type="button" 
                 onClick={() => onToggleAlias(claveExpediente)}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold transition-all shadow-sm border ${aliasVisibles[claveExpediente] ? 'bg-teal-200 text-teal-900 border-teal-300' : 'bg-white text-teal-800 border-teal-200 hover:bg-teal-100'}`}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold transition-all shadow-sm border ${aliasVisibles?.[claveExpediente] ? 'bg-teal-200 text-teal-900 border-teal-300' : 'bg-white text-teal-800 border-teal-200 hover:bg-teal-100'}`}
                 title="Clic para ver u ocultar Alias"
               >
-                🏷️ {aliasVisibles[claveExpediente] ? safeString(expediente.alias) : 'Ver Alias'}
+                🏷️ {aliasVisibles?.[claveExpediente] ? safeString(expediente.alias) : 'Ver Alias'}
               </button>
             </div>
           )}
 
           <p className="text-teal-800 font-semibold flex flex-wrap gap-3 sm:gap-4 mt-2 text-xs sm:text-sm">
-            <span>🆔 {safeString(expediente.cedula)}</span>
-            <span>🎂 {calcularEdad(expediente.fecha_nacimiento)} años</span>
-            <span>📱 {safeString(expediente.telefono)}</span>
+            <span>🆔 {safeString(expediente?.cedula)}</span>
+            <span>🎂 {calcularEdad(expediente?.fecha_nacimiento)} años</span>
+            <span>📱 {safeString(expediente?.telefono)}</span>
           </p>
         </div>
         <div className="flex gap-2 w-full md:w-auto">
@@ -78,7 +124,7 @@ export default function ExpedientePaciente({
       ) : (
         <div className="p-4 sm:p-6 space-y-6 sm:space-y-8">
           
-          {safeString(expediente.antecedentes) && (
+          {safeString(expediente?.antecedentes) && (
             <div className="bg-red-50 border border-red-200 p-4 rounded-lg">
               <h3 className="font-bold text-red-900 text-xs sm:text-sm uppercase mb-1">⚠️ Antecedentes Médicos / Personales:</h3>
               <p className="text-red-950 text-xs sm:text-sm leading-relaxed">{safeString(expediente.antecedentes)}</p>
@@ -132,90 +178,93 @@ export default function ExpedientePaciente({
                 </thead>
 
                 <tbody>
-                  {registros.map(reg => (
-                    <Fragment key={reg.id}>
-                      <tr className={`border-b hover:bg-gray-50/80 transition-colors ${filasExpandidas[reg.id] ? 'bg-indigo-50/20' : ''}`}>
-                        <td className="p-2 border-r text-center">
-                          <button 
-                            type="button" 
-                            onClick={() => onToggleExpandir(reg.id)} 
-                            className={`w-6 h-6 flex items-center justify-center rounded-full font-bold transition-all shadow-sm ${
-                              filasExpandidas[reg.id] ? 'bg-indigo-600 text-white' : 'bg-indigo-100 text-indigo-800 hover:bg-indigo-200'
-                            }`}
-                          >
-                            {filasExpandidas[reg.id] ? '−' : '＋'}
-                          </button>
-                        </td>
-                        <td className="p-2 border-r-2 border-gray-300 font-bold text-gray-800 whitespace-nowrap bg-gray-50/40 text-[11px]">
-                          {safeString(reg.fecha)}
-                        </td>
-                        
-                        <td className="p-2 border-r font-semibold text-gray-900">{safeString(reg.esfera_od) || '—'}</td>
-                        <td className="p-2 border-r font-semibold text-gray-900">{safeString(reg.cilindro_od) || '—'}</td>
-                        <td className="p-2 border-r font-semibold text-gray-900">{safeString(reg.eje_od) || '—'}</td>
-                        <td className="p-2 border-r font-semibold text-gray-900">{safeString(reg.adicion_od) || '—'}</td>
-                        <td className="p-2 border-r font-semibold text-indigo-950 bg-indigo-50/40">{safeString(reg.dnp_od) || '—'}</td>
-                        <td className="p-2 border-r font-semibold text-indigo-950 bg-indigo-50/40">{safeString(reg.altura_od) || '—'}</td>
-                        <td className="p-2 border-r font-bold text-indigo-900 bg-indigo-50/20">{safeString(reg.avcl_od) || '—'}</td>
-                        <td className="p-2 border-r-2 border-indigo-300 font-black text-indigo-950 bg-indigo-100/60 no-underline">
-                          {safeString(reg.avcc_od) || '—'}
-                        </td>
+                  {registrosUnicos.map(reg => {
+                    const regId = String(reg.id || reg.fecha);
+                    return (
+                      <Fragment key={regId}>
+                        <tr className={`border-b hover:bg-gray-50/80 transition-colors ${filasExpandidas[regId] ? 'bg-indigo-50/20' : ''}`}>
+                          <td className="p-2 border-r text-center">
+                            <button 
+                              type="button" 
+                              onClick={() => onToggleExpandir(regId)} 
+                              className={`w-6 h-6 flex items-center justify-center rounded-full font-bold transition-all shadow-sm ${
+                                filasExpandidas[regId] ? 'bg-indigo-600 text-white' : 'bg-indigo-100 text-indigo-800 hover:bg-indigo-200'
+                              }`}
+                            >
+                              {filasExpandidas[regId] ? '−' : '＋'}
+                            </button>
+                          </td>
+                          <td className="p-2 border-r-2 border-gray-300 font-bold text-gray-800 whitespace-nowrap bg-gray-50/40 text-[11px]">
+                            {safeString(reg.fecha)}
+                          </td>
+                          
+                          <td className="p-2 border-r font-semibold text-gray-900">{safeString(reg.esfera_od) || '—'}</td>
+                          <td className="p-2 border-r font-semibold text-gray-900">{safeString(reg.cilindro_od) || '—'}</td>
+                          <td className="p-2 border-r font-semibold text-gray-900">{safeString(reg.eje_od) || '—'}</td>
+                          <td className="p-2 border-r font-semibold text-gray-900">{safeString(reg.adicion_od) || '—'}</td>
+                          <td className="p-2 border-r font-semibold text-indigo-950 bg-indigo-50/40">{safeString(reg.dnp_od) || '—'}</td>
+                          <td className="p-2 border-r font-semibold text-indigo-950 bg-indigo-50/40">{safeString(reg.altura_od) || '—'}</td>
+                          <td className="p-2 border-r font-bold text-indigo-900 bg-indigo-50/20">{safeString(reg.avcl_od) || '—'}</td>
+                          <td className="p-2 border-r-2 border-indigo-300 font-black text-indigo-950 bg-indigo-100/60 no-underline">
+                            {safeString(reg.avcc_od) || '—'}
+                          </td>
 
-                        <td className="p-2 border-r font-semibold text-gray-900">{safeString(reg.esfera_oi) || '—'}</td>
-                        <td className="p-2 border-r font-semibold text-gray-900">{safeString(reg.cilindro_oi) || '—'}</td>
-                        <td className="p-2 border-r font-semibold text-gray-900">{safeString(reg.eje_oi) || '—'}</td>
-                        <td className="p-2 border-r font-semibold text-gray-900">{safeString(reg.adicion_oi) || '—'}</td>
-                        <td className="p-2 border-r font-semibold text-emerald-950 bg-emerald-50/40">{safeString(reg.dnp_oi) || '—'}</td>
-                        <td className="p-2 border-r font-semibold text-emerald-950 bg-emerald-50/40">{safeString(reg.altura_oi) || '—'}</td>
-                        <td className="p-2 border-r font-bold text-emerald-900 bg-emerald-50/20">{safeString(reg.avcl_oi) || '—'}</td>
-                        <td className="p-2 border-r font-black text-emerald-950 bg-emerald-100/60 no-underline">
-                          {safeString(reg.avcc_oi) || '—'}
-                        </td>
-                        
-                        <td className="p-2 border-l text-center bg-red-50/20">
-                          <button 
-                            type="button" 
-                            onClick={() => onEliminarRegistro(reg)} 
-                            className="text-xs bg-red-100 text-red-700 hover:bg-red-200 p-1.5 rounded font-bold transition-colors shadow-sm" 
-                            title="Eliminar esta consulta clínica puntual"
-                          >
-                            🗑️
-                          </button>
-                        </td>
-                      </tr>
-                      
-                      {filasExpandidas[reg.id] && (
-                        <tr className="bg-slate-50 border-b shadow-inner">
-                          <td colSpan="19" className="p-3 sm:p-4">
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 text-xs text-left">
-                              <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
-                                <h4 className="font-bold text-teal-900 border-b border-gray-100 pb-1 mb-2">👓 Lensometría Anterior</h4>
-                                <p className="mb-1"><strong className="text-gray-600">OD:</strong> <span className="text-gray-900 font-semibold">{safeString(reg.lenso_esf_od) || '-'} | {safeString(reg.lenso_cil_od) || '-'} | {safeString(reg.lenso_eje_od) || '-'}</span></p>
-                                <p><strong className="text-gray-600">OI:</strong> <span className="text-gray-900 font-semibold">{safeString(reg.lenso_esf_oi) || '-'} | {safeString(reg.lenso_cil_oi) || '-'} | {safeString(reg.lenso_eje_oi) || '-'}</span></p>
-                              </div>
-                              
-                              <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
-                                <h4 className="font-bold text-blue-900 border-b border-gray-100 pb-1 mb-2">🤖 Autorrefractómetro</h4>
-                                <p className="mb-1"><strong className="text-gray-600">OD:</strong> <span className="text-gray-900 font-semibold">{safeString(reg.auto_esf_od) || '-'} | {safeString(reg.auto_cil_od) || '-'} | {safeString(reg.auto_eje_od) || '-'}</span></p>
-                                <p><strong className="text-gray-600">OI:</strong> <span className="text-gray-900 font-semibold">{safeString(reg.auto_esf_oi) || '-'} | {safeString(reg.auto_cil_oi) || '-'} | {safeString(reg.auto_eje_oi) || '-'}</span></p>
-                              </div>
-                              
-                              <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
-                                <h4 className="font-bold text-indigo-900 border-b border-gray-100 pb-1 mb-2">👁 Queratometría</h4>
-                                <p className="mb-1"><strong className="text-gray-600">OD:</strong> <span className="text-gray-900 font-semibold">K1: {safeString(reg.k1_d_od) || '-'} | K2: {safeString(reg.k2_d_od) || '-'}</span></p>
-                                <p><strong className="text-gray-600">OI:</strong> <span className="text-gray-900 font-semibold">K1: {safeString(reg.k1_d_oi) || '-'} | K2: {safeString(reg.k2_d_oi) || '-'}</span></p>
-                              </div>
-
-                              <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
-                                <h4 className="font-bold text-amber-900 border-b border-gray-100 pb-1 mb-2">📝 Notas Clínicas</h4>
-                                <p className="text-gray-800 italic leading-relaxed">{safeString(reg.notas_clinicas) || 'Sin notas registradas en esta visita.'}</p>
-                              </div>
-                            </div>
+                          <td className="p-2 border-r font-semibold text-gray-900">{safeString(reg.esfera_oi) || '—'}</td>
+                          <td className="p-2 border-r font-semibold text-gray-900">{safeString(reg.cilindro_oi) || '—'}</td>
+                          <td className="p-2 border-r font-semibold text-gray-900">{safeString(reg.eje_oi) || '—'}</td>
+                          <td className="p-2 border-r font-semibold text-gray-900">{safeString(reg.adicion_oi) || '—'}</td>
+                          <td className="p-2 border-r font-semibold text-emerald-950 bg-emerald-50/40">{safeString(reg.dnp_oi) || '—'}</td>
+                          <td className="p-2 border-r font-semibold text-emerald-950 bg-emerald-50/40">{safeString(reg.altura_oi) || '—'}</td>
+                          <td className="p-2 border-r font-bold text-emerald-900 bg-emerald-50/20">{safeString(reg.avcl_oi) || '—'}</td>
+                          <td className="p-2 border-r font-black text-emerald-950 bg-emerald-100/60 no-underline">
+                            {safeString(reg.avcc_oi) || '—'}
+                          </td>
+                          
+                          <td className="p-2 border-l text-center bg-red-50/20">
+                            <button 
+                              type="button" 
+                              onClick={() => onEliminarRegistro(reg)} 
+                              className="text-xs bg-red-100 text-red-700 hover:bg-red-200 p-1.5 rounded font-bold transition-colors shadow-sm" 
+                              title="Eliminar esta consulta clínica puntual"
+                            >
+                              🗑️
+                            </button>
                           </td>
                         </tr>
-                      )}
-                    </Fragment>
-                  ))}
+                        
+                        {filasExpandidas[regId] && (
+                          <tr className="bg-slate-50 border-b shadow-inner">
+                            <td colSpan="19" className="p-3 sm:p-4">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 text-xs text-left">
+                                <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
+                                  <h4 className="font-bold text-teal-900 border-b border-gray-100 pb-1 mb-2">👓 Lensometría Anterior</h4>
+                                  <p className="mb-1"><strong className="text-gray-600">OD:</strong> <span className="text-gray-900 font-semibold">{safeString(reg.lenso_esf_od) || '-'} | {safeString(reg.lenso_cil_od) || '-'} | {safeString(reg.lenso_eje_od) || '-'}</span></p>
+                                  <p><strong className="text-gray-600">OI:</strong> <span className="text-gray-900 font-semibold">{safeString(reg.lenso_esf_oi) || '-'} | {safeString(reg.lenso_cil_oi) || '-'} | {safeString(reg.lenso_eje_oi) || '-'}</span></p>
+                                </div>
+                                
+                                <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
+                                  <h4 className="font-bold text-blue-900 border-b border-gray-100 pb-1 mb-2">🤖 Autorrefractómetro</h4>
+                                  <p className="mb-1"><strong className="text-gray-600">OD:</strong> <span className="text-gray-900 font-semibold">{safeString(reg.auto_esf_od) || '-'} | {safeString(reg.auto_cil_od) || '-'} | {safeString(reg.auto_eje_od) || '-'}</span></p>
+                                  <p><strong className="text-gray-600">OI:</strong> <span className="text-gray-900 font-semibold">{safeString(reg.auto_esf_oi) || '-'} | {safeString(reg.auto_cil_oi) || '-'} | {safeString(reg.auto_eje_oi) || '-'}</span></p>
+                                </div>
+                                
+                                <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
+                                  <h4 className="font-bold text-indigo-900 border-b border-gray-100 pb-1 mb-2">👁 Queratometría</h4>
+                                  <p className="mb-1"><strong className="text-gray-600">OD:</strong> <span className="text-gray-900 font-semibold">K1: {safeString(reg.k1_d_od) || '-'} | K2: {safeString(reg.k2_d_od) || '-'}</span></p>
+                                  <p><strong className="text-gray-600">OI:</strong> <span className="text-gray-900 font-semibold">K1: {safeString(reg.k1_d_oi) || '-'} | K2: {safeString(reg.k2_d_oi) || '-'}</span></p>
+                                </div>
+
+                                <div className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
+                                  <h4 className="font-bold text-amber-900 border-b border-gray-100 pb-1 mb-2">📝 Notas Clínicas</h4>
+                                  <p className="text-gray-800 italic leading-relaxed">{safeString(reg.notas_clinicas) || 'Sin notas registradas en esta visita.'}</p>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -239,12 +288,13 @@ export default function ExpedientePaciente({
                   </tr>
                 </thead>
                 <tbody>
-                  {registros.filter(r => safeString(r.estado) !== 'Ninguno' || safeNum(r.venta) > 0 || safeString(r.codigo_armazon)).length > 0 ? (
-                    registros.filter(r => safeString(r.estado) !== 'Ninguno' || safeNum(r.venta) > 0 || safeString(r.codigo_armazon)).map(reg => {
+                  {comprasReales.length > 0 ? (
+                    comprasReales.map(reg => {
                       const { total: vFinal, saldo } = resumenConsulta(reg);
                       const esAnulado = safeString(reg.estado).trim().toLowerCase() === 'anulado';
+                      const rowKey = 'venta-' + String(reg.id || reg.pedido_id || reg.fecha);
                       return (
-                        <tr key={'venta-' + reg.id} className="border-b hover:bg-gray-50 transition-colors">
+                        <tr key={rowKey} className="border-b hover:bg-gray-50 transition-colors">
                           <td className="p-2 border-r font-bold text-gray-700">{safeString(reg.fecha)}</td>
                           <td className="p-2 border-r font-medium">{safeString(reg.codigo_armazon) === '2905' ? 'Del Paciente' : (safeString(reg.codigo_armazon) || '-')}</td>
                           <td className="p-2 border-r text-[11px] text-gray-700">

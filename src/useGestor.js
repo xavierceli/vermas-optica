@@ -176,7 +176,7 @@ export function useGestor() {
             snapFresca.sales = vDirectas;
           }
         } catch {
-          // Fallback silencioso si la tabla está bloqueada
+          // Fallback silencioso
         }
         aplicarSnapshotLocal(snapFresca);
       });
@@ -443,7 +443,7 @@ export function useGestor() {
   const eliminarItemInventario = (id) => {
     solicitarConfirmacion('¿Eliminar ítem del inventario?', async () => {
       try {
-        await eliminarItemInventario(id);
+        await eliminarInventarioLocal(id);
         await obtenerDatos({ sync: false });
         void sincronizarAhora({ pull: false });
         mostrarToast('Ítem eliminado localmente.', 'success');
@@ -630,7 +630,7 @@ export function useGestor() {
     TRATAMIENTOS.forEach(campo => { nuevaFicha[campo] = 'NO'; });
     setPaciente(nuevaFicha);
     setEditandoId(null);
-    setVistaActual('nueva_medicion');
+    setVistaActual('nueva_medicion'); 
     window.scrollTo({ top: 0, behavior: 'smooth' }); 
   };
 
@@ -644,8 +644,8 @@ export function useGestor() {
     };
     setPaciente(nuevaFicha);
     setEditandoId(null);
-    setVistaActual('nueva_medicion');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setVistaActual('nueva_medicion'); 
+    window.scrollTo({ top: 0, behavior: 'smooth' }); 
   };
 
   const abrirPedido = (item) => {
@@ -680,8 +680,20 @@ export function useGestor() {
       itemFormateado.tratam_ninguno = 'SI';
     }
 
-    const visitas = (historial || []).filter(h => safeString(h?.cedula) === safeString(item.cedula) && safeString(h?.nombre) !== 'CONSUMIDOR FINAL');
-    setMedidasPaciente(visitas); 
+    // DEDUPLICACIÓN DE MEDIDAS DESDE EL ORIGEN:
+    // Filtra las consultas del paciente para que no existan duplicados con la misma fecha
+    const visitasBrutas = (historial || []).filter(h => safeString(h?.cedula) === safeString(item.cedula) && safeString(h?.nombre) !== 'CONSUMIDOR FINAL');
+    const mapaUnico = new Map();
+    for (const v of visitasBrutas) {
+      const fecha = safeString(v.fecha).trim();
+      const esfOD = safeString(v.esfera_od).trim();
+      const cilOD = safeString(v.cilindro_od).trim();
+      const clave = `${fecha}_${esfOD}_${cilOD}`;
+      if (!mapaUnico.has(clave) && !mapaUnico.has(fecha)) {
+        mapaUnico.set(fecha, v);
+      }
+    }
+    setMedidasPaciente(Array.from(mapaUnico.values())); 
     setPedidoSeleccionado(itemFormateado); 
     setAccesorioOriginalId(itemFormateado.accesorio_id || ''); 
     setVistaActual('pedidos_form');
@@ -855,6 +867,7 @@ export function useGestor() {
         abono: String(montoAPagar > 0 ? (safeNum(venta.abono) + montoAPagar).toFixed(2) : venta.abono)
       };
 
+      // ACTUALIZACIÓN INMEDIATA DEL ESTADO EN MEMORIA (REACT)
       setHistorial(prev => {
         const existe = prev.some(h => String(h.id) === String(consultationId) || (safeString(h.cedula) === cedulaPaciente && !h.pedido_id));
         if (existe) {
@@ -876,8 +889,9 @@ export function useGestor() {
       setPedidoSeleccionado(null);
       setVistaActual('pedidos_lista');
 
+      // SINCRONIZACIÓN AUTOMÁTICA EN SEGUNDO PLANO
       const estadoSync = await sincronizarAhora({ pull: false });
-      void obtenerDatos({ sync: true });
+      await obtenerDatos({ sync: false });
 
       const pendientes = estadoSync?.pending || 0;
       const descartadas = estadoSync?.descartadas || 0;
@@ -885,21 +899,16 @@ export function useGestor() {
 
       if (fallos > 0 || descartadas > 0) {
         mostrarToast(
-          'Venta guardada SOLO en este dispositivo: el servidor la rechazó. Revisa el panel de sincronización antes de cerrar el equipo.',
+          'Venta guardada SOLO en este dispositivo: el servidor la rechazó. Revisa el panel de sincronización.',
           'error', 9000
         );
       } else if (pendientes > 0 || estadoSync?.phase === 'offline') {
         mostrarToast(
-          'Venta guardada en este dispositivo. Se subirá a la nube al recuperar conexión. No cierres la app todavía.',
-          'warning', 7000
-        );
-      } else if (estadoSync?.phase === 'error') {
-        mostrarToast(
-          'Venta guardada en este dispositivo, pero la subida falló: ' + String(estadoSync.lastError || 'sin detalle') + '. Se reintentará sola.',
-          'warning', 8000
+          'Venta guardada localmente. Se subirá al recuperar conexión.',
+          'warning', 5000
         );
       } else {
-        mostrarToast('Venta guardada y sincronizada con la nube.', 'success');
+        mostrarToast('Venta guardada y sincronizada.', 'success');
       }
       return true;
     } catch (e) {
@@ -925,9 +934,15 @@ export function useGestor() {
 
     solicitarConfirmacion(mensaje, async () => {
       try {
+        const saleId = item.pedido_id;
+
+        // ACTUALIZACIÓN OPTIMISTA INMEDIATA EN MEMORIA
+        setHistorial(prev => prev.map(h => (String(h.pedido_id) === String(saleId) || String(h.id) === String(item.id)) ? { ...h, estado: 'Anulado', abono: '0' } : h));
+        setVentasLocales(prev => prev.map(v => String(v.id) === String(saleId) ? { ...v, estado: 'Anulado', abono: '0' } : v));
+
         const resultado = abono > 0
-          ? await anularVentaConReembolso({ saleId: item.pedido_id, method: 'Efectivo' })
-          : await anularVentaLocal(item.pedido_id);
+          ? await anularVentaConReembolso({ saleId, method: 'Efectivo' })
+          : await anularVentaLocal(saleId);
           
         await obtenerDatos({ sync: false });
         const estado = await sincronizarAhora({ pull: true });

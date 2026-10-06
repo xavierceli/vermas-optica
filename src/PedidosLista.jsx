@@ -1,13 +1,20 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { safeString, safeNum, comprimirImagen } from './utilidades';
 import { mostrarAviso } from './avisos';
 import { validarCobroSobreVenta, validarVentaParaCambiarEstado } from './cobros';
 import { supabase } from './supabaseClient';
 import { createUuid as generarId } from './localDb';
 import { cambiarEstadoVentaLocal, registrarPagoLocal, guardarAdjuntoLocal } from './localRepository';
+import { sincronizarAhora } from './syncEngine';
 import { calcularTotal, calcularSaldo } from './reglas';
 import { contarSoloLocales } from './estadoSincronizacion';
 import BotonComprobante from './BotonComprobante';
+
+const formatearContador = (num) => {
+  if (num > 9999) return `${(num / 1000).toFixed(1).replace('.0', '')}k`;
+  if (num > 999) return '999+';
+  return String(num);
+};
 
 export default function PedidosLista({
   crearVentaDirecta, busqueda, setBusqueda, pedidosFiltrados = [],
@@ -22,6 +29,9 @@ export default function PedidosLista({
   const [procesandoCobroId, setProcesandoCobroId] = useState(null);
   const [clavesPago, setClavesPago] = useState({});
   
+  // Eliminación instantánea en el primer clic tras confirmar
+  const [anulandoIds, setAnulandoIds] = useState(new Set());
+  
   const [filtroTab, setFiltroTab] = useState('Activos');
 
   const manejarCambioAbono = (id, valor) => setAbonosRapidos(prev => ({ ...prev, [id]: valor }));
@@ -34,8 +44,37 @@ export default function PedidosLista({
     try {
       await cambiarEstadoVentaLocal({ saleId: item.pedido_id, estado: nuevoEstado });
       await refrescarDatos({ sync: false });
+      void sincronizarAhora({ pull: false });
     } catch (err) {
       mostrarAviso('Error actualizando estado: ' + err.message, 'error');
+    }
+  };
+
+  // Corrección: oculta inmediatamente la venta con 1 solo clic tras confirmar
+  const manejarCancelarOptimista = async (item) => {
+    if (typeof cancelarPedido !== 'function') return;
+
+    const idItem = item.id;
+    const saleId = item.pedido_id || item.id;
+
+    try {
+      const res = await cancelarPedido(item);
+      // Si el usuario confirmó (no canceló el modal con false), se retira en el acto
+      if (res !== false) {
+        setAnulandoIds(prev => new Set(prev).add(idItem).add(saleId));
+        if (typeof refrescarDatos === 'function') {
+          void refrescarDatos({ sync: false });
+        }
+      }
+    } catch (err) {
+      // Si ocurrió un error en base de datos, se reincorpora a la lista
+      setAnulandoIds(prev => {
+        const next = new Set(prev);
+        next.delete(idItem);
+        next.delete(saleId);
+        return next;
+      });
+      mostrarAviso('No se pudo cancelar el pedido: ' + err.message, 'error');
     }
   };
 
@@ -112,7 +151,13 @@ export default function PedidosLista({
       });
       setAbonosRapidos(prev => ({ ...prev, [item.id]: '' }));
       setComprobantesRapidos(prev => ({ ...prev, [item.id]: null }));
+      
       await refrescarDatos({ sync: false });
+      void sincronizarAhora({ pull: false }).then(() => {
+        void refrescarDatos({ sync: false });
+      });
+
+      mostrarAviso('Pago registrado con éxito.', 'success');
     } catch (e) {
       mostrarAviso('Error al registrar el cobro rápido: ' + e.message, 'error');
     } finally {
@@ -121,9 +166,48 @@ export default function PedidosLista({
     }
   };
 
+  // Conteo de pedidos en tiempo real
+  const conteos = useMemo(() => {
+    let pendientes = 0;
+    let laboratorio = 0;
+    let listos = 0;
+    let completados = 0;
+
+    for (const item of pedidosFiltrados || []) {
+      if (!item) continue;
+      if (anulandoIds.has(item.id) || anulandoIds.has(item.pedido_id)) continue;
+
+      const estado = safeString(item.estado);
+      if (estado === 'Anulado') continue;
+
+      const pVenta = safeNum(item.venta);
+      const tieneVenta = Boolean(safeString(item.pedido_id).trim())
+        || pVenta > 0
+        || safeString(item.codigo_armazon).trim() !== ''
+        || safeString(item.accesorio_id).trim() !== '';
+
+      if (!tieneVenta) continue;
+
+      const pFinal = calcularTotal(pVenta, item.descuento);
+      const pAbono = safeNum(item.abono);
+      const pSaldo = calcularSaldo(pVenta, item.descuento, pAbono);
+      const estaPagado = pSaldo <= 0 && pFinal > 0;
+
+      if (pSaldo > 0) pendientes += 1;
+      if (estado === 'En laboratorio') laboratorio += 1;
+      if (estado === 'Listo para Entrega') listos += 1;
+      if (estado === 'Entregado' && estaPagado) completados += 1;
+    }
+
+    return { pendientes, laboratorio, listos, completados };
+  }, [pedidosFiltrados, anulandoIds]);
+
   const pedidosParaMostrar = (pedidosFiltrados || []).filter(item => {
     if (!item) return false;
     
+    // Filtro optimista inmediato
+    if (anulandoIds.has(item.id) || anulandoIds.has(item.pedido_id)) return false;
+
     const pVenta = safeNum(item.venta);
     const pFinal = calcularTotal(pVenta, item.descuento);
     const pAbono = safeNum(item.abono);
@@ -143,9 +227,7 @@ export default function PedidosLista({
 
     if (busqueda.trim().length >= 2) return true;
 
-    if (filtroTab === 'Activos') {
-      return !(estado === 'Entregado' && estaPagado);
-    }
+    if (filtroTab === 'Activos') return pSaldo > 0;
     if (filtroTab === 'Laboratorio') return estado === 'En laboratorio';
     if (filtroTab === 'Listos') return estado === 'Listo para Entrega';
     if (filtroTab === 'Completados') return estado === 'Entregado' && estaPagado;
@@ -192,17 +274,48 @@ export default function PedidosLista({
 
       {!busqueda.trim().length && (
         <div className="flex gap-2 overflow-x-auto mb-6 pb-2 border-b border-gray-200">
-          <button type="button" onClick={() => setFiltroTab('Activos')} className={`px-3 sm:px-4 py-2 text-xs sm:text-sm font-bold rounded-t-lg transition-colors whitespace-nowrap ${filtroTab === 'Activos' ? 'bg-indigo-50 text-indigo-900 border-b-2 border-indigo-600' : 'text-gray-600 hover:bg-gray-50'}`}>
-            🔥 Pendientes / Con Deuda
+          <button 
+            type="button" 
+            onClick={() => setFiltroTab('Activos')} 
+            className={`px-3 sm:px-4 py-2 text-xs sm:text-sm font-bold rounded-t-lg transition-colors whitespace-nowrap flex items-center gap-2 ${filtroTab === 'Activos' ? 'bg-indigo-50 text-indigo-900 border-b-2 border-indigo-600' : 'text-gray-600 hover:bg-gray-50'}`}
+          >
+            <span>🔥 Con Saldo</span>
+            <span className={`px-2 py-0.5 rounded-full text-xs font-black shadow-sm ${conteos.pendientes > 0 ? 'bg-red-500 text-white animate-pulse' : 'bg-gray-200 text-gray-600'}`}>
+              {formatearContador(conteos.pendientes)}
+            </span>
           </button>
-          <button type="button" onClick={() => setFiltroTab('Laboratorio')} className={`px-3 sm:px-4 py-2 text-xs sm:text-sm font-bold rounded-t-lg transition-colors whitespace-nowrap ${filtroTab === 'Laboratorio' ? 'bg-yellow-50 text-yellow-900 border-b-2 border-yellow-500' : 'text-gray-600 hover:bg-gray-50'}`}>
-            🟡 En Laboratorio
+
+          <button 
+            type="button" 
+            onClick={() => setFiltroTab('Laboratorio')} 
+            className={`px-3 sm:px-4 py-2 text-xs sm:text-sm font-bold rounded-t-lg transition-colors whitespace-nowrap flex items-center gap-2 ${filtroTab === 'Laboratorio' ? 'bg-yellow-50 text-yellow-900 border-b-2 border-yellow-500' : 'text-gray-600 hover:bg-gray-50'}`}
+          >
+            <span>🟡 En Laboratorio</span>
+            <span className={`px-2 py-0.5 rounded-full text-xs font-black shadow-sm ${conteos.laboratorio > 0 ? 'bg-yellow-500 text-white' : 'bg-gray-200 text-gray-600'}`}>
+              {formatearContador(conteos.laboratorio)}
+            </span>
           </button>
-          <button type="button" onClick={() => setFiltroTab('Listos')} className={`px-3 sm:px-4 py-2 text-xs sm:text-sm font-bold rounded-t-lg transition-colors whitespace-nowrap ${filtroTab === 'Listos' ? 'bg-blue-50 text-blue-900 border-b-2 border-blue-500' : 'text-gray-600 hover:bg-gray-50'}`}>
-            🔵 Listos para Entrega
+
+          <button 
+            type="button" 
+            onClick={() => setFiltroTab('Listos')} 
+            className={`px-3 sm:px-4 py-2 text-xs sm:text-sm font-bold rounded-t-lg transition-colors whitespace-nowrap flex items-center gap-2 ${filtroTab === 'Listos' ? 'bg-blue-50 text-blue-900 border-b-2 border-blue-500' : 'text-gray-600 hover:bg-gray-50'}`}
+          >
+            <span>🔵 Listos para Entrega</span>
+            <span className={`px-2 py-0.5 rounded-full text-xs font-black shadow-sm ${conteos.listos > 0 ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-600'}`}>
+              {formatearContador(conteos.listos)}
+            </span>
           </button>
-          <button type="button" onClick={() => setFiltroTab('Completados')} className={`px-3 sm:px-4 py-2 text-xs sm:text-sm font-bold rounded-t-lg transition-colors whitespace-nowrap ${filtroTab === 'Completados' ? 'bg-green-50 text-green-900 border-b-2 border-green-500' : 'text-gray-600 hover:bg-gray-50'}`}>
-            ✅ Entregados y Pagados
+
+          <button 
+            type="button" 
+            onClick={() => setFiltroTab('Completados')} 
+            className={`px-3 sm:px-4 py-2 text-xs sm:text-sm font-bold rounded-t-lg transition-colors whitespace-nowrap flex items-center gap-2 ${filtroTab === 'Completados' ? 'bg-green-50 text-green-900 border-b-2 border-green-500' : 'text-gray-600 hover:bg-gray-50'}`}
+          >
+            <span>✅ Entregados y Pagados</span>
+            <span className="px-2 py-0.5 rounded-full text-xs font-black bg-gray-200 text-gray-700 shadow-sm">
+              {formatearContador(conteos.completados)}
+            </span>
           </button>
         </div>
       )}
@@ -263,7 +376,7 @@ export default function PedidosLista({
                     <button type="button" onClick={() => imprimirOrdenTrabajo(item)} className="bg-gray-800 text-white px-3 py-1.5 rounded-lg text-xs sm:text-sm font-bold shadow-sm hover:bg-gray-900 transition-colors">
                       🖨️ Orden Lab
                     </button>
-                    <button type="button" onClick={() => cancelarPedido(item)} disabled={estaProcesando} className="bg-white border border-red-200 text-red-700 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-bold shadow-sm hover:bg-red-50 transition-colors disabled:opacity-50">
+                    <button type="button" onClick={() => manejarCancelarOptimista(item)} disabled={estaProcesando} className="bg-white border border-red-200 text-red-700 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-bold shadow-sm hover:bg-red-50 transition-colors disabled:opacity-50 active:scale-95">
                       🗑️ Cancelar
                     </button>
                     <button type="button" onClick={() => abrirPedido(item)} disabled={estaProcesando} className="bg-indigo-600 text-white px-4 sm:px-5 py-1.5 rounded-lg text-xs sm:text-sm font-bold shadow hover:bg-indigo-700 transition-colors disabled:opacity-50">
@@ -299,20 +412,20 @@ export default function PedidosLista({
                         <span className="text-gray-800 font-bold">$</span>
                         <input 
                           type="number" 
-                          step="0.01"
+                          step="0.01" 
                           aria-label="Monto de abono rápido"
                           placeholder="Monto" 
                           disabled={estaProcesando}
                           value={abonosRapidos[item.id] || ''} 
                           onChange={(e) => manejarCambioAbono(item.id, e.target.value)}
-                          className="w-20 p-1.5 border border-gray-300 rounded outline-none text-sm text-center font-bold bg-white text-gray-900 disabled:opacity-60"
+                          className="w-20 p-1.5 border border-gray-300 rounded outline-none text-sm text-center font-bold bg-white text-gray-900 disabled:opacity-60" 
                         />
                         <select 
                           aria-label="Forma de pago"
                           value={metodoActual} 
                           disabled={estaProcesando}
                           onChange={(e) => manejarCambioFormaPago(item.id, e.target.value)}
-                          className="p-1.5 border border-gray-300 rounded outline-none text-xs bg-white font-semibold cursor-pointer text-gray-900 disabled:opacity-60"
+                          className="p-1.5 border border-gray-300 rounded outline-none text-xs bg-white font-semibold cursor-pointer text-gray-900 disabled:opacity-60" 
                         >
                           <option value="Efectivo">Efectivo</option>
                           <option value="Transferencia">Transferencia</option>

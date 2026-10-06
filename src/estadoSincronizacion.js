@@ -18,9 +18,15 @@ const ESTADO = {
 
 const safe = valor => (valor === null || valor === undefined ? '' : String(valor).trim());
 
-/** Un registro es local si su syncStatus existe y no es 'synced'. */
-export const esSoloLocal = registro =>
-  safe(registro?.syncStatus) !== '' && safe(registro?.syncStatus) !== 'synced';
+/** 
+ * Un registro es local si su syncStatus existe y no es 'synced'.
+ * Si el registro está Anulado, no debe figurar como venta pendiente de subida.
+ */
+export const esSoloLocal = registro => {
+  if (!registro) return false;
+  if (safe(registro.estado).toLowerCase() === 'anulado') return false;
+  return safe(registro.syncStatus) !== '' && safe(registro.syncStatus) !== 'synced';
+};
 
 /**
  * Clasifica una venta para poder mostrarla al usuario.

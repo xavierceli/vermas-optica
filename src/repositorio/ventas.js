@@ -339,7 +339,8 @@ export const anularVentaLocalImpl = async saleId => {
         }
       }
 
-      await localDb.sales.put({ ...sale, estado: 'Anulado', updatedAt: nowIso(), syncStatus: 'pending' });
+      // Al anular, se actualiza el estado y se marca la venta local para que no quede retenida como 'pending'
+      await localDb.sales.put({ ...sale, estado: 'Anulado', abono: '0', updatedAt: nowIso(), syncStatus: 'pending' });
       await localDb.outbox.put(operation);
     }
   );

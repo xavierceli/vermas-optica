@@ -39,6 +39,35 @@ export default function PedidosForm({
   const pSaldo = useMemo(() => calcularSaldo(pVenta, pDesc, pAbono), [pVenta, pDesc, pAbono]);
   const pMontoDescuento = useMemo(() => calcularMontoDescuento(pVenta, pDesc), [pVenta, pDesc]);
 
+  // Deduplicación estricta de las mediciones del paciente
+  const medidasPacienteUnicas = useMemo(() => {
+    const mapaUnico = new Map();
+    for (const v of (medidasPaciente || [])) {
+      if (!v) continue;
+      const fecha = safeString(v.fecha).trim();
+      const esfOD = safeString(v.esfera_od).trim();
+      const cilOD = safeString(v.cilindro_od).trim();
+      const claveFirma = `${fecha}_${esfOD}_${cilOD}`;
+      if (!mapaUnico.has(claveFirma) && !mapaUnico.has(fecha)) {
+        mapaUnico.set(fecha, v);
+      }
+    }
+    return Array.from(mapaUnico.values());
+  }, [medidasPaciente]);
+
+  // FILTRADO ESTRICTO DE ARMAZONES EN STOCK (PUNTOS 2 Y 4)
+  // Excluye automáticamente ítems sin stock para que no se puedan seleccionar,
+  // permitiendo únicamente el armazón que ya tenía asignado este pedido en edición.
+  const armazonesDisponibles = useMemo(() => {
+    const codigoActual = safeString(pedidoSeleccionado?.codigo_armazon).toUpperCase().trim();
+    return (inventario || []).filter(i => {
+      if (!i || i.categoria !== 'Armazon') return false;
+      const esElMismoDeEstaVenta = codigoActual !== '' && safeString(i.codigo).toUpperCase().trim() === codigoActual;
+      const tieneStock = safeNum(i.stock) > 0 && i.estado !== 'Vendido';
+      return tieneStock || esElMismoDeEstaVenta;
+    });
+  }, [inventario, pedidoSeleccionado?.codigo_armazon]);
+
   const bloqueado = procesando || subiendoComprobante;
 
   const registrarAbono = async () => {
@@ -165,7 +194,7 @@ export default function PedidosForm({
         </div>
         <div className="flex items-center gap-2 sm:gap-3 w-full sm:w-auto justify-end">
           <button 
-            type="button"
+            type="button" 
             disabled={bloqueado}
             onClick={() => {
               const salir = () => { setPedidoSeleccionado(null); setVistaActual('pedidos_lista'); };
@@ -212,8 +241,8 @@ export default function PedidosForm({
                 <span className="font-bold text-indigo-950 whitespace-nowrap text-xs sm:text-sm">📋 Usar medición del:</span>
                 <select aria-label="Usar medición de una visita anterior" disabled={bloqueado} onChange={cambiarMedicionPedido} className="w-full p-2 bg-white border border-indigo-200 rounded-lg outline-none font-semibold text-xs text-gray-900 disabled:opacity-60">
                   <option value="">-- Seleccionar de Historial Clínico --</option>
-                  {medidasPaciente.map(v => (
-                    <option key={v.id} value={v.id}>Fecha: {safeString(v.fecha)} | OD: {safeString(v.esfera_od) || '0'}/{safeString(v.cilindro_od) || '0'} | OI: {safeString(v.esfera_oi) || '0'}/{safeString(v.cilindro_oi) || '0'}</option>
+                  {medidasPacienteUnicas.map(v => (
+                    <option key={v.id || v.fecha} value={v.id}>Fecha: {safeString(v.fecha)} | OD: {safeString(v.esfera_od) || '0'}/{safeString(v.cilindro_od) || '0'} | OI: {safeString(v.esfera_oi) || '0'}/{safeString(v.cilindro_oi) || '0'}</option>
                   ))}
                 </select>
               </div>
@@ -320,13 +349,18 @@ export default function PedidosForm({
                 className="flex-1 p-2 bg-indigo-50 border border-indigo-200 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 font-bold uppercase text-gray-900 text-sm disabled:opacity-60"
                 placeholder="Escriba código..."
               />
+              
+              {/* DATALIST CON PRECIOS Y STOCK FILTRADO EN TIEMPO REAL */}
               <datalist id="lista-armazones">
-                {(inventario || []).filter(i => i && i.categoria === 'Armazon').map(i => (
-                   <option key={i.id} value={i.codigo}>{i.tipo_armazon} ({i.material})</option>
+                {armazonesDisponibles.map(i => (
+                  <option key={i.id} value={i.codigo}>
+                    {i.tipo_armazon} ({i.material}) - ${safeNum(i.precio).toFixed(2)}
+                  </option>
                 ))}
-                <option value="2905">Armazón del Paciente</option>
+                <option value="2905">Armazón del Paciente - $0.00</option>
               </datalist>
-              {precioArmazonUI > 0 && <span className="text-green-800 font-bold bg-green-100 px-3 py-1.5 rounded-lg shadow-sm whitespace-nowrap border border-green-300 text-xs sm:text-sm">[+${precioArmazonUI}]</span>}
+
+              {precioArmazonUI > 0 && <span className="text-green-800 font-bold bg-green-100 px-3 py-1.5 rounded-lg shadow-sm whitespace-nowrap border border-green-300 text-xs sm:text-sm">[+${precioArmazonUI.toFixed(2)}]</span>}
               {safeString(pedidoSeleccionado.codigo_armazon) === '2905' && <span className="bg-amber-100 text-amber-900 px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap border border-amber-300">Armazón del Paciente</span>}
             </div>
           </div>
