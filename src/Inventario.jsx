@@ -4,7 +4,7 @@ import { resolverUrlImagenInventario } from './imagenesInventario';
 import { imprimirEtiqueta } from './impresiones';
 
 export default function Inventario({
-  inventario, nuevoItemInv, editandoInvId, cargandoImagen,
+  inventario = [], nuevoItemInv, editandoInvId, cargandoImagen,
   manejarCambioInv, setImagenSeleccionada, guardarItemInventario,
   cancelarEdicionInventario, cargarParaEditarInventario, eliminarItemInventario
 }) {
@@ -12,7 +12,7 @@ export default function Inventario({
   const [imagenAmpliada, setImagenAmpliada] = useState(null);
   const [urlsImagenes, setUrlsImagenes] = useState({});
   const [imagenesFallidas, setImagenesFallidas] = useState({});
-  const imagenesProcesadas = useRef(new Set());
+  const firmasProcesadas = useRef(new Set());
   const inputFotoRef = useRef(null);
 
   // Cierre de imagen ampliada con tecla Escape
@@ -22,17 +22,24 @@ export default function Inventario({
         setImagenAmpliada(null);
       }
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    if (imagenAmpliada) {
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
+    }
   }, [imagenAmpliada]);
 
   // Resolución controlada de URLs de Storage sin bucles de re-render
   useEffect(() => {
-    const conFoto = (inventario || []).filter(item => item?.id && item?.imagen_url && !imagenesProcesadas.current.has(item.id));
+    const conFoto = (inventario || []).filter(item => {
+      if (!item?.id || !item?.imagen_url) return false;
+      const firma = `${item.id}:${item.imagen_url}`;
+      return !firmasProcesadas.current.has(firma);
+    });
+
     if (conFoto.length === 0) return;
 
     let vigente = true;
-    conFoto.forEach(item => imagenesProcesadas.current.add(item.id));
+    conFoto.forEach(item => firmasProcesadas.current.add(`${item.id}:${item.imagen_url}`));
 
     void Promise.all(conFoto.map(async item => {
       const url = await resolverUrlImagenInventario(item.imagen_url);
@@ -75,13 +82,13 @@ export default function Inventario({
            safeString(item.descripcion).toLowerCase().includes(term);
   });
 
-  const modelosArmazones = (inventario || []).filter(i => safeString(i.categoria) === 'Armazon');
+  const modelosArmazones = (inventario || []).filter(i => safeString(i?.categoria) === 'Armazon');
   const totalModelosArmazones = modelosArmazones.length;
-  const stockArmazones = modelosArmazones.reduce((acc, curr) => acc + safeNum(curr.stock), 0);
+  const stockArmazones = modelosArmazones.reduce((acc, curr) => acc + safeNum(curr?.stock), 0);
 
-  const modelosAccesorios = (inventario || []).filter(i => safeString(i.categoria) === 'Accesorio');
+  const modelosAccesorios = (inventario || []).filter(i => safeString(i?.categoria) === 'Accesorio');
   const totalModelosAccesorios = modelosAccesorios.length;
-  const stockAccesorios = modelosAccesorios.reduce((acc, curr) => acc + safeNum(curr.stock), 0);
+  const stockAccesorios = modelosAccesorios.reduce((acc, curr) => acc + safeNum(curr?.stock), 0);
 
   const totalStockGeneral = stockArmazones + stockAccesorios;
 
@@ -199,7 +206,7 @@ export default function Inventario({
             </button>
           )}
           <button type="button" onClick={handleGuardar} disabled={cargandoImagen} className={`px-8 py-2.5 rounded-lg font-bold text-white shadow-md transition-all ${cargandoImagen ? 'bg-gray-400 cursor-not-allowed' : 'bg-purple-600 hover:bg-purple-700 active:scale-95'}`}>
-            {cargandoImagen ? 'Subiendo Imagen...' : 'Guardar Producto'}
+            {cargandoImagen ? 'Guardando Producto...' : 'Guardar Producto'}
           </button>
         </div>
       </div>
@@ -240,8 +247,8 @@ export default function Inventario({
                     />
                   ) : (
                     <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-gray-500 text-[10px] border border-gray-200 text-center leading-tight px-0.5 font-medium"
-                         title={item.imagen_url ? 'La foto no se pudo cargar' : 'Este producto no tiene foto'}>
-                      {item.imagen_url ? '⚠ No carga' : 'Sin foto'}
+                         title={item.imagen_url ? 'La foto no se pudo cargar o está pendiente de subida' : 'Este producto no tiene foto'}>
+                      {item.imagen_url ? '⏳ Local' : 'Sin foto'}
                     </div>
                   )}
                 </td>
@@ -306,7 +313,7 @@ export default function Inventario({
               <span aria-hidden="true">✖</span>
             </button>
             <img 
-              src={imagenAmpliada}
+              src={imagenAmpliada} 
               onError={() => setImagenAmpliada(null)} 
               alt="Imagen ampliada del producto" 
               className="max-w-full max-h-[85vh] object-contain rounded-xl shadow-2xl border-4 border-white/20 bg-white" 

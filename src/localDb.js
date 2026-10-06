@@ -21,10 +21,32 @@ localDb.version(2).stores({
 
 export const nowIso = () => new Date().toISOString();
 
+/**
+ * Generador de UUID v4 estándar (RFC 4122).
+ * Prioriza crypto.randomUUID y utiliza crypto.getRandomValues como fallback seguro.
+ */
 export const createUuid = () => {
-  if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+  const cryptoObj = globalThis.crypto || globalThis.msCrypto;
+
+  if (typeof cryptoObj?.randomUUID === 'function') {
+    return cryptoObj.randomUUID();
+  }
+
+  if (typeof cryptoObj?.getRandomValues === 'function') {
+    const bytes = new Uint8Array(16);
+    cryptoObj.getRandomValues(bytes);
+
+    // Ajuste de versión 4 (0100) y variante RFC 4122 (10xx)
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+
+    const hex = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+  }
+
+  // Fallback final para navegadores heredados sin WebCrypto
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, char => {
-    const random = Math.random() * 16 | 0;
+    const random = (Date.now() + Math.random() * 16) % 16 | 0;
     return (char === 'x' ? random : (random & 0x3 | 0x8)).toString(16);
   });
 };

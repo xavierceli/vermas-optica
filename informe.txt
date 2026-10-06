@@ -1,0 +1,208 @@
+INFORME GENERAL DE AUDITORÍA TÉCNICA
+SISTEMA DE GESTIÓN CLÍNICA Y COMERCIAL VER+ (vermasoptica)
+RESUMEN EJECUTIVO
+Estado general: Requiere atención
+Problemas críticos encontrados (🔴): 5
+Problemas importantes encontrados (🟠): 6
+Mejoras recomendadas (🟡): 5
+Mejoras opcionales (🟢): 3
+Alcance analizado: Código fuente real y esquemas de base de datos (supabase/migrations/202609240001 a 202609240019), motor de persistencia Local-First (syncEngine.js, motorOffline.js, localDb.js, localRepository.js, ventas.js, eliminacionPaciente.js), reglas de negocio y pricing (reglas.js, pedidos.js, calculoPrecio.js, validacion.js, seguridad.js), y componentes de interfaz (useGestor.js, PedidosForm.jsx, PedidosLista.jsx, Clinica.jsx).
+Condición de auditoría: No se modificó ningún archivo, no se aplicaron refactorizaciones automáticas ni se ejecutaron mutaciones sobre la base de datos.
+1. PROBLEMAS CRÍTICOS (🔴)
+🔴 C-01: Descarte silencioso y purga definitiva de historias clínicas y ventas en la Outbox local
+Problema: La lista de rechazo permanente clasifica fallos transitorios de inventario como errores irrecuperables en el primer intento.
+Archivo: src/syncEngine.js.
+Ubicación: Líneas 128–137 y 227–242 (constante RECHAZO_PERMANENTE, función esRechazoPermanente y bloque applyResults).
+Causa: Al sincronizar una venta creada offline con un armazón cuyo stock en el servidor fue vendido previamente por otro equipo, PostgreSQL lanza la excepción 'Stock insuficiente para producto X' con código SQLSTATE 23514. En el cliente, esRechazoPermanente() detecta el texto "stock insuficiente" o "no existe" y ejecuta finalizarOperacion(operation, 'descartada') inmediatamente. Debido a que la función crear_venta en Supabase empaqueta de forma atómica la evaluación médica y la venta en una sola llamada, la consulta clínica nunca llega a insertarse en la nube. Posteriormente, al transcurrir 7 días, la rutina purgarDescartadas() borra físicamente la operación de IndexedDB.
+Impacto: Pérdida definitiva e irreversible de expedientes médicos y ventas legítimas en el servidor sin darle al optometrista la oportunidad de sustituir el armazón y conservar el examen visual.
+Cómo reproducirlo:
+Crear una atención con venta sin conexión a internet asignando una montura con stock = 1.
+En otra terminal conectada, vender la misma montura.
+Reconectar la primera terminal: la Outbox marcará la operación completa como 'descartada'.
+Riesgo para los datos: Pérdida permanente de historias clínicas y transacciones comerciales.
+Solución recomendada: Modificar syncEngine.js para que las excepciones de stock (23514 o mensaje "Stock") pasen al estado 'conflict' en lugar de 'descartada', solicitando en la interfaz la reasignación de montura sin descartar la evaluación clínica.
+Riesgo de aplicar la solución: Muy bajo; preserva la información del paciente.
+🔴 C-02: Generación no criptográfica de UUIDs en motorOffline.js y localDb.js
+Problema: El generador de identificadores únicos locales utiliza Math.random() como mecanismo de respaldo.
+Archivo: src/motorOffline.js y src/localDb.js.
+Ubicación: Función generarId() en motorOffline.js (líneas 10–18) y createUuid() en localDb.js (líneas 21–27).
+Causa: En contextos donde el navegador no opera bajo un contexto seguro estricto (window.isSecureContext === false), en WebViews antiguas de Android o enlaces locales sin HTTPS, el método nativo crypto.randomUUID no está expuesto. Ambos archivos recurren a un reemplazo basado en Math.random(), el cual carece de la entropía criptográfica requerida por el estándar RFC 4122 v4 y depende de algoritmos pseudoaleatorios predecibles ligados al reloj del sistema.
+Impacto: Posibilidad real de colisión de UUIDs entre dos dispositivos que registren pacientes o ventas simultáneamente sin conexión. Si un identificador colisiona, la base de datos ejecutará el ON CONFLICT o el bloqueo consultivo en Supabase, asociando la atención de un paciente al expediente de otro o ignorando la venta.
+Cómo reproducirlo: Forzar la ejecución de generarId() o createUuid() en un navegador que opere sin contexto seguro.
+Riesgo para los datos: Corrupción de identidad relacional y sobreescritura accidental de expedientes clínicos.
+Solución recomendada: Implementar crypto.getRandomValues(new Uint8Array(16)) como primer paso de fallback de alta entropía antes de cualquier degradación.
+Riesgo de aplicar la solución: Ninguno.
+🔴 C-03: Descuadre silencioso de inventario al eliminar pacientes por sensibilidad a mayúsculas/minúsculas
+Problema: En eliminar_paciente_definitivo() (202609240018), la devolución masiva de existencias depende de una comparación estricta de cadenas sobre v.estado.
+Archivo: supabase/migrations/202609240018_eliminar_paciente_definitivo.sql.
+Ubicación: Bloque de actualización de stock (líneas 124–134):
+SQL
+where m.pedido_id = any(v_pedidos) and coalesce(v.estado, '') <> 'Entregado'
+Causa: La condición evalúa exclusivamente el literal 'Entregado'. Si una venta se guardó como 'entregado' (minúscula), con espacios o variaciones de tipeo, la expresión coalesce(v.estado, '') <> 'Entregado' evalúa como verdadera. Como consecuencia, el motor de base de datos ejecuta stock = stock + neto y repone al catálogo monturas que ya fueron retiradas físicamente por el paciente.
+Impacto: Aumento fantasma de existencias en el inventario de la óptica tras la eliminación de registros de prueba o pacientes.
+Cómo reproducirlo: Crear un pedido con estado 'entregado' (minúscula) y llamar a eliminar_paciente_definitivo(). El stock de los productos involucrados aumentará erróneamente en el inventario.
+Riesgo para los datos: Corrupción de existencias reales de inventario.
+Solución recomendada: Normalizar la comparación a: lower(btrim(coalesce(v.estado, ''))) <> 'entregado'.
+Riesgo de aplicar la solución: Muy bajo.
+🔴 C-04: Omisión de verificación de existencia física de producto en anular_venta()
+Problema: En anular_venta() (202609240001_p0_integridad.sql), si un producto fue retirado físicamente del catálogo antes de la anulación, la función completa la operación sin devolver stock ni advertir del error.
+Archivo: supabase/migrations/202609240001_p0_integridad.sql.
+Ubicación: Bucle for v_item in select ... loop en public.anular_venta.
+Causa: La sentencia perform 1 from public.inventario i where i.id = v_item.inventario_id for update; no verifica si la fila fue encontrada (if not found). Si el ítem fue eliminado mediante eliminar_inventario(), el UPDATE public.inventario SET stock = ... posterior afecta 0 filas. La transacción no falla: inserta un movimiento de 'DEVOLUCION' en inventario_movimientos y marca el pedido como 'Anulado'.
+Impacto: Movimientos de inventario huérfanos sin correspondencia física; la anulación queda registrada pero el producto devuelto desaparece del sistema sin rastro.
+Cómo reproducirlo: Realizar una venta con un producto, eliminar ese producto del inventario mediante eliminar_inventario() y luego anular la venta.
+Riesgo para los datos: Corrupción contable en los movimientos de existencias.
+Solución recomendada: Añadir la validación if not found then raise exception 'El producto % ya no existe en el catálogo.', v_item.inventario_id;.
+Riesgo de aplicar la solución: Muy bajo.
+🔴 C-05: Carrera de concurrencia y sobreescritura de estado en PedidosForm.jsx al registrar abonos
+Problema: En PedidosForm.jsx, registrarAbono() y ejecutarGuardado() gestionan cobros adicionales acumulando variables en memoria local (montoAbonoPendiente), pero si el usuario presiona "Guardar Pedido" rápidamente, se envían cobros duplicados o se desajusta el abono.
+Archivo: src/PedidosForm.jsx.
+Ubicación: Métodos registrarAbono() (líneas 41–117) y ejecutarGuardado() (líneas 119–134).
+Causa: En registrarAbono(), al pulsar el botón se actualiza el estado de React del pedido modificando pedidoSeleccionado.abono directamente en memoria. Al pulsar "Guardar Pedido", ejecutarGuardado() toma montoAbonoPendiente y lo envía a guardarPedido({ montoAdicional }). Si la conexión sufre latencia, el componente permite modificar campos nuevamente antes de que termine el ciclo de persistencia de useGestor.js, provocando que el historial de notas (pago_nota) duplique líneas o desincronice el total real registrado en localDb.payments.
+Impacto: Descuadre entre el saldo mostrado en pantalla y las transacciones asentadas en localDb.payments y Supabase.
+Cómo reproducirlo: En un pedido existente, ingresar un abono rápido y hacer clic inmediatamente en "Guardar Pedido" bajo emulación de CPU lenta en DevTools.
+Riesgo para los datos: Corrupción contable de saldos y notas de cobro.
+Solución recomendada: Deshabilitar los inputs de cobro y botones en el formulario mientras subiendoComprobante o procesando estén activos, centralizando el registro de abonos exclusivamente a través de registrarPagoLocal.
+Riesgo de aplicar la solución: Bajo.
+2. PROBLEMAS IMPORTANTES (🟠)
+🟠 I-01: Fuga de comprobantes huérfanos en Supabase Storage durante la eliminación de pacientes
+Problema: La eliminación física de archivos en Storage depende de que la llamada en el navegador termine con éxito tras la respuesta del servidor.
+Archivo: src/eliminacionPaciente.js.
+Ubicación: Líneas 236–252 (eliminarPacienteDefinitivo).
+Causa: La base de datos elimina los registros de pacientes y ventas de forma atómica en Supabase. Si la conexión falla en el momento en que el navegador intenta ejecutar supabase.storage.from(...).remove(), los archivos binarios quedan en el bucket privado sin referencias en la base de datos.
+Impacto: Comprobantes y datos bancarios almacenados indefinidamente sin registro que los vincule.
+Solución recomendada: Registrar los identificadores de archivo pendientes en una tabla de purga en base de datos para reintentar la eliminación de manera asíncrona.
+Riesgo de aplicar la solución: Bajo.
+🟠 I-02: Timeout estricto de 10 segundos en sincronizaciones móviles de lotes Outbox
+Problema: TIEMPO_LIMITE_MS = 10000 aborta llamadas a aplicar_operaciones que aún se están procesando en PostgreSQL.
+Archivo: src/syncEngine.js.
+Ubicación: Líneas 16 y 286 (conTimeout en sincronizarAhora).
+Causa: Lotes de hasta 20 operaciones concurrentes que bloquean filas (FOR UPDATE) pueden demorar más de 10 segundos en redes móviles. El cliente descarta la promesa, pero el servidor termina aplicando la transacción, generando duplicidad de envíos posteriores y alertas falsas de error.
+Impacto: Falsa alarma visual de fallo en el panel de sincronización (status.phase = 'error').
+Solución recomendada: Aumentar TIEMPO_LIMITE_MS a 30.000 ms e implementar cancelación mediante AbortController.
+Riesgo de aplicar la solución: Ninguno.
+🟠 I-03: Desfase de registros durante la paginación por desplazamiento (Offset Pagination)
+Problema: descargarHistorialPaginado() pagina usando .range(desde, desde + limite - 1) sobre vista_pacientes.
+Archivo: src/syncEngine.js.
+Ubicación: Líneas 264–273.
+Causa: Si entra una nueva consulta mientras otro equipo está descargando páginas consecutivas, el orden se desplaza, provocando que se salte un registro intermedio y se duplique otro.
+Impacto: Descargas parciales de historial con consultas omitidas.
+Solución recomendada: Migrar a paginación por cursor basada en fecha e ID compuesto.
+Riesgo de aplicar la solución: Moderado; requiere modificar la función de descarga.
+🟠 I-04: Bloqueo de creación de armazones con foto en modo sin conexión
+Problema: El guardado de armazones aborta completamente si no hay conexión a internet y se seleccionó una imagen.
+Archivo: src/useGestor.js.
+Ubicación: Líneas 239–256 (guardarItemInventario).
+Causa: La verificación if (!navigator.onLine) bloquea la ejecución para impedir armazones sin foto, deshabilitando la capacidad Local-First del catálogo.
+Impacto: Imposibilidad de catalogar inventario en consultorios o brigadas sin señal activa.
+Solución recomendada: Almacenar temporalmente el blob en localDb.attachments con tipo SUBIR_ADJUNTO (soportado por syncEngine.js) y permitir la creación con un placeholder temporal.
+Riesgo de aplicar la solución: Bajo.
+🟠 I-05: Inconsistencia de formato en bitácoras financieras de notas de pago
+Problema: En reembolsos.sql se utiliza current_date::text (YYYY-MM-DD), mientras que en pagos previos se utilizó DD/MM/YYYY.
+Archivo: supabase/migrations/202609240004_reembolsos.sql y src/repositorio/ventas.js.
+Ubicación: Función reembolsar_pago y métodos de registro de abono.
+Causa: Falta de unificación en las máscaras de fecha al concatenar texto en pago_nota.
+Impacto: Formatos dispares en la misma bitácora de una venta, dificultando la lectura del usuario.
+Solución recomendada: Homogeneizar a to_char(now() at time zone 'America/Guayaquil', 'DD/MM/YYYY').
+Riesgo de aplicar la solución: Ninguno.
+🟠 I-06: Liberación forzada de la cola de escritura local (LIBERAR_HUECO_MS)
+Problema: En localRepository.js, si una tarea tarda más de 15 segundos, el vigilante libera el cerrojo por fuerza bruta permitiendo la ejecución de la siguiente tarea concurrente.
+Archivo: src/localRepository.js.
+Ubicación: Líneas 57–76 (LIBERAR_HUECO_MS y temporizador vigilante).
+Causa: Si una transacción pesada en IndexedDB tarda más de 15 segundos en un dispositivo móvil lento, el cerrojo se libera y la siguiente operación de escritura entra a ejecutarse simultáneamente. Si ambas operaciones descuentan stock del mismo producto, se produce la condición de carrera que la cola buscaba evitar.
+Impacto: Pérdida de la garantía de serialización estricta en dispositivos móviles con operaciones pesadas de almacenamiento.
+Solución recomendada: No liberar el cerrojo automáticamente; si una tarea excede el tiempo límite, rechazar explícitamente la promesa de la tarea bloqueada y abortar la transacción antes de dar paso a la siguiente.
+Riesgo de aplicar la solución: Bajo.
+3. MEJORAS RECOMENDADAS (🟡)
+🟡 M-01: Índice único normalizado para cédulas en pacientes_perfil: En 202609240001_p0_integridad.sql, guardar_consulta_clinica ejecuta ON CONFLICT (cedula). Conviene contar con un índice explícito: CREATE UNIQUE INDEX IF NOT EXISTS pacientes_perfil_cedula_upper_idx ON public.pacientes_perfil (upper(btrim(cedula))); para optimizar las consultas a medida que crezca el número de pacientes.
+🟡 M-02: Saneamiento numérico en upsert_precio: En 202609240002_local_first.sql, la función no filtra campos numéricos con _p0_numero. Debe forzarse el redondeo y la validación numérica en el servidor para evitar cadenas malformadas en las tarifas.
+🟡 M-03: Purgado periódico de la tabla registros_eliminados: La tabla creada en 0018 acumula los UUIDs de pacientes y ventas eliminadas indefinidamente. Se recomienda implementar una rutina para eliminar registros mayores a 90 días una vez que los clientes locales hayan sincronizado.
+🟡 M-04: Tipado y validación de esquemas en ventas.js: La manipulación manual de objetos en guardarVentaLocalImpl maneja múltiples nombres de campo alternativos (inventoryId, inventario_id, etc.). Centralizar estas estructuras reducirá posibles errores tipográficos en el código del cliente.
+🟡 M-05: Sincronización automática de tarifario en calculoPrecio.js: En calculoPrecio.js, si el tarifario local no contiene filas con tipo_lente = 'CALCULO' y rango_medida = 'BASE', el cálculo devuelve $0$ en lunas y tratamientos de forma silenciosa sin advertir al optometrista en el formulario.
+4. MEJORAS OPCIONALES (🟢)
+🟢 O-01: Barra de avance en PanelSincronizacion.jsx: Exponer el progreso numérico del lote desde syncEngine.js para mostrar una barra de porcentaje visual durante sincronizaciones pesadas.
+🟢 O-02: Resguardo del estado original en el trigger de consultas: En 202609240017, guardar_revision_consulta() solo actúa AFTER UPDATE. Sería conveniente capturar también la versión base durante el INSERT inicial para asegurar el historial médico completo.
+🟢 O-03: Deduplicación defensiva en listeners de sincronización: En syncEngine.js, asegurar que los listeners de ventana (online, offline, focus) no se dupliquen al ejecutar la aplicación en entornos de desarrollo con React StrictMode.
+5. CORRECCIONES ANTERIORES VERIFICADAS
+Corrección Anterior
+
+| Estado
+| Veredicto Técnico
+| Transaccionalidad en Ventas y Stock
+| ⚠️
+| Parcialmente solucionada. En el servidor (0001) la transacción atómica y el ledger funcionan adecuadamente. Sin embargo, en el cliente (syncEngine.js), un fallo de stock provoca que la venta y la consulta médica se descarten por completo (🔴 C-01).
+| Protección y Privacidad de Storage
+| ✅
+| Correctamente solucionada. 0006, 0007 y 0008 convirtieron los buckets a privados y exigieron autenticación con RLS.
+| Pérdida de campos en edición de Inventario
+| ✅
+| Correctamente solucionada. 0010 implementó el operador ? (p_datos ? 'clave'), evitando que los campos omitidos en el formulario se sobrescriban con NULL.
+| Protección contra escritura directa
+| ✅
+| Correctamente solucionada. Los triggers bloquear_escritura_directa_pedidos restringen las mutaciones fuera de las RPCs autorizadas.
+| Borrado seguro de pacientes
+| ⚠️️
+| Requiere revisión. 0018 estructuró el borrado en cascada controlado, pero la comparación sensible a mayúsculas puede devolver stock incorrectamente (🔴 C-03) y los archivos en Storage pueden quedar huérfanos (🟠 I-01).
+| Auditoría de Políticas RLS
+| ✅
+| Correctamente solucionada. 0012 revocó permisos a anon y estableció políticas de solo lectura para usuarios autenticados.
+| Historial de revisiones médicas
+| ✅
+| Correctamente solucionada. 0017 implementó el trigger trg_guardar_revision_consulta, resguardando cambios clínicos en la tabla de auditoría.
+| Aritmética financiera en cliente
+| ✅
+| Correctamente solucionada. reglas.js implementa escalado con BigInt y división redondeada exacta emulando round(numeric, 2) de PostgreSQL.
+| Seguridad de PIN offline
+| ✅
+| Correctamente solucionada. seguridad.js utiliza PBKDF2 con 210.000 iteraciones en WebCrypto, comparación en tiempo constante y bloqueo por intentos fallidos.
+|
+
+6. DIAGNÓSTICO POR FUNCIONALIDAD
+Módulo / Función
+
+| Estado
+| Detalle del Diagnóstico
+| Gestión de Pacientes
+| ⚠️ Requiere revisión
+| Creación, búsqueda y edición consistentes; el borrado definitivo presenta riesgo de incremento erróneo de existencias físicas.
+| Historias Clínicas
+| ⚠️ Requiere revisión
+| Validación estricta con validarFichaClinica y trazabilidad clínica operativa, pero sujeta a descarte en Outbox si se envía junto a una venta con conflicto de inventario.
+| Ventas y Facturación
+| ⚠️ Requiere revisión
+| Sólido y blindado en el servidor, pero susceptible a condiciones de carrera en el formulario de pedidos al acumular cobros rápidos.
+| Inventario y Armazones
+| ⚠️ Requiere revisión
+| El ledger append-only opera correctamente, pero la anulación en base de datos ignora productos eliminados del catálogo.
+| Sincronización Offline
+| ⚠️ Requiere revisión
+| Cola Outbox estructurada, pero con timeout corto en lotes (10s) y lista de rechazo permanente demasiado agresiva.
+| Seguridad y Permisos
+| ✅ Correcto
+| Acceso anónimo revocado en tablas, vistas y funciones de negocio; PBKDF2 robusto para el PIN offline.
+|
+
+7. RIESGOS DE DATOS
+Pérdida de pacientes: Nulo. No se encontraron rutas de pérdida accidental para los registros de pacientes.
+Pérdida de historias clínicas: Alto. Presente cuando una consulta se genera en conjunto con una venta offline que sufre un rechazo de stock en el servidor y es marcada como descartada por el cliente.
+Pérdida de ventas: Medio a Alto. Por la misma causa de descarte prematuro en la Outbox local.
+Pérdida de inventario: Bajo. Existencias protegidas contra valores negativos a nivel de base de datos.
+Pérdida de órdenes / comprobantes: Medio. Riesgo de comprobantes huérfanos que no se eliminan físicamente de Storage al borrar pacientes.
+Duplicación de información: Bajo. Protegido por advisory locks e idempotencia en pagos.
+Corrupción de información: Medio. Riesgo asociado a la generación de UUIDs no seguros en navegadores antiguos (🔴 C-02), al reingreso indebido de stock entregado al borrar pacientes (🔴 C-03) y al manejo de estado en PedidosForm.jsx (🔴 C-05).
+8. PRIORIDAD DE TRABAJO RECOMENDADA
+Prioridad 1 (Inmediata): Modificar la clasificación de errores en syncEngine.js (🔴 C-01).
+Acción: Quitar 'Stock insuficiente' y 'no existe' de RECHAZO_PERMANENTE y transformar esos errores en estado 'conflict', preservando la consulta médica en la Outbox.
+Prioridad 2: Normalizar comparación de estado en 202609240018_eliminar_paciente_definitivo.sql (🔴 C-03).
+Acción: Emplear lower(btrim(coalesce(v.estado, ''))) <> 'entregado' para evitar devoluciones de stock indebidas.
+Prioridad 3: Blindar el generador de IDs en motorOffline.js y localDb.js (🔴 C-02).
+Acción: Usar crypto.getRandomValues() antes de cualquier método pseudoaleatorio para asegurar identificadores RFC 4122 v4 válidos.
+Prioridad 4: Validar productos eliminados en anular_venta() (🔴 C-04).
+Acción: Manejar la excepción if not found al intentar bloquear el ítem de inventario en la migración 0001.
+Prioridad 5: Blindar la concurrencia de abonos en PedidosForm.jsx (🔴 C-05).
+Acción: Deshabilitar campos y botones durante el proceso de guardado y evitar la manipulación directa de estados financieros en memoria.
+Prioridad 6: Incrementar timeout de sincronización en syncEngine.js (🟠 I-02).
+Acción: Subir TIEMPO_LIMITE_MS a 30.000 ms para tolerar latencias en dispositivos móviles.
+Prioridad 7: Trazabilidad de archivos en Storage al borrar pacientes (🟠 I-01).
+Acción: Implementar reintentos en segundo plano para comprobantes cuyo borrado falle desde el navegador.
+El código fuente y la base de datos se mantienen íntegros y sin alteraciones a la espera de tus instrucciones para iniciar la fase de corrección.

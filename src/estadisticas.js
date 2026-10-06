@@ -25,8 +25,28 @@ const safeString = valor => {
   }
 };
 
-/** El prefijo "AAAA-MM" con el que se decide si una venta es del mes actual. */
+/**
+ * El prefijo "AAAA-MM" con el que se decide si una venta es del mes actual.
+ * Normalizado a la zona horaria del negocio (America/Guayaquil / UTC-5) si está disponible.
+ */
 export const prefijoDelMesActual = (fecha = new Date()) => {
+  if (!(fecha instanceof Date) || Number.isNaN(fecha.getTime())) {
+    fecha = new Date();
+  }
+  try {
+    const formateador = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Guayaquil',
+      year: 'numeric',
+      month: '2-digit'
+    });
+    const partes = formateador.formatToParts(fecha);
+    const anio = partes.find(p => p.type === 'year')?.value;
+    const mes = partes.find(p => p.type === 'month')?.value;
+    if (anio && mes) return `${anio}-${mes}`;
+  } catch {
+    /* Fallback estándar si el entorno no admite timeZone */
+  }
+
   const anio = fecha.getFullYear();
   const mes = String(fecha.getMonth() + 1).padStart(2, '0');
   return `${anio}-${mes}`;

@@ -7,6 +7,7 @@ import {
   avisarAviso, avisarError, cerrarAviso, leerAviso, mostrarAviso, suscribirAvisos
 } from './avisos.js';
 import { esFalloDeRed } from './reglas.js';
+import { clasificarFallo } from './clasificarFallo.js';
 
 const SRC = join(dirname(fileURLToPath(import.meta.url)));
 const leer = nombre => readFileSync(join(SRC, nombre), 'utf8');
@@ -301,12 +302,30 @@ test('los items de una venta se reconstruyen antes de enviarla', () => {
 test('un rechazo permanente no se reintenta cinco veces', () => {
   // "Item de venta invalido." es un dato malo, no un corte de red. Reintentar no
   // lo arregla: solo deja la barra roja semanas hasta que alguien pulse "Resolver".
+  // La regla ahora vive en clasificarFallo.js (asi se puede probar de verdad).
   const fuente = leer('syncEngine.js');
-  assert.match(fuente, /esRechazoPermanente/);
-  const i = fuente.indexOf('const intentos = (operation.attempts || 0) + 1;');
-  const bloque = fuente.slice(i, i + 460);
-  assert.match(bloque, /esRechazoPermanente\(motivo\)/,
-    'un rechazo permanente debe descartarse de inmediato');
+  assert.match(fuente, /clasificarFallo\(motivo/,
+    'la decision de reintentar, conflicto o descarte debe salir del modulo probado');
+  assert.match(fuente, /finalizarOperacion\(operation, 'descartada'/,
+    'un rechazo permanente debe descartarse');
+  assert.equal(
+    clasificarFallo('Item de venta inválido: monto negativo'), 'descartada',
+    'un dato invalido se descarta de inmediato, sin esperar los 5 intentos'
+  );
+});
+
+test('un rechazo de stock NO se descarta: perderia la evaluacion clinica', () => {
+  // BUG GRAVE (auditoria): 'Stock insuficiente' estaba en la lista de rechazos
+  // permanentes. En el servidor crear_venta() mete la venta y la consulta clinica
+  // en la MISMA transaccion, asi que al descartar en el cliente se perdia el
+  // examen optometrico del paciente, sin que nadie se enterara.
+  assert.equal(
+    clasificarFallo('Stock insuficiente para producto 5'), 'conflict',
+    'debe quedar esperando, no descartada'
+  );
+  const fuente = leer('syncEngine.js');
+  assert.match(fuente, /finalizarOperacion\(operation, 'conflict'/,
+    'el conflicto se registra como tal, sin borrar nada');
 });
 
 test('nunca se envia un item de venta sin inventario resuelto', () => {
@@ -480,9 +499,10 @@ test('un fallo de red NO se cuenta como rechazo del servidor', () => {
   // diciendo "El servidor rechazo 1 operacion(es): Failed to fetch". El servidor
   // no habia rechazado nada: no llego a responder. Y como la barra prioriza
   // `fallos` sobre `esOffline`, el aviso de "Sin conexion" no se veia NUNCA.
+  // La deteccion vive en clasificarFallo(), que ordena: red, stock, invalido.
+  assert.equal(clasificarFallo('Failed to fetch'), 'red',
+    'un fallo de red debe clasificarse aparte de un rechazo del servidor');
   const fuente = leer('syncEngine.js');
-  assert.match(fuente, /if \(esFalloDeRed\(motivo\)\)/,
-    'un fallo de red debe detectarse al aplicar los resultados');
   assert.match(fuente, /marcarPendientePorRed/,
     'y la operacion debe quedar en espera, no rechazada');
 });

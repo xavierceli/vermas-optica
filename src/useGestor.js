@@ -7,7 +7,7 @@ import {
   archivarConsultaIndividualLocal, guardarConsultaLocal, guardarInventarioLocal,
   guardarPrecioLocal, guardarVentaLocal, obtenerSnapshotLocal, 
   importLegacyCache, anularVentaLocal, eliminarInventarioLocal, 
-  eliminarPrecioLocal, anularVentaConReembolso
+  eliminarPrecioLocal, anularVentaConReembolso, guardarAdjuntoLocal
 } from './localRepository';
 import { 
   iniciarMotorSync, suscribirSync, sincronizarAhora, 
@@ -176,7 +176,7 @@ export function useGestor() {
             snapFresca.sales = vDirectas;
           }
         } catch {
-          // Las ventas pueden no estar disponibles temporalmente; el historial sí se muestra.
+          // Fallback silencioso si la tabla está bloqueada
         }
         aplicarSnapshotLocal(snapFresca);
       });
@@ -340,31 +340,43 @@ export function useGestor() {
     try {
       setCargandoImagen(true);
       let urlImagen = nuevoItemInv.imagen_url || null;
+      let fotoPendienteSync = false;
 
       if (imagenSeleccionada) {
-        // DECISIÓN DEL USUARIO: la foto de un armazón identifica el producto y se
-        // consulta todo el tiempo (al vender, al imprimir la etiqueta). Antes se
-        // guardaba "para subirla luego" y, como la app no encontraba el archivo
-        // (ver src/imagenesInventario.js), el producto quedaba sin foto; y si el
-        // equipo se perdia, la imagen se perdia con el. Ahora la foto se sube
-        // SIEMPRE con conexion: sin internet se avisa y NO se guarda el producto
-        // a medias, para no dejar un armazon sin la foto que lo identifica.
-        if (!navigator.onLine) {
-          mostrarToast('Sin conexión: no se pueden subir fotos de armazones. Conéctate y vuelve a intentar.', 'warning', 6000);
-          return;
-        }
         const archivoComprimido = await comprimirImagen(imagenSeleccionada);
         const nombreArchivo = `producto_${Date.now()}_${generarId().substring(0, 8)}.jpg`;
-        try {
-          const { error: errSubida } = await supabase.storage
-            .from('inventario_imagenes')
-            .upload(nombreArchivo, archivoComprimido, { contentType: 'image/jpeg', upsert: true });
-          if (errSubida) throw new Error(errSubida.message);
-          urlImagen = nombreArchivo;
-        } catch (errImg) {
-          // Con internet pero sin exito: tampoco se guarda el producto a medias.
-          mostrarToast('No se pudo subir la foto: ' + (errImg?.message || 'error desconocido') + '. El producto no se guardó.', 'error', 7000);
-          return;
+
+        if (navigator.onLine) {
+          try {
+            const { error: errSubida } = await supabase.storage
+              .from('inventario_imagenes')
+              .upload(nombreArchivo, archivoComprimido, { contentType: 'image/jpeg', upsert: true });
+            if (errSubida) throw new Error(errSubida.message);
+            urlImagen = nombreArchivo;
+          } catch (errImg) {
+            console.warn('[inventario] Subida online falló, respaldando localmente:', errImg);
+            const adj = await guardarAdjuntoLocal({
+              blob: archivoComprimido,
+              nombre: nombreArchivo,
+              mime: 'image/jpeg',
+              bucket: 'inventario_imagenes',
+              refType: 'inventario',
+              refId: editandoInvId || nombreArchivo
+            });
+            urlImagen = adj.ruta;
+            fotoPendienteSync = true;
+          }
+        } else {
+          const adj = await guardarAdjuntoLocal({
+            blob: archivoComprimido,
+            nombre: nombreArchivo,
+            mime: 'image/jpeg',
+            bucket: 'inventario_imagenes',
+            refType: 'inventario',
+            refId: editandoInvId || nombreArchivo
+          });
+          urlImagen = adj.ruta;
+          fotoPendienteSync = true;
         }
       }
 
@@ -401,7 +413,12 @@ export function useGestor() {
       setImagenSeleccionada(null);
       await obtenerDatos({ sync: false });
       void sincronizarAhora({ pull: false });
-      mostrarToast('Producto guardado en este dispositivo.', 'success');
+      mostrarToast(
+        fotoPendienteSync 
+          ? 'Producto guardado. La fotografía se subirá a la nube al recuperar conexión.' 
+          : 'Producto guardado en este dispositivo.', 
+        'success'
+      );
     } catch (e) {
       mostrarToast('Error: ' + e.message, 'error');
     } finally {
@@ -426,7 +443,7 @@ export function useGestor() {
   const eliminarItemInventario = (id) => {
     solicitarConfirmacion('¿Eliminar ítem del inventario?', async () => {
       try {
-        await eliminarInventarioLocal(id);
+        await eliminarItemInventario(id);
         await obtenerDatos({ sync: false });
         void sincronizarAhora({ pull: false });
         mostrarToast('Ítem eliminado localmente.', 'success');
@@ -548,7 +565,7 @@ export function useGestor() {
     }
   };
 
-    const borrarHistoriaClinica = async (item, { descargarCopia = false } = {}) => {
+  const borrarHistoriaClinica = async (item, { descargarCopia = false } = {}) => {
     const cedula = safeString(item?.cedula).trim();
     if (!cedula) return false;
 
@@ -615,6 +632,20 @@ export function useGestor() {
     setEditandoId(null);
     setVistaActual('nueva_medicion');
     window.scrollTo({ top: 0, behavior: 'smooth' }); 
+  };
+
+  const crearNuevoPaciente = (sugerenciaTexto = '') => {
+    const limpio = safeString(sugerenciaTexto).trim();
+    const esNumero = /^\d+$/.test(limpio);
+    const nuevaFicha = {
+      ...estadoInicial,
+      cedula: esNumero ? limpio : '',
+      nombre: !esNumero ? limpio.toUpperCase() : ''
+    };
+    setPaciente(nuevaFicha);
+    setEditandoId(null);
+    setVistaActual('nueva_medicion');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const abrirPedido = (item) => {
@@ -685,12 +716,10 @@ export function useGestor() {
     }
   };
 
-
   const forzarRecalculo = () => { 
     if (!pedidoSeleccionado) return; 
     setPedidoSeleccionado(prev => ({ ...prev, venta: calcularPrecioBase(prev, inventario, listaPrecios) || '' })); 
   };
-
 
   const manejarCambioPedido = (e) => {
     let { name, value, type, checked, tagName } = e.target;
@@ -705,8 +734,6 @@ export function useGestor() {
     setPedidoSeleccionado(prev => {
       const nuevo = { ...prev, [name]: val };
 
-      
-      // Al elegir un armazon del inventario, sus datos (tipo y medidas) se copian al pedido.
       if (name === 'codigo_armazon') {
         Object.assign(nuevo, autocompletarArmazon({
           codigoAnterior: prev.codigo_armazon, codigoNuevo: val, actuales: prev, inventario
@@ -729,7 +756,7 @@ export function useGestor() {
   const guardandoPedidoRef = useRef(false);
   const guardarPedido = async ({ montoAdicional = 0 } = {}) => {
     if (guardandoPedidoRef.current) return false;
-    if (!pedidoSeleccionado) return;
+    if (!pedidoSeleccionado) return false;
     guardandoPedidoRef.current = true;
 
     try {
@@ -776,7 +803,8 @@ export function useGestor() {
       venta.pedido_id = idPedido;
       venta.patient_id = patientId;
       venta.consultation_id = consultationId;
-            const problemaFecha = problemaFechaPedido(pedidoSeleccionado, hoy);
+
+      const problemaFecha = problemaFechaPedido(pedidoSeleccionado, hoy);
       if (problemaFecha) {
         mostrarToast('No se puede guardar el pedido: ' + problemaFecha, 'warning', 7000);
         return false;
@@ -819,7 +847,6 @@ export function useGestor() {
         initialPayment
       });
 
-      // ACTUALIZACIÓN INMEDIATA DE ESTADOS EN REACT (Para no tener que recargar dos veces)
       const ventaActualizada = {
         ...pedidoSeleccionado,
         ...venta,
@@ -849,14 +876,6 @@ export function useGestor() {
       setPedidoSeleccionado(null);
       setVistaActual('pedidos_lista');
 
-      // HONESTIDAD AL GUARDAR (IMPORTANTE 5)
-      // Antes se lanzaba la sincronizacion con `void` (sin esperar) y se mostraba
-      // SIEMPRE "Venta guardada exitosamente". Eso miente: la venta queda guardada en
-      // el dispositivo, pero puede no haber llegado al servidor. Sin internet, o si
-      // el servidor la rechaza, el usuario se iba creyendo que estaba en la nube.
-      // `guardarPacienteClinico` ya hacia esto bien; aqui se iguala.
-      // No se bloquea la interfaz: se espera a la cola (que es rapido) y luego se
-      // recarga en segundo plano.
       const estadoSync = await sincronizarAhora({ pull: false });
       void obtenerDatos({ sync: true });
 
@@ -865,7 +884,6 @@ export function useGestor() {
       const fallos = (estadoSync?.fallos || []).length;
 
       if (fallos > 0 || descartadas > 0) {
-        // El servidor la rechazo: sigue guardada aqui, pero no llego a la nube.
         mostrarToast(
           'Venta guardada SOLO en este dispositivo: el servidor la rechazó. Revisa el panel de sincronización antes de cerrar el equipo.',
           'error', 9000
@@ -983,7 +1001,7 @@ export function useGestor() {
     obtenerDetalleCola, reintentarOperacion, descartarOperacion, descartarTodoLoAtascado,
     historial, ventasArchivadas, ventasLocales, inventario, listaPrecios, paciente, setPaciente, estadoInicial, editandoId, setEditandoId,
     cedulasArchivadas, 
-    guardarPacienteClinico, manejarCambio, borrarHistoriaClinica, archivarConsultaPuntual, cargarParaEditarClinico, iniciarNuevaConsulta, edadActual, claseInputRef,
+    guardarPacienteClinico, manejarCambio, borrarHistoriaClinica, archivarConsultaPuntual, cargarParaEditarClinico, iniciarNuevaConsulta, crearNuevoPaciente, edadActual, claseInputRef,
     busqueda, setBusqueda, pedidosFiltrados, stats, enviarWhatsApp,
     nuevoPrecio, setNuevoPrecio, precioInicial, editandoPrecioId, setEditandoPrecioId,
     manejarCambioPrecio, guardarPrecio, busquedaPrecio, setBusquedaPrecio, listaPreciosFiltrada, cargarParaEditarPrecio, eliminarPrecio,
