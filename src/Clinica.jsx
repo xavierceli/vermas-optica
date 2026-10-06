@@ -152,6 +152,7 @@ export default function Clinica({
   const [mostrarSugerencias, setMostrarSugerencias] = useState(false);
   const [sugerenciasNube, setSugerenciasNube] = useState([]);
   const timerNube = useRef(null);
+  const contadorPeticion = useRef(0);
   const contenedorCedulaRef = useRef(null);
 
   useEffect(() => () => { if (timerNube.current) clearTimeout(timerNube.current); }, []);
@@ -183,9 +184,11 @@ export default function Clinica({
 
     if (timerNube.current) clearTimeout(timerNube.current);
     if (val.length >= 3 && navigator.onLine) {
+      const turnoActual = ++contadorPeticion.current;
       timerNube.current = setTimeout(async () => {
         try {
           const resultados = await buscarPacientesEnSupabase(val);
+          if (turnoActual !== contadorPeticion.current) return;
           const borradas = new Set((cedulasArchivadas || []).map(normalizeCedula));
           const nube = (resultados || [])
             .filter(r => safeString(r?.nombre) !== 'CONSUMIDOR FINAL')
@@ -254,7 +257,7 @@ export default function Clinica({
               type="button"
               disabled={guardando}
               onClick={() => {setEditandoId(null); setPaciente(estadoInicial);}} 
-              className="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors"
+              className="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg font-medium text-sm transition-colors disabled:opacity-50"
             >
               Cancelar
             </button>
@@ -459,7 +462,7 @@ export default function Clinica({
             type="button"
             disabled={guardando}
             onClick={() => {setEditandoId(null); setPaciente(estadoInicial);}} 
-            className="w-full sm:w-auto bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-xl font-bold transition-colors"
+            className="w-full sm:w-auto bg-gray-500 hover:bg-gray-600 text-white px-6 py-3 rounded-xl font-bold transition-colors disabled:opacity-50"
           >
             Cancelar Edición
           </button>

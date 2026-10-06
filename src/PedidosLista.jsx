@@ -10,7 +10,7 @@ import { contarSoloLocales } from './estadoSincronizacion';
 import BotonComprobante from './BotonComprobante';
 
 export default function PedidosLista({
-  crearVentaDirecta, busqueda, setBusqueda, pedidosFiltrados,
+  crearVentaDirecta, busqueda, setBusqueda, pedidosFiltrados = [],
   imprimirRecibo, imprimirOrdenTrabajo, cancelarPedido, abrirPedido,
   refrescarDatos
 }) {
@@ -121,7 +121,7 @@ export default function PedidosLista({
     }
   };
 
-  const pedidosParaMostrar = pedidosFiltrados.filter(item => {
+  const pedidosParaMostrar = (pedidosFiltrados || []).filter(item => {
     if (!item) return false;
     
     const pVenta = safeNum(item.venta);
@@ -217,6 +217,7 @@ export default function PedidosLista({
             
             const estaPagado = pSaldo <= 0 && pFinal > 0;
             const metodoActual = formasPagoRapidas[item.id] || 'Efectivo';
+            const estaProcesando = procesandoCobroId === item.id;
 
             return (
               <div key={item.id} className={`border p-4 sm:p-5 rounded-xl flex flex-col gap-4 shadow-sm hover:shadow-md transition-all ${estaPagado ? 'bg-green-50/30 border-green-200' : 'bg-indigo-50/15 border-indigo-100'}`}>
@@ -231,7 +232,8 @@ export default function PedidosLista({
                         aria-label="Estado del pedido"
                         value={safeString(item.estado) || 'Ninguno'} 
                         onChange={(e) => cambiarEstadoRapido(item, e.target.value)}
-                        className={`px-3 py-1 rounded-full text-xs font-bold uppercase cursor-pointer outline-none border shadow-sm transition-colors ${
+                        disabled={estaProcesando}
+                        className={`px-3 py-1 rounded-full text-xs font-bold uppercase cursor-pointer outline-none border shadow-sm transition-colors disabled:opacity-60 ${
                           item.estado === 'Entregado' ? 'bg-green-100 text-green-900 border-green-300' : 
                           item.estado === 'Listo para Entrega' ? 'bg-blue-100 text-blue-900 border-blue-300' : 
                           item.estado === 'En laboratorio' ? 'bg-yellow-100 text-yellow-900 border-yellow-300' : 
@@ -261,10 +263,10 @@ export default function PedidosLista({
                     <button type="button" onClick={() => imprimirOrdenTrabajo(item)} className="bg-gray-800 text-white px-3 py-1.5 rounded-lg text-xs sm:text-sm font-bold shadow-sm hover:bg-gray-900 transition-colors">
                       🖨️ Orden Lab
                     </button>
-                    <button type="button" onClick={() => cancelarPedido(item)} className="bg-white border border-red-200 text-red-700 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-bold shadow-sm hover:bg-red-50 transition-colors">
+                    <button type="button" onClick={() => cancelarPedido(item)} disabled={estaProcesando} className="bg-white border border-red-200 text-red-700 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-bold shadow-sm hover:bg-red-50 transition-colors disabled:opacity-50">
                       🗑️ Cancelar
                     </button>
-                    <button type="button" onClick={() => abrirPedido(item)} className="bg-indigo-600 text-white px-4 sm:px-5 py-1.5 rounded-lg text-xs sm:text-sm font-bold shadow hover:bg-indigo-700 transition-colors">
+                    <button type="button" onClick={() => abrirPedido(item)} disabled={estaProcesando} className="bg-indigo-600 text-white px-4 sm:px-5 py-1.5 rounded-lg text-xs sm:text-sm font-bold shadow hover:bg-indigo-700 transition-colors disabled:opacity-50">
                       ✏️ Ver / Editar
                     </button>
                   </div>
@@ -300,15 +302,17 @@ export default function PedidosLista({
                           step="0.01"
                           aria-label="Monto de abono rápido"
                           placeholder="Monto" 
+                          disabled={estaProcesando}
                           value={abonosRapidos[item.id] || ''} 
                           onChange={(e) => manejarCambioAbono(item.id, e.target.value)}
-                          className="w-20 p-1.5 border border-gray-300 rounded outline-none text-sm text-center font-bold bg-white text-gray-900"
+                          className="w-20 p-1.5 border border-gray-300 rounded outline-none text-sm text-center font-bold bg-white text-gray-900 disabled:opacity-60"
                         />
                         <select 
                           aria-label="Forma de pago"
                           value={metodoActual} 
+                          disabled={estaProcesando}
                           onChange={(e) => manejarCambioFormaPago(item.id, e.target.value)}
-                          className="p-1.5 border border-gray-300 rounded outline-none text-xs bg-white font-semibold cursor-pointer text-gray-900"
+                          className="p-1.5 border border-gray-300 rounded outline-none text-xs bg-white font-semibold cursor-pointer text-gray-900 disabled:opacity-60"
                         >
                           <option value="Efectivo">Efectivo</option>
                           <option value="Transferencia">Transferencia</option>
@@ -320,8 +324,9 @@ export default function PedidosLista({
                             type="file" 
                             accept="image/*" 
                             aria-label="Adjuntar foto de comprobante de transferencia"
+                            disabled={estaProcesando}
                             onChange={(e) => manejarCambioArchivo(item.id, e.target.files[0])} 
-                            className="text-[10px] text-gray-700 w-44 cursor-pointer file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-[10px] file:font-bold file:bg-indigo-600 file:text-white hover:file:bg-indigo-700" 
+                            className="text-[10px] text-gray-700 w-44 cursor-pointer file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-[10px] file:font-bold file:bg-indigo-600 file:text-white hover:file:bg-indigo-700 disabled:opacity-60" 
                             title="Adjuntar comprobante"
                           />
                         )}
@@ -329,10 +334,10 @@ export default function PedidosLista({
                         <button
                           type="button"
                           onClick={() => ejecutarCobro(item)}
-                          disabled={procesandoCobroId === item.id}
-                          className="bg-green-600 text-white px-4 py-1.5 rounded-lg font-bold text-xs sm:text-sm hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed shadow-sm transition-colors whitespace-nowrap"
+                          disabled={estaProcesando}
+                          className="bg-green-600 text-white px-4 py-1.5 rounded-lg font-bold text-xs sm:text-sm hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed shadow-sm transition-colors whitespace-nowrap active:scale-95"
                         >
-                          {procesandoCobroId === item.id
+                          {estaProcesando
                             ? (subiendoId === item.id ? 'Subiendo...' : 'Procesando...')
                             : 'Cobrar'}
                         </button>

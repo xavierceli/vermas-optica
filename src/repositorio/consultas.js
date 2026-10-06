@@ -4,7 +4,6 @@
 // El expediente clinico del paciente y su archivo. El archivado tiene sus propias
 // reglas (marca la cedula como eliminada para que no vuelva a aparecer en ningun
 // equipo) y por eso vive aparte de las ventas.
-// Codigo movido tal cual desde localRepository.js.
 // ---------------------------------------------------------------------------
 import { localDb, createUuid, nowIso, pendingRecord, createOutboxOperation, getMeta, setMeta } from '../localDb.js';
 import { safeString, archivada, normalizeCedula, fechaHoraActual, patientPayload, consultationPayload, findPatient } from './base.js';
@@ -12,9 +11,21 @@ import { safeString, archivada, normalizeCedula, fechaHoraActual, patientPayload
 export const guardarConsultaLocalImpl = async ({ patient, consultation }) => {
   const consultationId = consultation.id || createUuid();
   const cedula = normalizeCedula(patient.cedula);
-  const existingPatient = await findPatient(patient.patient_id || patient.id, cedula);
+
+  // 1. Priorizamos buscar paciente existente por cedula normalizada para evitar bifurcaciones de IDs
+  let existingPatient = null;
+  if (cedula) {
+    existingPatient = await findPatient(null, cedula);
+  }
+  if (!existingPatient && (patient.patient_id || patient.id)) {
+    existingPatient = await findPatient(patient.patient_id || patient.id, null);
+  }
+
+  // Si ya existia un paciente con esa cedula, adoptamos su ID para mantener la integridad
   const patientId = existingPatient?.id || patient.patient_id || patient.id || createUuid();
-  const normalizedPatient = pendingRecord({ ...patientPayload({ ...patient, id: patientId, cedula }) });
+  const normalizedPatient = pendingRecord({
+    ...patientPayload({ ...patient, id: patientId, cedula })
+  });
 
   // Preservamos la fecha con hora si viene dada, o asignamos fecha y hora completa actual
   const fechaCompleta = consultation.fecha && consultation.fecha.includes(':') 
@@ -34,7 +45,10 @@ export const guardarConsultaLocalImpl = async ({ patient, consultation }) => {
     baseVersion: existingPatient?.version || 0,
     payload: {
       p_consulta_id: consultationId,
-      p_payload: { paciente: patientPayload(normalizedPatient), consulta: consultationPayload(normalizedConsultation) }
+      p_payload: { 
+        paciente: patientPayload(normalizedPatient), 
+        consulta: consultationPayload(normalizedConsultation) 
+      }
     }
   });
 

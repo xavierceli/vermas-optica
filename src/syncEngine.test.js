@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { clasificarFallo } from './clasificarFallo.js';
 
 // El motor de sincronizacion se importa contra Dexie y Supabase, que requieren
 // navegador. Estos tests verifican el CONTRATO leyendo el codigo: si alguien
@@ -14,9 +15,31 @@ const fuente = readFileSync(join(SRC, 'syncEngine.js'), 'utf8');
 test('una operacion no se reintenta indefinidamente', () => {
   // El sintoma era "21 pendientes" que nunca bajaban: cada 30 s se reenviaba la
   // misma fila, el servidor la rechazaba igual, y el contador solo crecia.
+  // La regla se movio a clasificarFallo.js, asi que se comprueba AHI, que es
+  // donde de verdad se decide, y no leyendo el texto del motor.
   assert.match(fuente, /MAX_INTENTOS/, 'debe existir un limite de intentos');
-  assert.match(fuente, /intentos >= MAX_INTENTOS/,
-    'tras agotar los intentos la operacion debe pasar a "descartada"');
+  assert.match(fuente, /maxIntentos: MAX_INTENTOS/, 'y debe pasarse al clasificador');
+  assert.equal(
+    clasificarFallo('Error interno del servidor', { intentos: 5, maxIntentos: 5 }),
+    'descartada',
+    'tras agotar los intentos la operacion debe pasar a "descartada"'
+  );
+  assert.equal(
+    clasificarFallo('Error interno del servidor', { intentos: 2, maxIntentos: 5 }),
+    'reintentable',
+    'antes de agotarlos debe seguir reintentando'
+  );
+});
+
+test('un conflicto de stock NO se descarta aunque agote los intentos', () => {
+  // Correccion de la auditoria: si el unico motivo es stock, la venta espera.
+  // Descartarla perderia tambien la evaluacion clinica del paciente, porque en
+  // el servidor venta y consulta van en la misma transaccion.
+  assert.equal(
+    clasificarFallo('Stock insuficiente', { intentos: 9, maxIntentos: 5 }),
+    'conflict',
+    'el stock agotado no invalida el dato: es un problema de inventario'
+  );
 });
 
 test('las descartadas quedan fuera del conteo de pendientes', () => {

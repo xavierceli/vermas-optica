@@ -3,19 +3,15 @@ import { localDb, nowIso, requestPersistentStorage } from './localDb';
 import { cacheServerCatalog, cacheServerHistorial, enColaEscritura, markLocalOperationSynced } from './localRepository';
 import { paginarConsulta } from './paginacion';
 import { esFalloDeRed } from './reglas';
+import { clasificarFallo, mensajeDeFallo } from './clasificarFallo';
 import { aplicarEliminacionesRemotas, reconciliarConServidor } from './eliminacionPaciente';
 
 // Topes de paginación declarados al inicio para evitar valores indefinidos
 const TAMPAGINA_HISTORIAL = 200;
-// 100 paginas x 200 = 20.000 consultas. Antes eran 25 paginas (5.000), tope que se
-// alcanzaba con unos 2.500 pacientes: a partir de ahi la app avisaba "Historial
-// parcial" y el usuario no veía pacientes ni consultas anteriores en el equipo nuevo.
-// La optica apunta a 10.000+ pacientes, asi que el tope deja de dar.
-// Importante: subir este numero NO cambia la seguridad. Si la descarga se queda
-// corta, `historialCompleto` sigue en false y NO se ejecuta la reconciliacion
-// (ver pullServerCache), de modo que jamas se borra nada local por una descarga parcial.
+// 100 páginas x 200 = 20.000 consultas de historial soportadas
 const MAX_PAGINAS_HISTORIAL = 100;
-const TIEMPO_LIMITE_MS = 10000;
+// Tolerancia ampliada a 30s para conexiones móviles con latencia alta
+const TIEMPO_LIMITE_MS = 30000;
 const DIAS_RETENCION_DESCARTADAS = 7;
 const MAX_INTENTOS = 5;
 const TIEMPO_ESPERA_BASE_MS = 15000;
@@ -120,17 +116,6 @@ const marcarPendientePorRed = async operation => {
   status.phase = 'offline';
 };
 
-const RECHAZO_PERMANENTE = [
-  'Item de venta inválido', 'Item de venta invalido',
-  'Stock insuficiente', 'violates check constraint', 'duplicate key',
-  'foreign key', 'violates foreign key', '23503', 'no existe'
-];
-
-const esRechazoPermanente = motivo => {
-  const texto = String(motivo || '').toLowerCase();
-  return RECHAZO_PERMANENTE.some(marca => texto.includes(marca.toLowerCase()));
-};
-
 const refreshCounts = async () => {
   const operations = await localDb.outbox.toArray();
   status.pending = operations.filter(row => row.status === 'pending' || row.status === 'failed').length;
@@ -196,8 +181,7 @@ const markOperation = async (operation, nextStatus, error = null) => {
 };
 
 const reconciliarStockVenta = async serverResult => {
-    const ids = (serverResult?.items || [])
-    // El servidor devuelve cada producto como inventario_id (crear) o inventory_id (editar).
+  const ids = (serverResult?.items || [])
     .map(item => Number(item.inventario_id ?? item.inventory_id))
     .filter(Number.isFinite);
   if (ids.length === 0) return;
@@ -273,35 +257,32 @@ const applyResults = async results => {
     } else {
       const motivo = result.error || 'La operación fue rechazada por el servidor';
 
-      if (esFalloDeRed(motivo)) {
+      const clasificacion = clasificarFallo(motivo, {
+        intentos: (operation.attempts || 0) + 1,
+        maxIntentos: MAX_INTENTOS,
+        tipo: operation.type
+      });
+
+      if (clasificacion === 'red') {
         await marcarPendientePorRed(operation);
         continue;
       }
 
-      const esArchivoDeConsultaInexistente =
-        operation.type === 'ARCHIVAR_CONSULTA' &&
-        /no existe/i.test(motivo);
-
-      if (esArchivoDeConsultaInexistente) {
-        await finalizarOperacion(operation, 'descartada',
-          'La consulta nunca se sincronizó: no había nada que archivar en el servidor.');
-        await markLocalOperationSynced(operation).catch(() => {});
-        await localDb.outbox.delete(operation.id);
-        continue;
-      }
-
-      const intentos = (operation.attempts || 0) + 1;
-      if (intentos >= MAX_INTENTOS || esRechazoPermanente(motivo)) {
-        await finalizarOperacion(operation, 'descartada',
-          `${motivo} (no se reintenta: dato inválido o inexistente en servidor)`);
+      if (clasificacion === 'conflict') {
+        const texto = mensajeDeFallo(motivo, 'conflict');
+        await finalizarOperacion(operation, 'conflict', texto);
+        fallos.push({ tipo: operation.type, motivo: texto, estado: 'conflict' });
+      } else if (clasificacion === 'descartada') {
+        const texto = mensajeDeFallo(motivo, 'descartada');
+        await finalizarOperacion(operation, 'descartada', texto);
         fallos.push({
           tipo: operation.type,
-          motivo: `${motivo}. Descartada: revisar los datos antes de reintentarlo.`,
+          motivo: `${texto}. Descartada: revisar los datos antes de reintentarlo.`,
           estado: 'descartada'
         });
       } else {
         await markOperation(operation, 'failed', motivo);
-        fallos.push({ tipo: operation.type, motivo, estado: 'failed', intentos });
+        fallos.push({ tipo: operation.type, motivo, estado: 'failed', intentos: (operation.attempts || 0) + 1 });
       }
     }
   }
@@ -339,13 +320,11 @@ const subirAdjuntosPendientes = async () => {
   }
 };
 
-// Descargamos TODAS las consultas históricas, NO solo los pacientes únicos
 const descargarHistorialPaginado = async () => {
   const { filas, paginasDescargadas } = await paginarConsulta({
     pageSize: TAMPAGINA_HISTORIAL,
     maxPaginas: MAX_PAGINAS_HISTORIAL,
     fetchPagina: async (desde, limite) => {
-      // Usamos vista_pacientes para traer TODAS las consultas de cada paciente
       const { data, error } = await supabase
         .from('vista_pacientes')
         .select('*')
@@ -427,8 +406,6 @@ const pullServerCache = async () => {
 
   await leerCedulasArchivadasDelServidor();
   await cacheServerHistorial(historialRows);
-  // El servidor es la verdad para lo ya sincronizado: se quita de este equipo lo que ya no existe alli.
-  // Solo con una descarga completa; una lista vacia solo cuenta si el catalogo tambien se leyo bien.
   if (historialCompleto) {
     try {
       await reconciliarConServidor(historialRows, { permitirVacio: (inventoryResult.data || []).length > 0 });
@@ -437,7 +414,6 @@ const pullServerCache = async () => {
     }
   }
   await cacheServerCatalog({ inventory: inventoryResult.data || [], prices: pricesResult.data || [] });
-  
 };
 
 export const sincronizarAhora = async ({ pull = true } = {}) => {
@@ -459,7 +435,6 @@ export const sincronizarAhora = async ({ pull = true } = {}) => {
       return status;
     }
 
-        // Antes de subir nada: lo borrado definitivamente (desde este u otro equipo) no debe volver a subirse.
     await aplicarEliminacionesRemotas();
     await refreshCounts();
     await subirAdjuntosPendientes();

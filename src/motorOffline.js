@@ -1,4 +1,5 @@
 import localforage from 'localforage';
+import { createUuid } from './localDb.js';
 
 // 1. CONFIGURACIÓN DE LA BÓVEDA PRINCIPAL
 localforage.config({
@@ -6,22 +7,14 @@ localforage.config({
   storeName: 'datos_offline'
 });
 
-// 2. GENERADOR DE IDs REALES (UUID - el estándar mundial)
-// Desde ahora, un registro creado offline nace con SU identidad definitiva.
-export const generarId = () => {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
-  // Respaldo para navegadores muy viejos:
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
-    const r = Math.random() * 16 | 0;
-    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
-  });
-};
+// 2. GENERADOR DE IDs REALES (UUID v4 estándar)
+// Reutiliza la función centralizada de alta entropía criptográfica de localDb
+export const generarId = () => createUuid();
 
-// Alias de compatibilidad: el código viejo llama generarIdFantasma
-export const generarIdFantasma = () => generarId();
+// Alias de compatibilidad hacia código heredado
+export const generarIdFantasma = () => createUuid();
 
 // 3. HERRAMIENTAS DE LECTURA Y ESCRITURA BÁSICA
-
 export const leerBoveda = async (llave) => {
   try {
     return await localforage.getItem(llave);

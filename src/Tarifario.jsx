@@ -1,9 +1,9 @@
-import { safeString, safeNum } from './utilidades'
+import { safeString, safeNum } from './utilidades';
 
 export default function Tarifario({
   nuevoPrecio, setNuevoPrecio, precioInicial, editandoPrecioId, setEditandoPrecioId,
   manejarCambioPrecio, guardarPrecio, busquedaPrecio, setBusquedaPrecio,
-  listaPreciosFiltrada, cargarParaEditarPrecio, eliminarPrecio
+  listaPreciosFiltrada = [], cargarParaEditarPrecio, eliminarPrecio
 }) {
   return (
     <div className="bg-white rounded-xl shadow-lg p-4 sm:p-6 border-t-4 border-emerald-600 space-y-6">
@@ -75,12 +75,12 @@ export default function Tarifario({
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 items-end">
           <div>
             <label htmlFor="tf-costo-lab" className="block text-xs font-bold text-red-800 mb-1">Costo Laboratorio ($)</label>
-            <input id="tf-costo-lab" name="costo_laboratorio" value={nuevoPrecio.costo_laboratorio} onChange={manejarCambioPrecio} type="number" className="w-full p-2 bg-white border border-red-300 rounded-lg outline-none text-xs sm:text-sm font-bold text-red-700" placeholder="Ej: 12.00" />
+            <input id="tf-costo-lab" name="costo_laboratorio" min="0" step="0.01" value={nuevoPrecio.costo_laboratorio} onChange={manejarCambioPrecio} type="number" className="w-full p-2 bg-white border border-red-300 rounded-lg outline-none text-xs sm:text-sm font-bold text-red-700" placeholder="Ej: 12.00" />
           </div>
 
           <div>
             <label htmlFor="tf-precio-sug" className="block text-xs font-bold text-emerald-900 mb-1">Precio Venta Sugerido ($)</label>
-            <input id="tf-precio-sug" name="precio_sugerido" value={nuevoPrecio.precio_sugerido} onChange={manejarCambioPrecio} type="number" className="w-full p-2 bg-white border border-emerald-400 rounded-lg outline-none text-xs sm:text-sm font-bold text-emerald-800" placeholder="Ej: 45.00" />
+            <input id="tf-precio-sug" name="precio_sugerido" min="0" step="0.01" value={nuevoPrecio.precio_sugerido} onChange={manejarCambioPrecio} type="number" className="w-full p-2 bg-white border border-emerald-400 rounded-lg outline-none text-xs sm:text-sm font-bold text-emerald-800" placeholder="Ej: 45.00" />
           </div>
 
           <div>
@@ -143,7 +143,9 @@ export default function Tarifario({
                   <td className="p-3 text-gray-700 font-mono text-xs">{safeString(item.rango_medida) || 'Estándar'}</td>
                   <td className="p-3 text-center text-red-700 font-bold">${cLab.toFixed(2)}</td>
                   <td className="p-3 text-center text-emerald-800 font-black text-sm sm:text-base">${pSug.toFixed(2)}</td>
-                  <td className="p-3 text-center font-bold text-blue-900 text-xs sm:text-sm">+${ganancia.toFixed(2)}</td>
+                  <td className="p-3 text-center font-bold text-blue-900 text-xs sm:text-sm">
+                    {ganancia >= 0 ? `+$${ganancia.toFixed(2)}` : `-$${Math.abs(ganancia).toFixed(2)}`}
+                  </td>
                   <td className="p-3 text-xs text-gray-700 italic">{safeString(item.notas) || '-'}</td>
                   <td className="p-3 text-center">
                     <div className="flex justify-center gap-1.5">
@@ -164,7 +166,7 @@ export default function Tarifario({
                     </div>
                   </td>
                 </tr>
-              )
+              );
             })}
             {listaPreciosFiltrada.length === 0 && (
               <tr>
@@ -177,5 +179,5 @@ export default function Tarifario({
         </table>
       </div>
     </div>
-  )
+  );
 }

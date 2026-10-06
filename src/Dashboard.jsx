@@ -3,7 +3,7 @@ import { safeNum, safeString } from './utilidades';
 import { nombreDelMes, nombreCortoDelMes } from './fechas.js';
 
 export default function Dashboard({ stats, historial, inventario }) {
-  const [periodo, setPeriodo] = useState('total'); // Por defecto 'total' para ver tu histórico completo
+  const [periodo, setPeriodo] = useState('total');
 
   const { topArmazones, topLentes, topTratamientos, alertasStock } = useMemo(() => {
     const armazonesVendidos = {};
@@ -15,16 +15,25 @@ export default function Dashboard({ stats, historial, inventario }) {
 
     for (const item of (historial || [])) {
       if (!item) continue;
-      if (safeString(item.estado).trim().toLowerCase() === 'anulado') continue;
-      const tieneVenta = safeString(item.estado) !== 'Ninguno' || safeNum(item.venta) > 0 || safeString(item.pedido_id);
-      if (!tieneVenta) continue;
+      
+      const estadoVenta = safeString(item.estado).trim().toLowerCase();
+      // Las ventas anuladas NO deben computar en ventas de armazones, lentes ni tratamientos
+      if (estadoVenta === 'anulado') continue;
+
+      const tieneVentaActiva = (
+        (estadoVenta !== '' && estadoVenta !== 'ninguno') || 
+        safeNum(item.venta) > 0 || 
+        Boolean(safeString(item.pedido_id).trim())
+      );
+      if (!tieneVentaActiva) continue;
 
       const codArmazon = safeString(item.codigo_armazon).toUpperCase().trim();
+      // Excluye armazones del paciente ('2905') o códigos vacíos
       if (codArmazon && codArmazon !== '2905') {
         armazonesVendidos[codArmazon] = (armazonesVendidos[codArmazon] || 0) + 1;
       }
 
-      const tipoLente = safeString(item.tipo_lente);
+      const tipoLente = safeString(item.tipo_lente).trim();
       if (tipoLente) {
         lentesVendidos[tipoLente] = (lentesVendidos[tipoLente] || 0) + 1;
       }
@@ -46,7 +55,6 @@ export default function Dashboard({ stats, historial, inventario }) {
   }, [historial, inventario]);
 
   const esMesActual = periodo === 'mes';
-  // La etiqueta se calcula con la fecha REAL del sistema, no con un texto fijo.
   const etiquetaMes = useMemo(() => nombreDelMes(), []);
   const etiquetaMesCorta = useMemo(() => nombreCortoDelMes(), []);
   const ingresos = esMesActual ? (stats?.ventasMes || 0) : (stats?.ventasTotal || 0);

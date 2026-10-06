@@ -1,9 +1,7 @@
 // ---------------------------------------------------------------------------
 // VENTAS, COBROS, REEMBOLSOS Y AJUSTES DE INVENTARIO
 // ---------------------------------------------------------------------------
-// Todo lo que descuenta o devuelve stock. Este es el modulo mas delicado del
-// repositorio: un error aqui entrega producto que no existe o descuadra el
-// inventario. El codigo se movio tal cual desde localRepository.js, sin cambios.
+// Todo lo que descuenta o devuelve stock.
 // ---------------------------------------------------------------------------
 import { localDb, createUuid, nowIso, pendingRecord, createOutboxOperation } from '../localDb.js';
 import { calcularSaldo } from '../reglas.js';
@@ -289,11 +287,16 @@ export const anularVentaLocalImpl = async saleId => {
         throw new Error(`Esta venta tiene $${Number(safeNum(sale.abono)).toFixed(2)} abonado. Reembolsa el abono antes de anularla.`);
       }
 
+      // 1. Obtener los ítems explícitos de la tabla saleItems
       const items = await localDb.saleItems.where('saleId').equals(saleId).toArray();
+      const devueltosIds = new Set();
+
       for (const item of items) {
         const product = await localDb.inventory.get(item.inventoryId);
         if (!product) {
-          productosAusentes.push(item.inventoryId);
+          if (!productosAusentes.some(id => String(id) === String(item.inventoryId))) {
+            productosAusentes.push(item.inventoryId);
+          }
           continue;
         }
         await localDb.inventory.put({
@@ -304,7 +307,38 @@ export const anularVentaLocalImpl = async saleId => {
           operationId: operation.id, saleId, inventoryId: item.inventoryId,
           type: 'DEVOLUCION', quantity: Number(item.quantity || 0)
         }));
+        devueltosIds.add(String(product.id));
       }
+
+      // 2. CORRECCIÓN ACCESORIOS: Devolver stock si venía en sale.accesorio_id
+      if (sale.accesorio_id && !devueltosIds.has(String(sale.accesorio_id))) {
+        let accProduct = await localDb.inventory.get(sale.accesorio_id);
+        if (!accProduct) {
+          accProduct = await localDb.inventory
+            .filter(inv => safeString(inv.categoria) === 'Accesorio' && (String(inv.id) === String(sale.accesorio_id) || safeString(inv.nombre_accesorio) === safeString(sale.accesorio_id)))
+            .first();
+        }
+        if (accProduct) {
+          await localDb.inventory.put({
+            ...accProduct,
+            stock: safeNum(accProduct.stock) + 1,
+            updatedAt: nowIso(),
+            syncStatus: 'pending'
+          });
+          await localDb.inventoryMovements.put(movimiento({
+            operationId: operation.id,
+            saleId,
+            inventoryId: accProduct.id,
+            type: 'DEVOLUCION',
+            quantity: 1
+          }));
+        } else {
+          if (!productosAusentes.some(id => String(id) === String(sale.accesorio_id))) {
+            productosAusentes.push(sale.accesorio_id);
+          }
+        }
+      }
+
       await localDb.sales.put({ ...sale, estado: 'Anulado', updatedAt: nowIso(), syncStatus: 'pending' });
       await localDb.outbox.put(operation);
     }

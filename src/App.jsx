@@ -66,7 +66,7 @@ function App() {
     : fallos.length > 0
     ? { texto: `Rechazadas (${fallos.length})`, detalle: detalleCola, clases: 'bg-red-100 text-red-800 border-red-300', icono: '⛔' }
     : descartadas > 0
-    ? { texto: `Descartadas (${descartadas})`, detalle: detalleCola, clases: 'bg-red-100 text-red-800 border-red-300', icono: '🗑️' }
+    ? { texto: `Descartadas (${descartadas})`, detalle: detalleCola, clases: 'bg-red-100 text-red-800 border-red-300', icono: '🗑️️' }
     : hayErrorSync
     ? { texto: 'Error al sincronizar', detalle: String(g.syncEstado.lastError).slice(0, 90), clases: 'bg-red-100 text-red-800 border-red-300', icono: '⛔' }
     : conflictos > 0
@@ -311,11 +311,7 @@ function App() {
                 archivarConsultaPuntual={g.archivarConsultaPuntual}
                 abrirPedido={g.abrirPedido} 
                 confirmarAccion={g.solicitarConfirmacion} 
-                crearNuevoPaciente={() => {
-                  g.setVistaActual('nueva_medicion'); 
-                  g.setEditandoId(null); 
-                  g.setPaciente(g.estadoInicial);
-                }} 
+                crearNuevoPaciente={g.crearNuevoPaciente} 
               />
             )}
             {g.vistaActual === 'nueva_medicion' && <Clinica paciente={g.paciente} setPaciente={g.setPaciente} estadoInicial={g.estadoInicial} editandoId={g.editandoId} setEditandoId={g.setEditandoId} guardarPacienteClinico={g.guardarPacienteClinico} manejarCambio={g.manejarCambio} edadActual={g.edadActual} claseInputRef={g.claseInputRef} historial={g.historial} cedulasArchivadas={g.cedulasArchivadas} guardando={g.guardando} />}
