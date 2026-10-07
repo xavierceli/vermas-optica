@@ -1,26 +1,125 @@
 import { safeString, safeNum } from './utilidades';
 
+// Plantillas preconfiguradas basadas en la tabla técnica de índices y gamas de progresivos
+const PLANTILLAS_RAPIDAS = [
+  {
+    etiqueta: '1.49 CR-39 (Estándar)',
+    tipo_lente: 'Monofocal',
+    material: 'Plástico',
+    tratamiento: 'Ninguno / Blanco',
+    rango_medida: '1.49 | Esf neutro a ±2.00 | Cil hasta -2.00 (Pot. máx ±3.00)',
+    notas: 'Índice 1.49 - Grosor estándar'
+  },
+  {
+    etiqueta: '1.56 Resina Media',
+    tipo_lente: 'Monofocal',
+    material: 'Reducido (1.61/1.67)',
+    tratamiento: 'Antirreflejo Verde',
+    rango_medida: '1.56 | Esf ±2.00 a ±3.00 | Cil hasta -3.00 (Pot. máx ±4.50)',
+    notas: 'Índice 1.56 - Resina media'
+  },
+  {
+    etiqueta: '1.59 Policarbonato',
+    tipo_lente: 'Monofocal',
+    material: 'Policarbonato',
+    tratamiento: 'Antirreflejo Verde',
+    rango_medida: '1.59 | Esf neutro a ±4.00 | Cil hasta -3.00 (Pot. máx ±4.50)',
+    notas: 'Índice 1.59 - Alta resistencia a impactos'
+  },
+  {
+    etiqueta: '1.67 Alto Índice',
+    tipo_lente: 'Monofocal',
+    material: 'Reducido (1.61/1.67)',
+    tratamiento: 'Antirreflejo Azul',
+    rango_medida: '1.67 | Esf ±4.00 a ±6.00 | Cil hasta -4.00 (Pot. máx ±7.00)',
+    notas: 'Índice 1.67 - Delgado y estético'
+  },
+  {
+    etiqueta: '1.74 Muy Alto Índice',
+    tipo_lente: 'Monofocal',
+    material: 'Hiperreducido (1.74)',
+    tratamiento: 'Antirreflejo Azul',
+    rango_medida: '1.74 | Esf ±6.00 a ±10.00 | Cil hasta -4.00 (Pot. máx > ±7.00)',
+    notas: 'Índice 1.74 - Máxima delgadez'
+  },
+  {
+    etiqueta: 'Progresivo Convencional',
+    tipo_lente: 'Progresivo',
+    material: 'Plástico',
+    tratamiento: 'Ninguno / Blanco',
+    rango_medida: 'Gama Convencional 1.49 | Esf neutro a ±2.00 | Cil hasta -2.00',
+    notas: 'Marca blanca - Tallado tradicional'
+  },
+  {
+    etiqueta: 'Progresivo Gama Media (Digital)',
+    tipo_lente: 'Progresivo',
+    material: 'Policarbonato',
+    tratamiento: 'Antirreflejo Verde',
+    rango_medida: 'Gama Media Digital 1.59 | Esf neutro a ±4.00 | Cil hasta -3.00',
+    notas: 'Marca blanca - Digital Freeform'
+  },
+  {
+    etiqueta: 'Progresivo Gama Alta (HD Amplio)',
+    tipo_lente: 'Progresivo',
+    material: 'Policarbonato',
+    tratamiento: 'Filtro Azul (Blue Block)',
+    rango_medida: 'Gama Alta HD 1.59 | Campo Amplio | Cil hasta -3.00',
+    notas: 'Marca blanca - Digital HD cara interna'
+  }
+];
+
 export default function Tarifario({
   nuevoPrecio, setNuevoPrecio, precioInicial, editandoPrecioId, setEditandoPrecioId,
   manejarCambioPrecio, guardarPrecio, busquedaPrecio, setBusquedaPrecio,
   listaPreciosFiltrada = [], cargarParaEditarPrecio, eliminarPrecio
 }) {
+
+  const aplicarPlantilla = (p) => {
+    setNuevoPrecio(prev => ({
+      ...prev,
+      tipo_lente: p.tipo_lente,
+      material: p.material,
+      tratamiento: p.tratamiento,
+      rango_medida: p.rango_medida,
+      notas: p.notas
+    }));
+  };
+
   return (
     <div className="bg-white rounded-xl shadow-lg p-4 sm:p-6 border-t-4 border-emerald-600 space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-4">
         <div>
           <h2 className="text-xl sm:text-2xl font-bold text-gray-900">🏷️ Lista de Precios Sugeridos</h2>
-          <p className="text-xs sm:text-sm text-gray-600">Consulta y registra tus tarifas base por tipo de lente, material, tratamiento y rango dióptrico.</p>
+          <p className="text-xs sm:text-sm text-gray-600">Consulta y registra tus tarifas base por tipo de lente, material, tratamiento e índice técnico.</p>
         </div>
         {editandoPrecioId && (
           <button 
-            type="button"
+            type="button" 
             onClick={() => { setNuevoPrecio(precioInicial); setEditandoPrecioId(null); }} 
             className="w-full sm:w-auto bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg font-bold text-xs sm:text-sm transition-colors"
           >
             Cancelar Edición
           </button>
         )}
+      </div>
+
+      {/* Bloque de Plantillas Rápidas */}
+      <div className="bg-slate-50 p-3 sm:p-4 rounded-xl border border-slate-200">
+        <span className="block text-xs font-black text-slate-700 uppercase tracking-wide mb-2">
+          ⚡ Plantillas rápidas (Autocompletar en 1 clic):
+        </span>
+        <div className="flex flex-wrap gap-1.5 sm:gap-2">
+          {PLANTILLAS_RAPIDAS.map((p, idx) => (
+            <button
+              key={idx}
+              type="button"
+              onClick={() => aplicarPlantilla(p)}
+              className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-white border border-slate-300 text-slate-800 hover:bg-emerald-50 hover:border-emerald-400 hover:text-emerald-900 shadow-xs transition-colors"
+            >
+              + {p.etiqueta}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="bg-emerald-50/60 p-4 sm:p-5 rounded-xl border border-emerald-200">
@@ -41,11 +140,11 @@ export default function Tarifario({
           </div>
 
           <div>
-            <label htmlFor="tf-material" className="block text-xs font-bold text-gray-800 mb-1">Material</label>
+            <label htmlFor="tf-material" className="block text-xs font-bold text-gray-800 mb-1">Material / Índice</label>
             <select id="tf-material" name="material" value={nuevoPrecio.material} onChange={manejarCambioPrecio} className="w-full p-2 bg-white border border-emerald-300 rounded-lg outline-none text-xs sm:text-sm font-semibold text-gray-900">
-              <option value="Plástico">Plástico (CR-39)</option>
-              <option value="Policarbonato">Policarbonato</option>
-              <option value="Reducido (1.61/1.67)">Reducido (1.61/1.67)</option>
+              <option value="Plástico">Plástico (CR-39 / 1.49)</option>
+              <option value="Policarbonato">Policarbonato (1.59)</option>
+              <option value="Reducido (1.61/1.67)">Reducido (1.56 / 1.61 / 1.67)</option>
               <option value="Hiperreducido (1.74)">Hiperreducido (1.74)</option>
               <option value="Mineral / Vidrio">Mineral / Vidrio</option>
               <option value="Otros">Otros</option>
@@ -68,7 +167,26 @@ export default function Tarifario({
 
           <div>
             <label htmlFor="tf-rango" className="block text-xs font-bold text-gray-800 mb-1">Rango Dióptrico / Graduación</label>
-            <input id="tf-rango" name="rango_medida" value={nuevoPrecio.rango_medida} onChange={manejarCambioPrecio} type="text" className="w-full p-2 bg-white border border-emerald-300 rounded-lg outline-none text-xs sm:text-sm text-gray-900" placeholder="Ej: Esf 0 a +/-2.00 / Cil -2" />
+            <input 
+              id="tf-rango" 
+              name="rango_medida" 
+              list="sugerencias-rangos"
+              value={nuevoPrecio.rango_medida} 
+              onChange={manejarCambioPrecio} 
+              type="text" 
+              className="w-full p-2 bg-white border border-emerald-300 rounded-lg outline-none text-xs sm:text-sm text-gray-900 font-medium" 
+              placeholder="Ej: 1.56 | Esf ±2 a ±3 | Cil hasta -3" 
+            />
+            <datalist id="sugerencias-rangos">
+              <option value="1.49 | Esf neutro a ±2.00 | Cil hasta -2.00 (Pot. máx ±3.00)" />
+              <option value="1.56 | Esf ±2.00 a ±3.00 | Cil hasta -3.00 (Pot. máx ±4.50)" />
+              <option value="1.59 | Esf neutro a ±4.00 | Cil hasta -3.00 (Pot. máx ±4.50)" />
+              <option value="1.67 | Esf ±4.00 a ±6.00 | Cil hasta -4.00 (Pot. máx ±7.00)" />
+              <option value="1.74 | Esf ±6.00 a ±10.00 | Cil hasta -4.00 (Pot. máx > ±7.00)" />
+              <option value="Gama Convencional 1.49 | Esf neutro a ±2.00 | Cil hasta -2.00" />
+              <option value="Gama Media Digital 1.59 | Esf neutro a ±4.00 | Cil hasta -3.00" />
+              <option value="Gama Alta HD 1.59 | Campo Amplio | Cil hasta -3.00" />
+            </datalist>
           </div>
         </div>
 
@@ -104,7 +222,7 @@ export default function Tarifario({
         <input 
           type="text" 
           aria-label="Buscar tarifas registradas por lente, material, tratamiento o rango"
-          placeholder="🔍 Buscar por Lente, Material, Tratamiento o Rango (Ej: Progresivo, Fotocromático)..." 
+          placeholder="🔍 Buscar por Lente, Material, Tratamiento, Rango o Índice (Ej: 1.56, Progresivo, Fotocromático)..." 
           value={busquedaPrecio} 
           onChange={(e) => setBusquedaPrecio(e.target.value)} 
           className="flex-1 p-2.5 sm:p-3 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 shadow-sm text-xs sm:text-sm text-gray-900 bg-gray-50 focus:bg-white" 
@@ -171,7 +289,7 @@ export default function Tarifario({
             {listaPreciosFiltrada.length === 0 && (
               <tr>
                 <td colSpan="9" className="p-8 text-center text-gray-500 font-semibold">
-                  No hay tarifas registradas en la lista de precios. Agrega tu primer paquete arriba.
+                  No hay tarifas registradas en la lista de precios. Usa las plantillas rápidas de arriba para empezar.
                 </td>
               </tr>
             )}
