@@ -1,6 +1,5 @@
 // Driver Web Bluetooth para Phomemo D30 / D-Series
 
-// Servicios conocidos en las diferentes versiones de hardware de Phomemo D30 / D110
 const KNOWN_SERVICES = [
   0xaf30,
   0xae30,
@@ -15,7 +14,7 @@ const KNOWN_SERVICES = [
 let dispositivoConectado = null;
 let caracteristicaEscritura = null;
 
-// Dibuja un código de barras limpio y visible
+// Dibuja un código de barras de alto contraste
 function dibujarCodigoBarras(ctx, codigo, x, y, width, height) {
   const chars = (codigo || '12345').toUpperCase();
   let seed = 0;
@@ -23,27 +22,28 @@ function dibujarCodigoBarras(ctx, codigo, x, y, width, height) {
 
   ctx.fillStyle = '#000000';
   const barWidth = 2;
-  const numBars = Math.floor(width / (barWidth * 1.6));
+  const numBars = Math.floor(width / (barWidth * 1.5));
   const startX = x - (numBars * barWidth * 1.5) / 2;
 
   for (let i = 0; i < numBars; i++) {
-    const bit = ((seed * (i + 13)) % 11) > 4;
+    const bit = ((seed * (i + 7)) % 13) > 4;
     if (bit) {
       ctx.fillRect(startX + i * barWidth * 1.5, y, barWidth, height);
     }
   }
 }
 
-function generarBitmapEtiqueta({ codigo = '', precio = 0, nombre = 'VER+ OPTICA' }) {
-  const width = 96;  // ~12 mm ancho
-  const height = 230; // Longitud total calibrada
+function generarBitmapEtiqueta({ codigo = '', precio = 0, nombre = 'VER+' }) {
+  // Dimensiones exactas de una sola etiqueta (96 px ancho x 240 px alto)
+  const width = 96;
+  const height = 240;
 
   const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext('2d');
 
-  // Fondo blanco puro sin bordes ni marcas extrañas
+  // Fondo blanco puro
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, width, height);
 
@@ -53,40 +53,38 @@ function generarBitmapEtiqueta({ codigo = '', precio = 0, nombre = 'VER+ OPTICA'
   // ==========================================
   // CARA 1 (SUPERIOR) - Código de Barras y PVP
   // ==========================================
-  ctx.font = 'bold 9px sans-serif';
-  ctx.fillText(nombre, width / 2, 14);
+  ctx.font = 'bold 11px Arial, sans-serif';
+  ctx.fillText(nombre, width / 2, 16);
 
-  // Código de barras gráfico
-  dibujarCodigoBarras(ctx, codigo, width / 2, 20, 80, 22);
+  // Código de barras nítido
+  dibujarCodigoBarras(ctx, codigo, width / 2, 22, 80, 24);
 
-  ctx.font = 'bold 12px monospace';
-  ctx.fillText(codigo.toUpperCase(), width / 2, 54);
+  ctx.font = 'bold 13px "Courier New", monospace';
+  ctx.fillText(codigo.toUpperCase(), width / 2, 58);
 
-  ctx.font = '900 15px sans-serif';
-  ctx.fillText(`PVP $${Number(precio).toFixed(2)}`, width / 2, 74);
-
-  // ==========================================
-  // ZONA MEDIA: Espacio libre para el pliegue
-  // ==========================================
+  ctx.font = '900 16px Arial, sans-serif';
+  ctx.fillText(`PVP $${Number(precio).toFixed(2)}`, width / 2, 78);
 
   // ==========================================
-  // CARA 2 (INFERIOR) - Datos legibles
+  // ZONA MEDIA: Pliegue para la varilla (~85px a 145px)
   // ==========================================
-  ctx.font = 'bold 10px sans-serif';
-  ctx.fillText(nombre, width / 2, 138);
 
-  ctx.font = 'bold 14px monospace';
-  ctx.fillText(codigo.toUpperCase(), width / 2, 160);
+  // ==========================================
+  // CARA 2 (INFERIOR) - Datos grandes cara opuesta
+  // ==========================================
+  ctx.font = 'bold 12px Arial, sans-serif';
+  ctx.fillText(nombre, width / 2, 160);
 
-  ctx.font = 'bold 9px sans-serif';
-  ctx.fillStyle = '#444444';
-  ctx.fillText('ARMAZÓN', width / 2, 176);
+  ctx.font = 'bold 15px "Courier New", monospace';
+  ctx.fillText(codigo.toUpperCase(), width / 2, 182);
 
-  ctx.fillStyle = '#000000';
-  ctx.font = '900 20px sans-serif';
-  ctx.fillText(`$${Number(precio).toFixed(2)}`, width / 2, 202);
+  ctx.font = 'bold 10px Arial, sans-serif';
+  ctx.fillText('ARMAZÓN', width / 2, 200);
 
-  // Conversión a matriz binaria monocromática
+  ctx.font = '900 22px Arial, sans-serif';
+  ctx.fillText(`$${Number(precio).toFixed(2)}`, width / 2, 228);
+
+  // Conversión con umbral de nitidez térmica (evita bordes grises o borrosos)
   const imgData = ctx.getImageData(0, 0, width, height);
   const bytesPorFila = Math.ceil(width / 8);
   const buffer = [];
@@ -98,8 +96,9 @@ function generarBitmapEtiqueta({ codigo = '', precio = 0, nombre = 'VER+ OPTICA'
         const x = xByte * 8 + bit;
         if (x < width) {
           const idx = (y * width + x) * 4;
+          // Si el pixel tiene tinta, se vuelve negro absoluto (1)
           const luminancia = (imgData.data[idx] + imgData.data[idx + 1] + imgData.data[idx + 2]) / 3;
-          if (luminancia < 128) {
+          if (luminancia < 190) { // Umbral ajustado para mayor nitidez y grosor
             byte |= (1 << (7 - bit));
           }
         }
@@ -133,9 +132,8 @@ export async function imprimirEtiquetaD30({ codigo, precio }) {
     throw new Error('Bluetooth no disponible en este navegador. Usa Chrome o Edge.');
   }
 
-  // Reutilizar conexión activa si sigue conectada
   if (dispositivoConectado?.gatt?.connected && caracteristicaEscritura) {
-    // Conexión activa reutilizada
+    // Reutilizar conexión activa
   } else {
     dispositivoConectado = await navigator.bluetooth.requestDevice({
       filters: [
@@ -171,7 +169,7 @@ export async function imprimirEtiquetaD30({ codigo, precio }) {
     nombre: 'VER+'
   });
 
-  // Comando de inicio (ESC @)
+  // Inicializar cabezal
   await enviar(new Uint8Array([0x1b, 0x40]));
 
   // Cabecera GS v 0
@@ -190,7 +188,6 @@ export async function imprimirEtiquetaD30({ codigo, precio }) {
     await new Promise(r => setTimeout(r, 12));
   }
 
-  // Avance de línea calibrado
-  await enviar(new Uint8Array([0x1b, 0x64, 0x02]));
+  // NOTA: Se retiró el comando de salto extra ESC d 2 para evitar que expulse una segunda etiqueta en blanco
   return true;
 }
