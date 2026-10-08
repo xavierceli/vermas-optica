@@ -16,36 +16,42 @@ let dispositivoConectado = null;
 let caracteristicaEscritura = null;
 
 function generarBitmapEtiqueta({ codigo = '', precio = 0, nombre = 'VER+' }) {
-  const width = 96; // ~12 mm a 203 DPI
-  const height = 240;
+  // Ajuste calibrado al área real de la etiqueta de 12-14 mm (ancho 96 px, alto 190 px)
+  const width = 96;
+  const height = 190;
 
   const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext('2d');
 
+  // Fondo blanco limpio
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, width, height);
 
   ctx.fillStyle = '#000000';
   ctx.textAlign = 'center';
 
-  // Cabecera
-  ctx.font = 'bold 13px sans-serif';
-  ctx.fillText(nombre, width / 2, 22);
-  ctx.fillRect(8, 28, width - 16, 2);
+  // Marca superior
+  ctx.font = 'bold 12px sans-serif';
+  ctx.fillText(nombre, width / 2, 20);
 
-  // Código del Armazón
-  ctx.font = 'bold 15px monospace';
-  ctx.fillText(codigo.toUpperCase(), width / 2, 60);
+  // Línea divisoria
+  ctx.fillRect(8, 26, width - 16, 2);
 
-  // Etiqueta
-  ctx.font = '9px sans-serif';
-  ctx.fillText('ARMAZÓN', width / 2, 90);
+  // Código del Armazón destacado y nítido
+  ctx.font = 'bold 18px monospace';
+  ctx.fillText(codigo.toUpperCase(), width / 2, 62);
 
-  // Precio
-  ctx.font = 'bold 18px sans-serif';
-  ctx.fillText(`$${Number(precio).toFixed(2)}`, width / 2, 140);
+  // Detalle tipo
+  ctx.font = 'bold 10px sans-serif';
+  ctx.fillStyle = '#333333';
+  ctx.fillText('ARMAZÓN', width / 2, 92);
+
+  // Precio final grande
+  ctx.fillStyle = '#000000';
+  ctx.font = '900 24px sans-serif';
+  ctx.fillText(`$${Number(precio).toFixed(2)}`, width / 2, 138);
 
   const imgData = ctx.getImageData(0, 0, width, height);
   const bytesPorFila = Math.ceil(width / 8);
@@ -93,7 +99,7 @@ export async function imprimirEtiquetaD30({ codigo, precio }) {
     throw new Error('Bluetooth no disponible en este navegador. Usa Chrome o Edge.');
   }
 
-  // Si ya tenemos conexión activa, la reutilizamos sin volver a abrir la ventana
+  // Reutilizar conexión activa si sigue conectada
   if (dispositivoConectado?.gatt?.connected && caracteristicaEscritura) {
     // Listo para imprimir directo
   } else {
@@ -131,7 +137,7 @@ export async function imprimirEtiquetaD30({ codigo, precio }) {
     nombre: 'VER+'
   });
 
-  // Comando de inicio
+  // Comando de inicio (ESC @)
   await enviar(new Uint8Array([0x1b, 0x40]));
 
   // Cabecera GS v 0
@@ -150,7 +156,7 @@ export async function imprimirEtiquetaD30({ codigo, precio }) {
     await new Promise(r => setTimeout(r, 12));
   }
 
-  // Avance de línea final
+  // Avance de línea calibrado
   await enviar(new Uint8Array([0x1b, 0x64, 0x02]));
   return true;
 }
