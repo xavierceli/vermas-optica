@@ -15,44 +15,78 @@ const KNOWN_SERVICES = [
 let dispositivoConectado = null;
 let caracteristicaEscritura = null;
 
-function generarBitmapEtiqueta({ codigo = '', precio = 0, nombre = 'VER+' }) {
-  // Ajuste calibrado al área real de la etiqueta de 12-14 mm (ancho 96 px, alto 190 px)
-  const width = 96;
-  const height = 190;
+// Dibuja un código de barras limpio y visible
+function dibujarCodigoBarras(ctx, codigo, x, y, width, height) {
+  const chars = (codigo || '12345').toUpperCase();
+  let seed = 0;
+  for (let i = 0; i < chars.length; i++) seed += chars.charCodeAt(i);
+
+  ctx.fillStyle = '#000000';
+  const barWidth = 2;
+  const numBars = Math.floor(width / (barWidth * 1.6));
+  const startX = x - (numBars * barWidth * 1.5) / 2;
+
+  for (let i = 0; i < numBars; i++) {
+    const bit = ((seed * (i + 13)) % 11) > 4;
+    if (bit) {
+      ctx.fillRect(startX + i * barWidth * 1.5, y, barWidth, height);
+    }
+  }
+}
+
+function generarBitmapEtiqueta({ codigo = '', precio = 0, nombre = 'VER+ OPTICA' }) {
+  const width = 96;  // ~12 mm ancho
+  const height = 230; // Longitud total calibrada
 
   const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext('2d');
 
-  // Fondo blanco limpio
+  // Fondo blanco puro sin bordes ni marcas extrañas
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, width, height);
 
   ctx.fillStyle = '#000000';
   ctx.textAlign = 'center';
 
-  // Marca superior
-  ctx.font = 'bold 12px sans-serif';
-  ctx.fillText(nombre, width / 2, 20);
+  // ==========================================
+  // CARA 1 (SUPERIOR) - Código de Barras y PVP
+  // ==========================================
+  ctx.font = 'bold 9px sans-serif';
+  ctx.fillText(nombre, width / 2, 14);
 
-  // Línea divisoria
-  ctx.fillRect(8, 26, width - 16, 2);
+  // Código de barras gráfico
+  dibujarCodigoBarras(ctx, codigo, width / 2, 20, 80, 22);
 
-  // Código del Armazón destacado y nítido
-  ctx.font = 'bold 18px monospace';
-  ctx.fillText(codigo.toUpperCase(), width / 2, 62);
+  ctx.font = 'bold 12px monospace';
+  ctx.fillText(codigo.toUpperCase(), width / 2, 54);
 
-  // Detalle tipo
+  ctx.font = '900 15px sans-serif';
+  ctx.fillText(`PVP $${Number(precio).toFixed(2)}`, width / 2, 74);
+
+  // ==========================================
+  // ZONA MEDIA: Espacio libre para el pliegue
+  // ==========================================
+
+  // ==========================================
+  // CARA 2 (INFERIOR) - Datos legibles
+  // ==========================================
   ctx.font = 'bold 10px sans-serif';
-  ctx.fillStyle = '#333333';
-  ctx.fillText('ARMAZÓN', width / 2, 92);
+  ctx.fillText(nombre, width / 2, 138);
 
-  // Precio final grande
+  ctx.font = 'bold 14px monospace';
+  ctx.fillText(codigo.toUpperCase(), width / 2, 160);
+
+  ctx.font = 'bold 9px sans-serif';
+  ctx.fillStyle = '#444444';
+  ctx.fillText('ARMAZÓN', width / 2, 176);
+
   ctx.fillStyle = '#000000';
-  ctx.font = '900 24px sans-serif';
-  ctx.fillText(`$${Number(precio).toFixed(2)}`, width / 2, 138);
+  ctx.font = '900 20px sans-serif';
+  ctx.fillText(`$${Number(precio).toFixed(2)}`, width / 2, 202);
 
+  // Conversión a matriz binaria monocromática
   const imgData = ctx.getImageData(0, 0, width, height);
   const bytesPorFila = Math.ceil(width / 8);
   const buffer = [];
@@ -101,7 +135,7 @@ export async function imprimirEtiquetaD30({ codigo, precio }) {
 
   // Reutilizar conexión activa si sigue conectada
   if (dispositivoConectado?.gatt?.connected && caracteristicaEscritura) {
-    // Listo para imprimir directo
+    // Conexión activa reutilizada
   } else {
     dispositivoConectado = await navigator.bluetooth.requestDevice({
       filters: [
