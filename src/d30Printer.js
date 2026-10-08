@@ -1,15 +1,14 @@
 // Driver Web Bluetooth para Phomemo D30 / rotuladoras compatibles ESC/POS raster
 
-const D30_SERVICE_UUID = '0000ff00-0000-1000-8000-00805f9b34fb';
-const D30_CHARACTERISTIC_UUID = '0000ff02-0000-1000-8000-00805f9b34fb';
+const D30_SERVICE_UUID = 0xff00;
+const D30_CHARACTERISTIC_UUID = 0xff02;
 
 /**
  * Genera un canvas en memoria y renderiza la etiqueta del armazón
- * Ancho estándar para etiqueta de 12-14 mm: ~96-112 puntos a 203 DPI.
  */
 function generarBitmapEtiqueta({ codigo = '', precio = 0, nombre = 'VER+ ÓPTICA' }) {
-  const width = 96; // 12 mm aprox a 203 dpi
-  const height = 240; // longitud de la tira
+  const width = 96; // ~12 mm a 203 DPI
+  const height = 240;
 
   const canvas = document.createElement('canvas');
   canvas.width = width;
@@ -30,19 +29,18 @@ function generarBitmapEtiqueta({ codigo = '', precio = 0, nombre = 'VER+ ÓPTICA
   // Línea divisoria
   ctx.fillRect(8, 28, width - 16, 1.5);
 
-  // Código del Armazón (rotado o vertical para aprovechar el largo)
-  ctx.font = 'bold 16px monospace';
+  // Código del Armazón
+  ctx.font = 'bold 15px monospace';
   ctx.fillText(codigo.toUpperCase(), width / 2, 60);
 
-  // Espacio central (para el doblez si es etiqueta tipo joyero)
+  // Detalle intermedio
   ctx.font = '9px sans-serif';
   ctx.fillText('ARMAZÓN', width / 2, 90);
 
-  // Precio final destacado
+  // Precio final
   ctx.font = 'bold 18px sans-serif';
   ctx.fillText(`$${Number(precio).toFixed(2)}`, width / 2, 140);
 
-  // Obtener matriz binaria monocromática (1 = negro, 0 = blanco)
   const imgData = ctx.getImageData(0, 0, width, height);
   const bytesPorFila = Math.ceil(width / 8);
   const buffer = [];
@@ -68,21 +66,21 @@ function generarBitmapEtiqueta({ codigo = '', precio = 0, nombre = 'VER+ ÓPTICA
 }
 
 /**
- * Conecta con la impresora D30 por Bluetooth y envía la etiqueta.
+ * Conecta con la impresora y envía la etiqueta.
  */
 export async function imprimirEtiquetaD30({ codigo, precio }) {
   if (!navigator.bluetooth) {
-    throw new Error('Tu navegador no soporta Bluetooth Web. Usa Chrome, Edge o Bluefy (iOS).');
+    throw new Error('Tu navegador no soporta Bluetooth Web. Usa Google Chrome o Microsoft Edge.');
   }
 
-  // 1. Solicitar dispositivo Bluetooth
+  // Permite listar todos los dispositivos Bluetooth cercanos para que la D30 aparezca al instante
   const device = await navigator.bluetooth.requestDevice({
-    filters: [
-      { namePrefix: 'D30' },
-      { namePrefix: 'Phomemo' },
-      { namePrefix: 'Q30' }
-    ],
-    optionalServices: [D30_SERVICE_UUID, '0000fee7-0000-1000-8000-00805f9b34fb']
+    acceptAllDevices: true,
+    optionalServices: [
+      D30_SERVICE_UUID,
+      '0000ff00-0000-1000-8000-00805f9b34fb',
+      '0000fee7-0000-1000-8000-00805f9b34fb'
+    ]
   });
 
   const server = await device.gatt.connect();
@@ -91,41 +89,60 @@ export async function imprimirEtiquetaD30({ codigo, precio }) {
   try {
     service = await server.getPrimaryService(D30_SERVICE_UUID);
   } catch {
-    service = await server.getPrimaryService('0000fee7-0000-1000-8000-00805f9b34fb');
+    try {
+      service = await server.getPrimaryService('0000ff00-0000-1000-8000-00805f9b34fb');
+    } catch {
+      service = await server.getPrimaryService('0000fee7-0000-1000-8000-00805f9b34fb');
+    }
   }
 
-  const characteristic = await service.getCharacteristic(D30_CHARACTERISTIC_UUID);
+  let characteristic;
+  try {
+    characteristic = await service.getCharacteristic(D30_CHARACTERISTIC_UUID);
+  } catch {
+    characteristic = await service.getCharacteristic('0000ff02-0000-1000-8000-00805f9b34fb');
+  }
 
-  // 2. Renderizar imagen a imprimir
+  const enviarDatos = async (bytes) => {
+    if (characteristic.writeValueWithoutResponse) {
+      await characteristic.writeValueWithoutResponse(bytes);
+    } else {
+      await characteristic.writeValue(bytes);
+    }
+  };
+
   const { buffer, widthBytes, height } = generarBitmapEtiqueta({
     codigo,
     precio,
     nombre: 'VER+'
   });
 
-  // 3. Comandos de inicialización y trama de mapa de bits estándar CPCL/ESC
-  const initCmd = new Uint8Array([0x1b, 0x40]); // ESC @
-  await characteristic.writeValue(initCmd);
+  // Inicialización de la impresora
+  await enviarDatos(new Uint8Array([0x1b, 0x40]));
 
-  // Enviar comando raster de impresión (GS v 0)
+  // Comando de impresión Raster
   const header = new Uint8Array([
     0x1d, 0x76, 0x30, 0x00,
     widthBytes & 0xff, (widthBytes >> 8) & 0xff,
     height & 0xff, (height >> 8) & 0xff
   ]);
-  await characteristic.writeValue(header);
+  await enviarDatos(header);
 
-  // Enviar buffer en paquetes pequeños (MTU BLE ~20 bytes o bloques seguros de 100 bytes)
-  const chunkSize = 100;
+  // Enviar bloques
+  const chunkSize = 64;
   for (let i = 0; i < buffer.length; i += chunkSize) {
     const chunk = buffer.slice(i, i + chunkSize);
-    await characteristic.writeValue(chunk);
+    await enviarDatos(chunk);
+    await new Promise(r => setTimeout(r, 10)); // Pequeña pausa para no saturar el buffer BLE
   }
 
-  // Alimentar papel y cortar margen
-  const feedCmd = new Uint8Array([0x1b, 0x64, 0x02]); // ESC d 2
-  await characteristic.writeValue(feedCmd);
+  // Alimentar papel
+  await enviarDatos(new Uint8Array([0x1b, 0x64, 0x02]));
 
-  await device.gatt.disconnect();
+  // Desconectar suavemente
+  setTimeout(() => {
+    if (device.gatt.connected) device.gatt.disconnect();
+  }, 1000);
+
   return true;
 }
