@@ -1,12 +1,21 @@
-// Driver Web Bluetooth para Phomemo D30 / rotuladoras compatibles ESC/POS raster
+// Driver Web Bluetooth para Phomemo D30 / D-Series
 
-const D30_SERVICE_UUID = 0xff00;
-const D30_CHARACTERISTIC_UUID = 0xff02;
+// Servicios conocidos en las diferentes versiones de hardware de Phomemo D30 / D110
+const KNOWN_SERVICES = [
+  0xaf30,
+  0xae30,
+  0xff00,
+  0xfee7,
+  '0000af30-0000-1000-8000-00805f9b34fb',
+  '0000ae30-0000-1000-8000-00805f9b34fb',
+  '0000ff00-0000-1000-8000-00805f9b34fb',
+  '0000fee7-0000-1000-8000-00805f9b34fb'
+];
 
-/**
- * Genera un canvas en memoria y renderiza la etiqueta del armazón
- */
-function generarBitmapEtiqueta({ codigo = '', precio = 0, nombre = 'VER+ ÓPTICA' }) {
+let dispositivoConectado = null;
+let caracteristicaEscritura = null;
+
+function generarBitmapEtiqueta({ codigo = '', precio = 0, nombre = 'VER+' }) {
   const width = 96; // ~12 mm a 203 DPI
   const height = 240;
 
@@ -15,29 +24,26 @@ function generarBitmapEtiqueta({ codigo = '', precio = 0, nombre = 'VER+ ÓPTICA
   canvas.height = height;
   const ctx = canvas.getContext('2d');
 
-  // Fondo blanco limpio
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, width, height);
 
   ctx.fillStyle = '#000000';
   ctx.textAlign = 'center';
 
-  // Encabezado
-  ctx.font = 'bold 12px sans-serif';
+  // Cabecera
+  ctx.font = 'bold 13px sans-serif';
   ctx.fillText(nombre, width / 2, 22);
-
-  // Línea divisoria
-  ctx.fillRect(8, 28, width - 16, 1.5);
+  ctx.fillRect(8, 28, width - 16, 2);
 
   // Código del Armazón
   ctx.font = 'bold 15px monospace';
   ctx.fillText(codigo.toUpperCase(), width / 2, 60);
 
-  // Detalle intermedio
+  // Etiqueta
   ctx.font = '9px sans-serif';
   ctx.fillText('ARMAZÓN', width / 2, 90);
 
-  // Precio final
+  // Precio
   ctx.font = 'bold 18px sans-serif';
   ctx.fillText(`$${Number(precio).toFixed(2)}`, width / 2, 140);
 
@@ -65,49 +71,57 @@ function generarBitmapEtiqueta({ codigo = '', precio = 0, nombre = 'VER+ ÓPTICA
   return { buffer: new Uint8Array(buffer), widthBytes: bytesPorFila, height };
 }
 
-/**
- * Conecta con la impresora y envía la etiqueta.
- */
-export async function imprimirEtiquetaD30({ codigo, precio }) {
-  if (!navigator.bluetooth) {
-    throw new Error('Tu navegador no soporta Bluetooth Web. Usa Google Chrome o Microsoft Edge.');
-  }
-
-  // Permite listar todos los dispositivos Bluetooth cercanos para que la D30 aparezca al instante
-  const device = await navigator.bluetooth.requestDevice({
-    acceptAllDevices: true,
-    optionalServices: [
-      D30_SERVICE_UUID,
-      '0000ff00-0000-1000-8000-00805f9b34fb',
-      '0000fee7-0000-1000-8000-00805f9b34fb'
-    ]
-  });
-
-  const server = await device.gatt.connect();
-
-  let service;
-  try {
-    service = await server.getPrimaryService(D30_SERVICE_UUID);
-  } catch {
+async function obtenerCaracteristicaEscritura(server) {
+  for (const sUuid of KNOWN_SERVICES) {
     try {
-      service = await server.getPrimaryService('0000ff00-0000-1000-8000-00805f9b34fb');
+      const service = await server.getPrimaryService(sUuid);
+      const characteristics = await service.getCharacteristics();
+      for (const char of characteristics) {
+        if (char.properties.write || char.properties.writeWithoutResponse) {
+          return char;
+        }
+      }
     } catch {
-      service = await server.getPrimaryService('0000fee7-0000-1000-8000-00805f9b34fb');
+      // Probar siguiente servicio
     }
   }
+  throw new Error('No se encontró el canal de comunicación con la impresora.');
+}
 
-  let characteristic;
-  try {
-    characteristic = await service.getCharacteristic(D30_CHARACTERISTIC_UUID);
-  } catch {
-    characteristic = await service.getCharacteristic('0000ff02-0000-1000-8000-00805f9b34fb');
+export async function imprimirEtiquetaD30({ codigo, precio }) {
+  if (!navigator.bluetooth) {
+    throw new Error('Bluetooth no disponible en este navegador. Usa Chrome o Edge.');
   }
 
-  const enviarDatos = async (bytes) => {
-    if (characteristic.writeValueWithoutResponse) {
-      await characteristic.writeValueWithoutResponse(bytes);
+  // Si ya tenemos conexión activa, la reutilizamos sin volver a abrir la ventana
+  if (dispositivoConectado?.gatt?.connected && caracteristicaEscritura) {
+    // Listo para imprimir directo
+  } else {
+    dispositivoConectado = await navigator.bluetooth.requestDevice({
+      filters: [
+        { namePrefix: 'D30' },
+        { namePrefix: 'd30' },
+        { namePrefix: 'Phomemo' },
+        { namePrefix: 'Q30' },
+        { namePrefix: 'M110' }
+      ],
+      optionalServices: KNOWN_SERVICES
+    });
+
+    const server = await dispositivoConectado.gatt.connect();
+    caracteristicaEscritura = await obtenerCaracteristicaEscritura(server);
+
+    dispositivoConectado.addEventListener('gattserverdisconnected', () => {
+      caracteristicaEscritura = null;
+      dispositivoConectado = null;
+    });
+  }
+
+  const enviar = async (bytes) => {
+    if (caracteristicaEscritura.properties.writeWithoutResponse) {
+      await caracteristicaEscritura.writeValueWithoutResponse(bytes);
     } else {
-      await characteristic.writeValue(bytes);
+      await caracteristicaEscritura.writeValue(bytes);
     }
   };
 
@@ -117,32 +131,26 @@ export async function imprimirEtiquetaD30({ codigo, precio }) {
     nombre: 'VER+'
   });
 
-  // Inicialización de la impresora
-  await enviarDatos(new Uint8Array([0x1b, 0x40]));
+  // Comando de inicio
+  await enviar(new Uint8Array([0x1b, 0x40]));
 
-  // Comando de impresión Raster
+  // Cabecera GS v 0
   const header = new Uint8Array([
     0x1d, 0x76, 0x30, 0x00,
     widthBytes & 0xff, (widthBytes >> 8) & 0xff,
     height & 0xff, (height >> 8) & 0xff
   ]);
-  await enviarDatos(header);
+  await enviar(header);
 
-  // Enviar bloques
+  // Enviar paquetes en bloques seguros de 64 bytes
   const chunkSize = 64;
   for (let i = 0; i < buffer.length; i += chunkSize) {
     const chunk = buffer.slice(i, i + chunkSize);
-    await enviarDatos(chunk);
-    await new Promise(r => setTimeout(r, 10)); // Pequeña pausa para no saturar el buffer BLE
+    await enviar(chunk);
+    await new Promise(r => setTimeout(r, 12));
   }
 
-  // Alimentar papel
-  await enviarDatos(new Uint8Array([0x1b, 0x64, 0x02]));
-
-  // Desconectar suavemente
-  setTimeout(() => {
-    if (device.gatt.connected) device.gatt.disconnect();
-  }, 1000);
-
+  // Avance de línea final
+  await enviar(new Uint8Array([0x1b, 0x64, 0x02]));
   return true;
 }
