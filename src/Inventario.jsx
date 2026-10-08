@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { safeString, safeNum } from './utilidades';
 import { resolverUrlImagenInventario } from './imagenesInventario';
 import { imprimirEtiqueta } from './impresiones';
+import { imprimirEtiquetaD30 } from './d30Printer';
 
 export default function Inventario({
   inventario = [], nuevoItemInv, editandoInvId, cargandoImagen,
@@ -12,6 +13,7 @@ export default function Inventario({
   const [imagenAmpliada, setImagenAmpliada] = useState(null);
   const [urlsImagenes, setUrlsImagenes] = useState({});
   const [imagenesFallidas, setImagenesFallidas] = useState({});
+  const [imprimiendoD30Id, setImprimiendoD30Id] = useState(null);
   const firmasProcesadas = useRef(new Set());
   const inputFotoRef = useRef(null);
 
@@ -71,6 +73,23 @@ export default function Inventario({
   const handleGuardar = async () => {
     await guardarItemInventario();
     if (inputFotoRef.current) inputFotoRef.current.value = '';
+  };
+
+  const handleImprimirD30 = async (item) => {
+    if (imprimiendoD30Id === item.id) return;
+    setImprimiendoD30Id(item.id);
+    try {
+      await imprimirEtiquetaD30({
+        codigo: item.codigo || 'S/C',
+        precio: safeNum(item.precio)
+      });
+    } catch (err) {
+      if (err.name !== 'NotFoundError') {
+        alert('Error con impresora D30: ' + (err.message || err));
+      }
+    } finally {
+      setImprimiendoD30Id(null);
+    }
   };
 
   const itemsFiltrados = (inventario || []).filter(item => {
@@ -221,7 +240,7 @@ export default function Inventario({
       />
       
       <div className="overflow-x-auto border border-gray-200 rounded-lg shadow-sm">
-        <table className="w-full text-left text-xs sm:text-sm bg-white min-w-[650px]">
+        <table className="w-full text-left text-xs sm:text-sm bg-white min-w-[680px]">
           <thead className="bg-purple-50 text-purple-950 border-b">
             <tr>
               <th className="p-3 w-16">Img</th>
@@ -279,9 +298,25 @@ export default function Inventario({
                 <td className="p-3 text-center">
                   <div className="flex flex-wrap gap-1.5 justify-center items-center">
                     {safeString(item.categoria) === 'Armazon' && (
-                      <button type="button" onClick={() => imprimirEtiqueta(item)} className="bg-gray-800 text-white px-2.5 py-1 rounded text-xs font-bold hover:bg-gray-900 transition-colors shadow-sm" title="Imprimir Etiqueta Mariposa">
-                        🖨️ Etiqueta
-                      </button>
+                      <>
+                        <button 
+                          type="button" 
+                          onClick={() => handleImprimirD30(item)}
+                          disabled={imprimiendoD30Id === item.id}
+                          className="bg-purple-700 text-white px-2.5 py-1 rounded text-xs font-bold hover:bg-purple-800 active:scale-95 transition-all shadow-sm flex items-center gap-1 disabled:opacity-50" 
+                          title="Imprimir en rotuladora Phomemo D30 vía Bluetooth"
+                        >
+                          {imprimiendoD30Id === item.id ? '⏳ Conectando...' : '🏷️ D30'}
+                        </button>
+                        <button 
+                          type="button" 
+                          onClick={() => imprimirEtiqueta(item)} 
+                          className="bg-gray-800 text-white px-2.5 py-1 rounded text-xs font-bold hover:bg-gray-900 transition-colors shadow-sm" 
+                          title="Imprimir Etiqueta Mariposa estándar"
+                        >
+                          🖨️ Etiqueta
+                        </button>
+                      </>
                     )}
                     <button type="button" onClick={() => cargarParaEditarInventario(item)} className="bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 px-2.5 py-1 rounded text-xs font-bold transition-colors shadow-sm">
                       Editar
