@@ -190,10 +190,13 @@ export function useGestor() {
     return snapshot;
   }, [aplicarSnapshotLocal]);
 
-  useEffect(() => {
+useEffect(() => {
+    // Solo arrancar el motor de sincronización si el usuario ya inició sesión
+    if (!estaAutenticado) return;
+
     iniciarMotorSync();
     return suscribirSync(setSyncEstado);
-  }, []);
+  }, [estaAutenticado]);
 
   useEffect(() => {
     let vigente = true;
