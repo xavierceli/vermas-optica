@@ -132,7 +132,13 @@ export function useGestor() {
       : '¿Estás seguro de cerrar sesión? Tendrás que volver a ingresar con tus credenciales.';
     solicitarConfirmacion(aviso, async () => {
       setModoSinConexion(false);
-      fijarSesionAusente(false);
+      fijarSesionAusente(true);
+      setEstaAutenticado(false);
+      setHistorial([]);
+      setVentasLocales([]);
+      setVentasArchivadas([]);
+      setInventario([]);
+      setListaPrecios([]);
       if (!estabaSinConexion) await supabase.auth.signOut();
     });
   };
@@ -218,52 +224,71 @@ export function useGestor() {
 
   useEffect(() => {
     let montado = true;
-
-    const timerSeguridad = setTimeout(() => {
-      if (montado) setCargandoAuth(false);
-    }, 1000);
-
     const cambioClavePendiente = sessionStorage.getItem('vermas_cambio_clave') === '1';
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (montado) {
-        clearTimeout(timerSeguridad);
-        setEstaAutenticado(!!session && !cambioClavePendiente);
-        if (session && !cambioClavePendiente) {
-          fijarSesionAusente(false);
-          setModoSinConexion(false);
-          obtenerDatos();
-        }
+    // 1. Verificación inicial de sesión estricta
+    supabase.auth.getSession().then(({ data: { session }, error }) => {
+      if (!montado) return;
+
+      if (error || !session || cambioClavePendiente) {
+        setEstaAutenticado(false);
+        fijarSesionAusente(true);
         setCargandoAuth(false);
+        return;
       }
-    }).catch(() => {
+
+      setEstaAutenticado(true);
+      fijarSesionAusente(false);
+      setModoSinConexion(false);
+      obtenerDatos();
+      setCargandoAuth(false);
+    }).catch((err) => {
+      console.warn('[auth] Error al verificar sesión:', err);
       if (montado) {
-        clearTimeout(timerSeguridad);
-        if (!cambioClavePendiente) obtenerDatos();
+        setEstaAutenticado(false);
+        fijarSesionAusente(true);
         setCargandoAuth(false);
       }
     });
 
+    // 2. Suscripción a eventos de autenticación
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (montado) {
-        if (event === 'PASSWORD_RECOVERY') {
-          sessionStorage.setItem('vermas_cambio_clave', '1');
-          setModoSinConexion(false);
-          fijarSesionAusente(false);
-          setEstaAutenticado(false);
-          setCargandoAuth(false);
-          return;
-        }
-        const siguePendiente = sessionStorage.getItem('vermas_cambio_clave') === '1';
-        setEstaAutenticado(!!session && !siguePendiente);
+      if (!montado) return;
+
+      if (event === 'PASSWORD_RECOVERY') {
+        sessionStorage.setItem('vermas_cambio_clave', '1');
+        setModoSinConexion(false);
+        fijarSesionAusente(true);
+        setEstaAutenticado(false);
         setCargandoAuth(false);
-        if (session && !siguePendiente) obtenerDatos();
+        return;
+      }
+
+      if (event === 'SIGNED_OUT' || !session) {
+        setEstaAutenticado(false);
+        fijarSesionAusente(true);
+        setHistorial([]);
+        setVentasLocales([]);
+        setVentasArchivadas([]);
+        setInventario([]);
+        setListaPrecios([]);
+        setCargandoAuth(false);
+        return;
+      }
+
+      if (event === 'SIGNED_IN' && session) {
+        const siguePendiente = sessionStorage.getItem('vermas_cambio_clave') === '1';
+        if (!siguePendiente) {
+          setEstaAutenticado(true);
+          fijarSesionAusente(false);
+          obtenerDatos();
+        }
+        setCargandoAuth(false);
       }
     });
 
     return () => {
       montado = false;
-      clearTimeout(timerSeguridad);
       subscription?.unsubscribe();
     };
   }, [obtenerDatos]);
@@ -680,8 +705,6 @@ export function useGestor() {
       itemFormateado.tratam_ninguno = 'SI';
     }
 
-    // DEDUPLICACIÓN DE MEDIDAS DESDE EL ORIGEN:
-    // Filtra las consultas del paciente para que no existan duplicados con la misma fecha
     const visitasBrutas = (historial || []).filter(h => safeString(h?.cedula) === safeString(item.cedula) && safeString(h?.nombre) !== 'CONSUMIDOR FINAL');
     const mapaUnico = new Map();
     for (const v of visitasBrutas) {
@@ -867,7 +890,6 @@ export function useGestor() {
         abono: String(montoAPagar > 0 ? (safeNum(venta.abono) + montoAPagar).toFixed(2) : venta.abono)
       };
 
-      // ACTUALIZACIÓN INMEDIATA DEL ESTADO EN MEMORIA (REACT)
       setHistorial(prev => {
         const existe = prev.some(h => String(h.id) === String(consultationId) || (safeString(h.cedula) === cedulaPaciente && !h.pedido_id));
         if (existe) {
@@ -889,7 +911,6 @@ export function useGestor() {
       setPedidoSeleccionado(null);
       setVistaActual('pedidos_lista');
 
-      // SINCRONIZACIÓN AUTOMÁTICA EN SEGUNDO PLANO
       const estadoSync = await sincronizarAhora({ pull: false });
       await obtenerDatos({ sync: false });
 
@@ -936,7 +957,6 @@ export function useGestor() {
       try {
         const saleId = item.pedido_id;
 
-        // ACTUALIZACIÓN OPTIMISTA INMEDIATA EN MEMORIA
         setHistorial(prev => prev.map(h => (String(h.pedido_id) === String(saleId) || String(h.id) === String(item.id)) ? { ...h, estado: 'Anulado', abono: '0' } : h));
         setVentasLocales(prev => prev.map(v => String(v.id) === String(saleId) ? { ...v, estado: 'Anulado', abono: '0' } : v));
 

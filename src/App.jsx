@@ -177,6 +177,17 @@ function App() {
     if (dialogoVisible) refDialogo.current?.focus();
   }, [dialogoVisible]);
 
+  // Pantalla de carga mientras se valida la sesión real
+  if (g.cargandoAuth) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
+        <div className="w-10 h-10 border-4 border-teal-600 border-t-transparent rounded-full animate-spin mb-3"></div>
+        <p className="text-sm font-bold text-gray-600">Verificando sesión segura...</p>
+      </div>
+    );
+  }
+
+  // Si no está autenticado, muestra únicamente el Login
   if (!g.estaAutenticado) {
     return (
       <Login
@@ -358,7 +369,6 @@ function App() {
           <div className="flex flex-wrap items-center justify-between w-full md:w-auto gap-3">
             <h1 className="font-extrabold text-teal-800 text-xl sm:text-2xl tracking-wider">VER+ ÓPTICA</h1>
             <div className="flex items-center gap-2 shrink-0">
-              {/* Botón único de estado de sincronización (se quitó el botón redundante) */}
               <button
                 type="button"
                 onClick={() => { 
@@ -381,7 +391,6 @@ function App() {
             </div>
           </div>
 
-          {/* Botón directo de resolver problemas cuando existen fallos o elementos atascados */}
           {totalAtascados > 0 && (
             <button
               type="button"
