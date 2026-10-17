@@ -1,0 +1,31 @@
+name: CI
+
+# Se ejecuta en cada push y en cada pull request. Es la red de seguridad: hasta
+# ahora lint, tests y build se corrían a mano, así que un commit roto solo se
+# descubría al desplegar.
+on:
+  push:
+  pull_request:
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Tests
+        run: npm run test:local
+
+      - name: Build
+        run: npm run build
