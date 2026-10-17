@@ -29,7 +29,8 @@ export default function ListaTarjetas({
   abrirPedido,
   enviarWhatsApp,
   manejarBorradoCompleto,
-  crearNuevoPaciente
+  crearNuevoPaciente,
+  confirmarAccion
 }) {
   const prepararNuevaVenta = (item) => {
     const itemParaNuevaVenta = {
@@ -337,8 +338,11 @@ export default function ListaTarjetas({
                             <button
                               type="button"
                               onClick={() => {
-                                if (window.confirm("Esta venta está anulada. ¿Deseas abrirla para editarla y reactivarla?")) {
-                                  abrirPedido(item);
+                                const abrir = () => abrirPedido(item);
+                                if (typeof confirmarAccion === 'function') {
+                                  confirmarAccion('Esta venta está anulada. ¿Deseas abrirla para editarla y reactivarla?', abrir);
+                                } else {
+                                  abrir();
                                 }
                               }}
                               className="text-xs px-2.5 py-1.5 rounded-lg font-bold transition-all shadow-sm bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300"

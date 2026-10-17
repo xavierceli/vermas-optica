@@ -12,6 +12,21 @@ import { clasificarFallo } from './clasificarFallo.js';
 const SRC = join(dirname(fileURLToPath(import.meta.url)));
 const leer = nombre => readFileSync(join(SRC, nombre), 'utf8');
 
+// Recorre src/ entero (incluidas las subcarpetas) y devuelve rutas relativas
+// como 'componentes/ListaTarjetas.jsx', que es lo que espera `leer`.
+const listarFuentes = (dir = SRC, prefijo = '') => {
+  const fuentes = [];
+  for (const entrada of readdirSync(dir)) {
+    const relativo = prefijo ? `${prefijo}/${entrada}` : entrada;
+    if (statSync(join(dir, entrada)).isDirectory()) {
+      fuentes.push(...listarFuentes(join(dir, entrada), relativo));
+    } else if (/\.(js|jsx)$/.test(entrada)) {
+      fuentes.push(relativo);
+    }
+  }
+  return fuentes;
+};
+
 // ---------------------------------------------------------------------------
 // EL AVISO
 // ---------------------------------------------------------------------------
@@ -605,11 +620,11 @@ test('ninguna pantalla vuelve a usar alert() ni window.confirm()', () => {
   // estilo y el confirm() corta el flujo. Para volver a usarlos hay que quitar
   // este test, y se veria en la revision.
   const culpables = [];
-  for (const archivo of readdirSync(SRC).filter(f => /\.(js|jsx)$/.test(f))) {
-    const fuente = leer(archivo);
-    fuente.split('\n').forEach((linea, i) => {
-      // Se ignoran los .test.js (comprueban el patron) y las lineas de comentario.
-      if (archivo.endsWith('.test.js') || linea.trim().startsWith('//')) return;
+  for (const archivo of listarFuentes()) {
+    // Se ignoran los .test.js (comprueban el patron) y las lineas de comentario.
+    if (archivo.endsWith('.test.js')) continue;
+    leer(archivo).split('\n').forEach((linea, i) => {
+      if (linea.trim().startsWith('//')) return;
       if (/(^|[^.\w])alert\s*\(/.test(linea) || /window\.confirm\s*\(/.test(linea)) {
         culpables.push(`${archivo}:${i + 1}`);
       }

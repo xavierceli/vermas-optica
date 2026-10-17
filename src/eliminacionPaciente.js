@@ -15,12 +15,13 @@
 // ---------------------------------------------------------------------------
 import { localDb } from './localDb.js';
 import { extraerRutaArchivo } from './rutaImagen.js';
+import { supabase } from './supabaseClient.js';
 
-// El cliente de Supabase se carga solo cuando hace falta. Asi este modulo se puede
-// probar con node --test (supabaseClient usa import.meta.env, que solo existe en Vite).
+// El cliente real lo aporta supabaseClient.js; en las pruebas se puede inyectar
+// otro con usarClienteDePrueba() para no tocar la red ni la sesion.
 let clienteDePrueba = null;
 export const usarClienteDePrueba = cliente => { clienteDePrueba = cliente; };
-const obtenerCliente = async () => clienteDePrueba || (await import('./supabaseClient.js')).supabase;
+const obtenerCliente = async () => clienteDePrueba || supabase;
 
 const BUCKET_COMPROBANTES = 'comprobantes_pagos';
 

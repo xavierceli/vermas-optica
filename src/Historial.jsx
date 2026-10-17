@@ -242,6 +242,7 @@ export default function Historial({
       enviarWhatsApp={enviarWhatsApp}
       manejarBorradoCompleto={manejarBorradoCompleto}
       crearNuevoPaciente={crearNuevoPaciente}
+      confirmarAccion={confirmarAccion}
     />
   );
 }

@@ -1,8 +1,11 @@
 import { createClient } from '@supabase/supabase-js';
 
 // 1. Lee las variables del entorno si existen o usa los valores de respaldo
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://uaflmzuklixcpqspiyqi.supabase.co';
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_6OdeKTv6wQwNHok7iOUb0A_bSgZyH7s';
+// `import.meta.env` solo lo inyecta Vite; fuera de el (p. ej. al correr node --test)
+// se usa el respaldo, igual que si las variables no estuvieran definidas.
+const env = import.meta.env || {};
+const supabaseUrl = env.VITE_SUPABASE_URL || 'https://uaflmzuklixcpqspiyqi.supabase.co';
+const supabaseKey = env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_6OdeKTv6wQwNHok7iOUb0A_bSgZyH7s';
 
 // 2. Comprobación de seguridad
 if (!supabaseUrl || !supabaseKey) {
