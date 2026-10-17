@@ -71,7 +71,8 @@ const PLANTILLAS_RAPIDAS = [
 export default function Tarifario({
   nuevoPrecio, setNuevoPrecio, precioInicial, editandoPrecioId, setEditandoPrecioId,
   manejarCambioPrecio, guardarPrecio, busquedaPrecio, setBusquedaPrecio,
-  listaPreciosFiltrada = [], cargarParaEditarPrecio, eliminarPrecio
+  listaPreciosFiltrada = [], cargarParaEditarPrecio, eliminarPrecio,
+  esAdmin = false
 }) {
 
   const aplicarPlantilla = (p) => {
@@ -103,6 +104,8 @@ export default function Tarifario({
         )}
       </div>
 
+      {esAdmin ? (
+      <>
       {/* Bloque de Plantillas Rápidas */}
       <div className="bg-slate-50 p-3 sm:p-4 rounded-xl border border-slate-200">
         <span className="block text-xs font-black text-slate-700 uppercase tracking-wide mb-2">
@@ -217,6 +220,12 @@ export default function Tarifario({
           </div>
         </div>
       </div>
+      </>
+      ) : (
+      <div role="note" className="bg-gray-50 border border-gray-200 rounded-xl p-4 text-sm text-gray-700 font-semibold">
+        🔒 Solo un administrador puede agregar, editar o eliminar tarifas. Aquí puedes consultar la lista de precios.
+      </div>
+      )}
 
       <div className="flex gap-3">
         <input 
@@ -267,20 +276,24 @@ export default function Tarifario({
                   <td className="p-3 text-xs text-gray-700 italic">{safeString(item.notas) || '-'}</td>
                   <td className="p-3 text-center">
                     <div className="flex justify-center gap-1.5">
-                      <button 
-                        type="button" 
-                        onClick={() => cargarParaEditarPrecio(item)} 
-                        className="text-xs bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-1 rounded font-bold hover:bg-emerald-100 transition-colors shadow-sm"
-                      >
-                        Editar
-                      </button>
-                      <button 
-                        type="button" 
-                        onClick={() => eliminarPrecio(item.id)} 
-                        className="text-xs bg-white text-red-700 border border-red-200 px-2.5 py-1 rounded font-semibold hover:bg-red-50 transition-colors shadow-sm"
-                      >
-                        Eliminar
-                      </button>
+                      {esAdmin && (
+                        <>
+                          <button 
+                            type="button" 
+                            onClick={() => cargarParaEditarPrecio(item)} 
+                            className="text-xs bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-1 rounded font-bold hover:bg-emerald-100 transition-colors shadow-sm"
+                          >
+                            Editar
+                          </button>
+                          <button 
+                            type="button" 
+                            onClick={() => eliminarPrecio(item.id)} 
+                            className="text-xs bg-white text-red-700 border border-red-200 px-2.5 py-1 rounded font-semibold hover:bg-red-50 transition-colors shadow-sm"
+                          >
+                            Eliminar
+                          </button>
+                        </>
+                      )}
                     </div>
                   </td>
                 </tr>

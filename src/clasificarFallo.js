@@ -78,10 +78,16 @@ export const clasificarFallo = (motivo, { intentos = 0, maxIntentos = 5, tipo = 
   //    archivar. Es el unico caso de "no existe" que si se puede descartar.
   if (tipo === 'ARCHIVAR_CONSULTA' && /no existe/i.test(texto)) return 'descartada';
 
-  // 4. Datos invalidos de verdad: descartar es lo correcto.
+  // 4. Falta de permiso por rol: lo decide un administrador, no el tiempo.
+  //    Reintentar no cambia nada, asi que no se deja la cola dando vueltas.
+  //    OJO: NO se aplica a "Autenticación requerida." (sesion expirada), que si
+  //    debe reintentarse cuando la sesion vuelva.
+  if (/solo un administrador/.test(texto)) return 'descartada';
+
+  // 5. Datos invalidos de verdad: descartar es lo correcto.
   if (RECHAZO_PERMANENTE.some(marca => texto.includes(marca))) return 'descartada';
 
-  // 5. Agotamos los reintentos.
+  // 6. Agotamos los reintentos.
   if (intentos >= maxIntentos) return 'descartada';
 
   return 'reintentable';

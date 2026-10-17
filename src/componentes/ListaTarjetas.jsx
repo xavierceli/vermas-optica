@@ -30,7 +30,8 @@ export default function ListaTarjetas({
   enviarWhatsApp,
   manejarBorradoCompleto,
   crearNuevoPaciente,
-  confirmarAccion
+  confirmarAccion,
+  esAdmin = false
 }) {
   const prepararNuevaVenta = (item) => {
     const itemParaNuevaVenta = {
@@ -164,7 +165,7 @@ export default function ListaTarjetas({
                     <button type="button" onClick={() => cargarParaEditarClinico(item)} className="text-xs sm:text-sm bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-1.5 rounded-lg font-bold shadow-sm hover:bg-blue-100 transition-colors" title="Editar / Corregir esta consulta">
                       ✏️
                     </button>
-                    <BotonEliminarPaciente item={item} onEliminar={manejarBorradoCompleto} />
+                    <BotonEliminarPaciente item={item} onEliminar={manejarBorradoCompleto} esAdmin={esAdmin} />
                   </div>
                 </div>
                 

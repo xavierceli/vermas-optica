@@ -9,7 +9,7 @@ import { listaSegunBusqueda } from './historial';
 export default function Historial({
   historialReciente,
   enviarWhatsApp, cargarParaEditarClinico, iniciarNuevaConsulta, borrarHistoriaClinica, archivarConsultaPuntual, abrirPedido, crearNuevoPaciente,
-  confirmarAccion
+  confirmarAccion, esAdmin = false
 }) {
   const [busquedaTexto, setBusquedaTexto] = useState('');
   const [resultadosBusqueda, setResultadosBusqueda] = useState({ termino: '', datos: [] });
@@ -243,6 +243,7 @@ export default function Historial({
       manejarBorradoCompleto={manejarBorradoCompleto}
       crearNuevoPaciente={crearNuevoPaciente}
       confirmarAccion={confirmarAccion}
+      esAdmin={esAdmin}
     />
   );
 }

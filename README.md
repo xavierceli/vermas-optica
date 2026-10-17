@@ -102,6 +102,8 @@ npm run test:ui      # render e interacción (Vitest + jsdom)
 
 ## Documentación
 
+- `docs/ROLES_Y_USUARIOS.md` — roles **admin / personal** y tope de 3 usuarios
+  (cómo aplicarlo, comprobarlo y cambiarlo).
 - `docs/RESPALDO_SERVIDOR.md` — plan de respaldo del servidor (pendiente de
   activar).
 - `supabase/audit/` — consultas SQL de diagnóstico (solo lectura).

@@ -79,6 +79,22 @@ test('pero archivar algo que no existe NO aplica a otros tipos', () => {
   );
 });
 
+// --- Permiso por rol (admin / personal) --------------------------------------
+
+test('un rechazo por falta de rol NO se reintenta: lo decide un administrador', () => {
+  // El servidor (migracion 022) rechaza con 42501 las operaciones de admin
+  // hechas por el personal. Reintentar no cambia el rol, asi que se descarta.
+  const motivo = 'Solo un administrador puede gestionar inventario, precios, reembolsos o anulaciones.';
+  assert.equal(clasificarFallo(motivo), 'descartada');
+  assert.equal(clasificarFallo(motivo, { intentos: 0, maxIntentos: 5 }), 'descartada');
+});
+
+test('una sesion expirada SI se reintenta (no se confunde con falta de rol)', () => {
+  // 'Autenticación requerida.' tambien usa el codigo 42501, pero NO es falta de
+  // permiso de rol: cuando el usuario vuelve a entrar, la operacion debe subir.
+  assert.equal(clasificarFallo('Autenticación requerida.'), 'reintentable');
+});
+
 // --- Red y reintentos -------------------------------------------------------
 
 test('un corte de internet se reintenta, no se descarta', () => {

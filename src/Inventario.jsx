@@ -8,7 +8,8 @@ import { mostrarAviso } from './avisos';
 export default function Inventario({
   inventario = [], nuevoItemInv, editandoInvId, cargandoImagen,
   manejarCambioInv, setImagenSeleccionada, guardarItemInventario,
-  cancelarEdicionInventario, cargarParaEditarInventario, eliminarItemInventario
+  cancelarEdicionInventario, cargarParaEditarInventario, eliminarItemInventario,
+  esAdmin = false
 }) {
   const [busqueda, setBusqueda] = useState('');
   const [imagenAmpliada, setImagenAmpliada] = useState(null);
@@ -137,6 +138,7 @@ export default function Inventario({
         </div>
       </div>
 
+      {esAdmin ? (
       <div className="bg-purple-50/70 p-4 sm:p-6 rounded-xl border border-purple-200 mb-6 sm:mb-8">
         <h3 className="font-bold text-purple-900 text-base sm:text-lg mb-4">{editandoInvId ? '✏️ Editando Producto' : '➕ Ingresar Nuevo Producto'}</h3>
         
@@ -230,6 +232,11 @@ export default function Inventario({
           </button>
         </div>
       </div>
+      ) : (
+      <div role="note" className="bg-gray-50 border border-gray-200 rounded-xl p-4 mb-6 sm:mb-8 text-sm text-gray-700 font-semibold">
+        🔒 Solo un administrador puede agregar, editar o eliminar productos. Aquí puedes consultar el inventario.
+      </div>
+      )}
 
       <input 
         type="text" 
@@ -319,12 +326,16 @@ export default function Inventario({
                         </button>
                       </>
                     )}
-                    <button type="button" onClick={() => cargarParaEditarInventario(item)} className="bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 px-2.5 py-1 rounded text-xs font-bold transition-colors shadow-sm">
-                      Editar
-                    </button>
-                    <button type="button" onClick={() => eliminarItemInventario(item.id)} className="bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 px-2.5 py-1 rounded text-xs font-bold transition-colors shadow-sm">
-                      Eliminar
-                    </button>
+                    {esAdmin && (
+                      <>
+                        <button type="button" onClick={() => cargarParaEditarInventario(item)} className="bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 px-2.5 py-1 rounded text-xs font-bold transition-colors shadow-sm">
+                          Editar
+                        </button>
+                        <button type="button" onClick={() => eliminarItemInventario(item.id)} className="bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 px-2.5 py-1 rounded text-xs font-bold transition-colors shadow-sm">
+                          Eliminar
+                        </button>
+                      </>
+                    )}
                   </div>
                 </td>
               </tr>

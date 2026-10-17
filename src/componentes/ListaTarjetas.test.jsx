@@ -91,10 +91,24 @@ describe('ListaTarjetas — venta anulada', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Borrado definitivo de un paciente: es irreversible, solo lo ve el admin.
+// ---------------------------------------------------------------------------
+describe('ListaTarjetas — borrado definitivo solo para el administrador', () => {
+  it('el administrador ve la papelera de borrado definitivo', () => {
+    render(<ListaTarjetas {...propsTarjeta({ esAdmin: true })} />);
+    expect(screen.getByLabelText(/Eliminar definitivamente/i)).toBeTruthy();
+  });
+
+  it('el personal NO ve la papelera de borrado definitivo', () => {
+    render(<ListaTarjetas {...propsTarjeta({ esAdmin: false })} />);
+    expect(screen.queryByLabelText(/Eliminar definitivamente/i)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // El flujo completo: la tarjeta + el diálogo global juntos.
 // ---------------------------------------------------------------------------
-describe('Flujo completo de confirmación', () => {
-  function Arnes({ abrirPedido }) {
+describe('Flujo completo de confirmación', () => {  function Arnes({ abrirPedido }) {
     const confirmacion = useConfirmacion();
     return (
       <>

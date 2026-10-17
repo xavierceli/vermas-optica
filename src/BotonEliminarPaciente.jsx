@@ -11,7 +11,7 @@ const plural = (n, uno, varios) => `${n} ${n === 1 ? uno : varios}`;
  * Boton de papelera + ventana de confirmacion del borrado definitivo de un paciente.
  * Si no hay conexion a internet, previene la accion y muestra un aviso informativo claro.
  */
-export default function BotonEliminarPaciente({ item, onEliminar }) {
+export default function BotonEliminarPaciente({ item, onEliminar, esAdmin = false }) {
   const [abierto, setAbierto] = useState(false);
   const [cargando, setCargando] = useState(false);
   const [resumen, setResumen] = useState(null);
@@ -70,6 +70,9 @@ export default function BotonEliminarPaciente({ item, onEliminar }) {
       setEjecutando(false);
     }
   };
+
+  // Borrar un paciente es irreversible: solo el administrador ve la papelera.
+  if (!esAdmin) return null;
 
   return (
     <>

@@ -19,7 +19,7 @@ const formatearContador = (num) => {
 export default function PedidosLista({
   crearVentaDirecta, busqueda, setBusqueda, pedidosFiltrados = [],
   imprimirRecibo, imprimirOrdenTrabajo, cancelarPedido, abrirPedido,
-  refrescarDatos
+  refrescarDatos, esAdmin = false
 }) {
 
   const [abonosRapidos, setAbonosRapidos] = useState({});
@@ -376,9 +376,11 @@ export default function PedidosLista({
                     <button type="button" onClick={() => imprimirOrdenTrabajo(item)} className="bg-gray-800 text-white px-3 py-1.5 rounded-lg text-xs sm:text-sm font-bold shadow-sm hover:bg-gray-900 transition-colors">
                       🖨️ Orden Lab
                     </button>
-                    <button type="button" onClick={() => manejarCancelarOptimista(item)} disabled={estaProcesando} className="bg-white border border-red-200 text-red-700 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-bold shadow-sm hover:bg-red-50 transition-colors disabled:opacity-50 active:scale-95">
-                      🗑️ Cancelar
-                    </button>
+                    {esAdmin && (
+                      <button type="button" onClick={() => manejarCancelarOptimista(item)} disabled={estaProcesando} className="bg-white border border-red-200 text-red-700 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-bold shadow-sm hover:bg-red-50 transition-colors disabled:opacity-50 active:scale-95">
+                        🗑️ Cancelar
+                      </button>
+                    )}
                     <button type="button" onClick={() => abrirPedido(item)} disabled={estaProcesando} className="bg-indigo-600 text-white px-4 sm:px-5 py-1.5 rounded-lg text-xs sm:text-sm font-bold shadow hover:bg-indigo-700 transition-colors disabled:opacity-50">
                       ✏️ Ver / Editar
                     </button>

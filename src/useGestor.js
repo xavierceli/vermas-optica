@@ -71,7 +71,8 @@ export function useGestor() {
 
   const {
     estaAutenticado, cargandoAuth, modoSinConexion, dispositivo,
-    configurarAccesoSinConexion, desactivarAccesoSinConexion, cerrarSesion, entrarSinConexion
+    configurarAccesoSinConexion, desactivarAccesoSinConexion, cerrarSesion, entrarSinConexion,
+    rol, esAdmin
   } = useAutenticacion({ mostrarToast, solicitarConfirmacion, obtenerDatos, limpiarDatos });
 
   const { syncEstado } = useSincronizacion(estaAutenticado);
@@ -79,7 +80,7 @@ export function useGestor() {
   return {
     guardando,
     obtenerDatos, solicitarConfirmacion, confirmar, cancelarConfirmacion, aceptarConfirmacion,
-    estaAutenticado, cargandoAuth, cerrarSesion,
+    estaAutenticado, cargandoAuth, cerrarSesion, rol, esAdmin,
     modoSinConexion, entrarSinConexion, dispositivo, configurarAccesoSinConexion, desactivarAccesoSinConexion,
     toast, confirmDialog, setConfirmDialog, vistaActual, setVistaActual, syncEstado, sincronizarAhora,
     obtenerDetalleCola, reintentarOperacion, descartarOperacion, descartarTodoLoAtascado,
