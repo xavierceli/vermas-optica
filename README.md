@@ -27,7 +27,9 @@ npm run dev        # servidor de desarrollo con recarga en vivo
 | `npm run build` | Genera la PWA en `dist/`. |
 | `npm run preview` | Sirve `dist/` para probar el build de producción. |
 | `npm run lint` | ESLint sobre todo el proyecto. |
-| `npm run test:local` | Suite de tests (`node --test`, sin dependencias extra). |
+| `npm run test:local` | Suite de lógica y escaneo (`node --test`). |
+| `npm run test:ui` | Suite de render e interacción (Vitest + jsdom). |
+| `npm test` | Las dos suites anteriores. |
 
 ## Variables de entorno (opcionales)
 
@@ -85,13 +87,18 @@ medio llenar.
 ## Tests
 
 ```bash
-npm run test:local
+npm test          # las dos suites
+npm run test:local   # lógica + escaneo de fuentes (node --test)
+npm run test:ui      # render e interacción (Vitest + jsdom)
 ```
 
-Son dos tipos: **lógica pura** (reglas de precio, sync, validaciones, fechas…) y
-**de escaneo de fuentes** (leen los `.jsx` como texto para vigilar reglas como
-"ninguna pantalla usa `alert()`"). No renderizan React, por eso corren con el
-runner integrado de Node y sin navegador ni bundler.
+- **`test:local`** (`src/**/*.test.js`): **lógica pura** (reglas de precio, sync,
+  validaciones, fechas…) y **escaneo de fuentes** (leen los `.jsx` como texto
+  para vigilar reglas como "ninguna pantalla usa `alert()`"). Corre con el runner
+  integrado de Node, sin navegador ni bundler.
+- **`test:ui`** (`src/**/*.test.jsx`): monta componentes de React de verdad con
+  Vitest + jsdom + Testing Library para comprobar comportamiento e interacción
+  (por ejemplo, el diálogo de confirmación de una venta anulada).
 
 ## Documentación
 

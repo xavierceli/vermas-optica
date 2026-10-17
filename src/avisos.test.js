@@ -621,8 +621,8 @@ test('ninguna pantalla vuelve a usar alert() ni window.confirm()', () => {
   // este test, y se veria en la revision.
   const culpables = [];
   for (const archivo of listarFuentes()) {
-    // Se ignoran los .test.js (comprueban el patron) y las lineas de comentario.
-    if (archivo.endsWith('.test.js')) continue;
+    // Se ignoran los .test.js/.test.jsx (comprueban el patron) y las lineas de comentario.
+    if (/\.test\.(js|jsx)$/.test(archivo)) continue;
     leer(archivo).split('\n').forEach((linea, i) => {
       if (linea.trim().startsWith('//')) return;
       if (/(^|[^.\w])alert\s*\(/.test(linea) || /window\.confirm\s*\(/.test(linea)) {

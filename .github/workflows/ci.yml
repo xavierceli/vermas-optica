@@ -24,8 +24,8 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Tests
-        run: npm run test:local
+      - name: Tests (lógica + render)
+        run: npm test
 
       - name: Build
         run: npm run build
