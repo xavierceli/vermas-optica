@@ -15,7 +15,6 @@ const MIGRACIONES = join(dirname(fileURLToPath(import.meta.url)), '..', 'supabas
 const leer = nombre => readFileSync(join(MIGRACIONES, nombre), 'utf8');
 
 const m020 = leer('202609240020_normaliza_estado_stock.sql');
-const m021 = leer('202609240021_anular_venta_producto_borrado.sql');
 
 // --- C-03: la devolucion de stock distinguia mayusculas -----------------------
 

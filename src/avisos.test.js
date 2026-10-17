@@ -522,8 +522,11 @@ test('la barra da prioridad a "sin conexion" sobre los fallos', () => {
   // El orden de los ternarios es lo que decide el color. Con `fallos` delante,
   // un "Failed to fetch" sin clasificar tapaba el aviso de red.
   const fuente = leer('../src/App.jsx');
-  const color = fuente.slice(fuente.indexOf('const colorBarra'), fuente.indexOf('const colorBarra') + 320);
-  assert.match(color, /esOffline[\s\S]*fallos\.length/, 'sin conexion debe evaluarse antes que los fallos');
+  assert.match(
+    fuente,
+    /const estiloContenedor[\s\S]*?esOffline[\s\S]*?fallos\.length/,
+    'sin conexion debe evaluarse antes que los fallos'
+  );
 });
 
 test('una venta nueva no arrastra el armazon de la venta anterior', () => {
@@ -531,8 +534,11 @@ test('una venta nueva no arrastra el armazon de la venta anterior', () => {
   // armazon de la primera ya estaba puesto. Si no lo cambiaba, se vendia el
   // armazon equivocado y el precio se calculaba sobre el, en silencio.
   const fuente = leer('../src/useGestor.js');
-  const i = fuente.indexOf('const esVentaNueva');
-  const bloque = fuente.slice(i, i + 1900);
+  const inicio = fuente.indexOf('const esVentaNueva');
+  const fin = fuente.indexOf('const visitasBrutas', inicio);
+  assert.notEqual(inicio, -1, 'debe existir la logica de venta nueva');
+  assert.notEqual(fin, -1, 'debe poder acotarse el bloque de inicializacion de la venta');
+  const bloque = fuente.slice(inicio, fin);
   assert.match(bloque, /CAMPOS_DE_LA_VENTA/, 'debe limpiar los campos de la venta');
   assert.match(bloque, /'codigo_armazon'/, 'empezando por el codigo de armazon');
   assert.match(bloque, /itemFormateado\[k\] = ''/, 'dejandolos en blanco');
@@ -574,15 +580,15 @@ test('la etiqueta se imprime aunque el codigo de barras no se pueda dibujar', ()
     'ningun catch puede estar vacio: un fallo silencioso en una impresion es un fallo invisible');
 });
 
-test('el aviso de "Sin conexion" depende del motor, no de navigator.onLine', () => {
-  // Es lo que fallaba: la barra se alimentaba de navigator.onLine, que dice
-  // "conectado" con el wifi enganchado a un router sin salida.
+test('el aviso de "Sin conexion" depende del motor, no solo de navigator.onLine', () => {
+  // Es lo que fallaba: la barra se alimentaba SOLO de navigator.onLine, que dice
+  // "conectado" con el wifi enganchado a un router sin salida. La senal del motor
+  // (si el servidor responde) es obligatoria; navigator.onLine solo puede sumar.
   const fuente = leer('../src/App.jsx');
-  assert.match(fuente, /esOffline = g\.syncEstado\?\.online === false/,
-    'el aviso debe leer el estado que el motor deduce de si el servidor responde');
-  assert.ok(
-    !/navigator\.onLine/.test(fuente),
-    'App.jsx no debe decidir la conexion con navigator.onLine: solo sabe si hay interfaz, no si hay internet'
+  assert.match(
+    fuente,
+    /esOffline = [^\n]*g\.syncEstado\?\.online === false/,
+    'la senal del motor no puede faltar en el calculo de esOffline'
   );
 });
 

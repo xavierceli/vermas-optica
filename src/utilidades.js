@@ -1,6 +1,4 @@
 import { supabase } from './supabaseClient';
-import { mostrarAviso } from './avisos';
-import { neutralizarFormula } from './escape';
 import { construirFiltroBusqueda } from './busquedaServidor';
 
 export const safeString = (val) => {
@@ -111,48 +109,10 @@ export const calcularTiempoTranscurrido = (fecha) => {
   }
 };
 
-export const generarDiagnosticos = (item) => {
-  try {
-    let diag = [];
-    const esfOd = safeNum(item?.esfera_od); 
-    const cilOd = safeNum(item?.cilindro_od); 
-    const addOd = safeNum(item?.adicion_od);
-    const esfOi = safeNum(item?.esfera_oi); 
-    const cilOi = safeNum(item?.cilindro_oi); 
-    const addOi = safeNum(item?.adicion_oi);
-
-    if (esfOd < 0 || esfOi < 0) diag.push("Miopía (H52.1)");
-    if (esfOd > 0 || esfOi > 0) diag.push("Hipermetropía (H52.0)");
-    if (cilOd !== 0 || cilOi !== 0) diag.push("Astigmatismo (H52.2)");
-    if (addOd > 0 || addOi > 0) diag.push("Presbicia (H52.4)");
-    return [...new Set(diag)];
-  } catch { 
-    return []; 
-  }
-};
-
-export const descargarCSV = (datos, nombreArchivo) => {
-  if (!datos || datos.length === 0) return mostrarAviso("No hay datos para exportar.");
-  const cabeceras = Object.keys(datos[0]);
-  const filas = datos.map(fila => {
-    return cabeceras.map(cab => {
-      const valor = neutralizarFormula(fila[cab]).replace(/"/g, '""');
-      return `"${valor}"`;
-    }).join(';');
-  });
-  
-  const contenido = [cabeceras.join(';'), ...filas].join('\r\n');
-  const blob = new Blob(['\uFEFF' + contenido], { type: 'text/csv;charset=utf-8;' });
-  const link = document.createElement("a");
-  const url = URL.createObjectURL(blob);
-  link.href = url;
-  link.download = `${nombreArchivo}.csv`;
-  link.style.display = 'none';
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
-};
+// generarDiagnosticos vive ahora en historial.js (modulo puro, sin dependencias
+// de red). Aqui se reexporta para conservar la API que ya usaba impresiones.js y
+// no mantener dos copias de la misma logica clinica.
+export { generarDiagnosticos } from './historial.js';
 
 export const buscarPacientesEnSupabase = async (textoBusqueda, { incluirArchivados = false } = {}) => {
   try {

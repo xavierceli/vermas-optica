@@ -58,15 +58,16 @@ export default function PedidosForm({
   // FILTRADO ESTRICTO DE ARMAZONES EN STOCK (PUNTOS 2 Y 4)
   // Excluye automáticamente ítems sin stock para que no se puedan seleccionar,
   // permitiendo únicamente el armazón que ya tenía asignado este pedido en edición.
+  const codigoArmazonActual = pedidoSeleccionado?.codigo_armazon;
   const armazonesDisponibles = useMemo(() => {
-    const codigoActual = safeString(pedidoSeleccionado?.codigo_armazon).toUpperCase().trim();
+    const codigoActual = safeString(codigoArmazonActual).toUpperCase().trim();
     return (inventario || []).filter(i => {
       if (!i || i.categoria !== 'Armazon') return false;
       const esElMismoDeEstaVenta = codigoActual !== '' && safeString(i.codigo).toUpperCase().trim() === codigoActual;
       const tieneStock = safeNum(i.stock) > 0 && i.estado !== 'Vendido';
       return tieneStock || esElMismoDeEstaVenta;
     });
-  }, [inventario, pedidoSeleccionado?.codigo_armazon]);
+  }, [inventario, codigoArmazonActual]);
 
   const bloqueado = procesando || subiendoComprobante;
 

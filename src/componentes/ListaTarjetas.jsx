@@ -4,7 +4,7 @@
 // La pantalla de inicio del Historial: buscador y una tarjeta por paciente con
 // su ultima visita.
 // ---------------------------------------------------------------------------
-import { safeString, safeNum, calcularEdad, calcularTiempoTranscurrido } from '../utilidades.js';
+import { safeString, calcularEdad, calcularTiempoTranscurrido } from '../utilidades.js';
 import { generarDiagnosticos, resumenConsulta } from '../historial.js';
 import { imprimirInforme, imprimirRecetaSimple } from '../impresiones.js';
 import BotonComprobante from '../BotonComprobante.jsx';

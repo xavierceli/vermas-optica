@@ -96,7 +96,7 @@ test('cada vista se dibuja dentro de su propio ErrorBoundary', () => {
     /<ErrorBoundary[^>]*clave=\{g\.vistaActual\}/.test(fuente),
     'el borde debe depender de la vista: asi al cambiar de seccion se olvida el error'
   );
-  assert.match(fuente, /import\('\.\/Historial\.jsx'\)/,
+  assert.match(fuente, /from '\.\/Historial\.jsx'/,
     'Historial necesita extension explicita porque existe historial.js con distinto uso de mayusculas');
 });
 

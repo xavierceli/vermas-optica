@@ -3,6 +3,7 @@ import { safeString, safeNum } from './utilidades';
 import { resolverUrlImagenInventario } from './imagenesInventario';
 import { imprimirEtiqueta } from './impresiones';
 import { imprimirEtiquetaD30 } from './d30Printer';
+import { mostrarAviso } from './avisos';
 
 export default function Inventario({
   inventario = [], nuevoItemInv, editandoInvId, cargandoImagen,
@@ -85,7 +86,7 @@ export default function Inventario({
       });
     } catch (err) {
       if (err.name !== 'NotFoundError') {
-        alert('Error con impresora D30: ' + (err.message || err));
+        mostrarAviso('Error con impresora D30: ' + (err.message || err), 'error');
       }
     } finally {
       setImprimiendoD30Id(null);
