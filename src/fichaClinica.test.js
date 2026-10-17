@@ -191,7 +191,7 @@ test('useGestor le pasa a aplicarCedula los NOMBRES que la funcion entiende', ()
   // reventaba, los tests de la funcion pasaban, y el resultado era que el
   // optometria NO PUEDE ESCRIBIR la cedula (llegaba undefined y el input se
   // quedaba vacio). Este test compara los dos lados de la llamada.
-  const fuente = leer('useGestor.js');
+  const fuente = leer('hooks/useClinica.js');
   const llamada = /aplicarCedula\(\{([\s\S]*?)\}\)/.exec(fuente);
   assert.ok(llamada, 'debe existir la llamada a aplicarCedula en useGestor');
 

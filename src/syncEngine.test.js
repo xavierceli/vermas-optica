@@ -104,9 +104,9 @@ test('la migración del cache antiguo se marca como hecha incluso si falla', () 
 });
 
 test('un fallo en la migración no impide cargar los datos', () => {
-  const gestor = readFileSync(join(SRC, 'useGestor.js'), 'utf8');
-  const bloque = gestor.slice(gestor.indexOf('const obtenerDatos'));
-  const cuerpo = bloque.slice(0, bloque.indexOf('useEffect'));
+  const modulo = readFileSync(join(SRC, 'hooks', 'useDatosLocales.js'), 'utf8');
+  const bloque = modulo.slice(modulo.indexOf('const obtenerDatos'));
+  const cuerpo = bloque.slice(0, bloque.indexOf('const limpiarDatos'));
   // Si la migracion lanza sin capturar, obtenerSnapshotLocal nunca se ejecuta
   // y la pantalla queda vacia.
   assert.match(cuerpo, /try\s*\{[\s\S]*?await importLegacyCache\(\);[\s\S]*?\}\s*catch/,

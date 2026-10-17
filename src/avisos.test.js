@@ -447,14 +447,14 @@ test('eliminar un paciente pide confirmacion y dice lo que hace', () => {
   assert.match(boton, /Se borrará para siempre/, 'el aviso debe explicar claramente el alcance');
   assert.match(boton, /escribe la cédula/, 'debe exigir escribir la cedula para confirmar');
   assert.match(boton, /NO se puede deshacer/, 'y advertir que es irreversible');
-  const gestor = leer('../src/useGestor.js');
-  assert.match(gestor, /Paciente eliminado definitivamente/,
+  const clinica = leer('../src/hooks/useClinica.js');
+  assert.match(clinica, /Paciente eliminado definitivamente/,
     'el mensaje debe decir lo que realmente se borro');
-  assert.ok(!/eliminados de raíz/.test(gestor),
+  assert.ok(!/eliminados de raíz/.test(clinica),
     'no debe prometer un borrado que el servidor pudo no hacer');
-  assert.ok(!/eliminar_paciente_completo/.test(gestor),
+  assert.ok(!/eliminar_paciente_completo/.test(clinica),
     'la funcion antigua, que dejaba registros huerfanos, ya no se usa');
-  assert.ok(!/mostrarToast\('Consulta archivada\.'/.test(gestor),
+  assert.ok(!/mostrarToast\('Consulta archivada\.'/.test(clinica),
     '"Consulta archivada" hacia creer que solo se habia escondido una visita');
 });
 
@@ -473,8 +473,8 @@ test('archivar un paciente NO hace desaparecer su venta de Pedidos', () => {
   // La combinacion de las tres fuentes (historial, ventas archivadas y ventas
   // locales) vive ahora en src/estadisticas.js, en unificarPedidos(). Aqui se
   // comprueba que el hook le pase las tres y que ese modulo las junte de verdad.
-  const gestor = leer('../src/useGestor.js');
-  assert.match(gestor, /unificarPedidos\(\{\s*historial,\s*ventasArchivadas,\s*ventasLocales\s*\}\)/,
+  const pedidos = leer('../src/hooks/usePedidos.js');
+  assert.match(pedidos, /unificarPedidos\(\{\s*historial,\s*ventasArchivadas,\s*ventasLocales\s*\}\)/,
     'la lista de pedidos debe combinar ventas archivadas con las demás');
 
   const modulo = leer('../src/estadisticas.js');
@@ -533,7 +533,7 @@ test('una venta nueva no arrastra el armazon de la venta anterior', () => {
   // BUG REAL: el optometria abria el formulario de una segunda venta y el
   // armazon de la primera ya estaba puesto. Si no lo cambiaba, se vendia el
   // armazon equivocado y el precio se calculaba sobre el, en silencio.
-  const fuente = leer('../src/useGestor.js');
+  const fuente = leer('../src/hooks/usePedidos.js');
   const inicio = fuente.indexOf('const esVentaNueva');
   const fin = fuente.indexOf('const visitasBrutas', inicio);
   assert.notEqual(inicio, -1, 'debe existir la logica de venta nueva');
@@ -547,14 +547,19 @@ test('una venta nueva no arrastra el armazon de la venta anterior', () => {
 });
 
 test('las estadísticas se recalculan cuando se actualizan los datos de pedidos', () => {
-  const fuente = leer('../src/useGestor.js');
+  const fuente = leer('../src/hooks/usePedidos.js');
   assert.match(fuente, /const todosLosPedidosUnificados = useMemo/,
     'pedidos debe consolidar las fuentes locales actualizadas');
   // El calculo vive ahora en src/estadisticas.js (funcion pura, probada aparte en
   // estadisticas.test.js). Aqui se comprueba lo que ese modulo no puede: que React
   // lo recalcule cuando cambian los datos de pedidos o historial.
-  assert.match(fuente, /const stats = useMemo\([\s\S]*?todosLosPedidosUnificados[\s\S]*?historial[\s\S]*?mesActual[\s\S]*?\]\)/,
-    'las estadísticas deben recalcularse a partir del pedido e historial vigentes');
+  const inicio = fuente.indexOf('const stats = useMemo(');
+  assert.notEqual(inicio, -1, 'debe existir el calculo de estadisticas en el hook');
+  const bloque = fuente.slice(inicio, fuente.indexOf(');', inicio) + 2);
+  assert.match(bloque, /todosLosPedidosUnificados/, 'las estadísticas salen de los pedidos');
+  assert.match(bloque, /historial/, 'y del historial clínico');
+  assert.match(bloque, /\[\s*todosLosPedidosUnificados,\s*historial,\s*mesActual\s*\]/,
+    'las estadísticas deben recalcularse cuando cambie el pedido, el historial o el mes');
 });
 test('imprimir no depende SOLO del evento load de la ventana', () => {
   // BUG REAL: sin internet, la etiqueta no imprimia NADA. El <script src> del
