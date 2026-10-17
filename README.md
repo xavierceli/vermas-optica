@@ -9,7 +9,7 @@ primero en el dispositivo y se sincroniza con Supabase cuando hay conexión.
 
 ## Requisitos
 
-- Node.js `^20.19.0 || >=22.12.0` (la versión recomendada está en `.nvmrc`).
+- Node.js `>=22.12.0` (la versión recomendada está en `.nvmrc`).
 - npm.
 
 ## Arranque
