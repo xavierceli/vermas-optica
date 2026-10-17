@@ -72,6 +72,22 @@ test('los reintentos esperan de forma progresiva (backoff)', () => {
     'el tiempo de espera debe crecer de forma exponencial');
 });
 
+test('una sincronizacion ya en curso se espera, no se ignora', () => {
+  // Sintoma real: tras el primer inicio de sesion la app mostraba 0 pacientes
+  // aunque IndexedDB ya tenia 30. `obtenerDatos()` dispara su pull a la vez que
+  // `iniciarMotorSync()`; si la segunda llamada devolvia de inmediato, su
+  // `.then` leia el snapshot anterior (vacio la primera vez) y la pantalla no
+  // se refrescaba hasta recargar la pagina.
+  const bloque = fuente.slice(fuente.indexOf('export const sincronizarAhora'));
+  const cuerpo = bloque.slice(0, bloque.indexOf('running = true;'));
+  assert.match(cuerpo, /if\s*\(running\)/, 'debe detectar la sincronizacion en curso');
+  assert.match(cuerpo, /runningPromise/, 'debe existir la promesa de la ejecucion en curso');
+  assert.match(cuerpo, /await runningPromise/,
+    'la segunda llamada debe esperar a la que ya corre, no devolver de inmediato');
+  assert.match(fuente, /if \(finalizarEjecucion\) finalizarEjecucion\(\);/,
+    'al terminar debe liberar a quienes estaban esperando');
+});
+
 test('la cola no crece sin limite', () => {
   assert.match(fuente, /purgarDescartadas/,
     'las descartadas se purgan tras su ventana de retencion');

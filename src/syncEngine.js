@@ -17,6 +17,10 @@ const MAX_INTENTOS = 5;
 const TIEMPO_ESPERA_BASE_MS = 15000;
 
 let running = false;
+// Promesa de la sincronizacion en curso. Permite que las llamadas que llegan
+// mientras hay una en marcha esperen a que termine en vez de devolver un
+// snapshot a medias.
+let runningPromise = null;
 let started = false;
 let intervalId = null;
 let unsubscribeFocus = null;
@@ -417,7 +421,21 @@ const pullServerCache = async () => {
 };
 
 export const sincronizarAhora = async ({ pull = true } = {}) => {
-  if (running) { await refreshCounts(); emit(); return status; }
+  if (running) {
+    // Ya hay una sincronizacion en curso: esperamos a que acabe antes de
+    // devolver. Si no, quien llama (p. ej. obtenerDatos) refrescaria la
+    // pantalla con el snapshot anterior -- vacio tras el primer inicio de
+    // sesion -- y los datos descargados no aparecerian hasta recargar.
+    if (runningPromise) {
+      try { await runningPromise; } catch { /* el error ya quedo en `status` */ }
+    } else {
+      await refreshCounts();
+      emit();
+    }
+    return status;
+  }
+  let finalizarEjecucion;
+  runningPromise = new Promise(resolve => { finalizarEjecucion = resolve; });
   running = true;
   status.phase = 'syncing';
   status.lastError = null;
@@ -481,6 +499,8 @@ export const sincronizarAhora = async ({ pull = true } = {}) => {
     emit();
   } finally {
     running = false;
+    runningPromise = null;
+    if (finalizarEjecucion) finalizarEjecucion();
   }
   return status;
 };
