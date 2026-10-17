@@ -76,38 +76,10 @@ export const comprimirImagen = (archivo) => {
   });
 };
 
-export { calcularEdad } from './fechas';
-
-export const calcularTiempoTranscurrido = (fecha) => {
-  try {
-    if (!fecha) return '';
-    const partesFecha = fecha.split('-');
-    if (partesFecha.length !== 3) return '';
-    const inicio = new Date(partesFecha[0], partesFecha[1] - 1, partesFecha[2]);
-    const hoyTemp = new Date();
-    const fin = new Date(hoyTemp.getFullYear(), hoyTemp.getMonth(), hoyTemp.getDate());
-    if (inicio.getTime() === fin.getTime()) return 'Hoy';
-    if (inicio > fin) return '0 días';
-    let anios = fin.getFullYear() - inicio.getFullYear();
-    let meses = fin.getMonth() - inicio.getMonth();
-    let dias = fin.getDate() - inicio.getDate();
-    if (dias < 0) { 
-      meses--; 
-      dias += new Date(fin.getFullYear(), fin.getMonth(), 0).getDate(); 
-    }
-    if (meses < 0) { 
-      anios--; 
-      meses += 12; 
-    }
-    let partes = [];
-    if (anios > 0) partes.push(`${anios} año${anios > 1 ? 's' : ''}`);
-    if (meses > 0) partes.push(`${meses} mes${meses > 1 ? 'es' : ''}`);
-    if (dias > 0) partes.push(`${dias} día${dias > 1 ? 's' : ''}`);
-    return partes.length === 0 ? 'Hoy' : 'hace ' + partes.join(', ');
-  } catch { 
-    return ''; 
-  }
-};
+// calcularEdad y calcularTiempoTranscurrido viven en fechas.js (modulo puro, sin
+// dependencias de red) para poder probarlos con node --test. Aqui se reexportan
+// para conservar la API que ya usaban las vistas.
+export { calcularEdad, calcularTiempoTranscurrido } from './fechas';
 
 // generarDiagnosticos vive ahora en historial.js (modulo puro, sin dependencias
 // de red). Aqui se reexporta para conservar la API que ya usaba impresiones.js y

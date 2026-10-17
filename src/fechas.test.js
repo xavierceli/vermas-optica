@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { calcularEdad, parsearFechaLocal, nombreDelMes, nombreCortoDelMes } from './fechas.js';
+import { calcularEdad, calcularTiempoTranscurrido, parsearFechaLocal, nombreDelMes, nombreCortoDelMes } from './fechas.js';
 
 // BUG REAL Y MEDIDO: `new Date('1990-05-15')` no es medianoche local, es
 // MEDIANOCHE UTC. En Ecuador (UTC-5) eso es el dia 14 a las 19:00, y la edad se
@@ -103,4 +103,40 @@ test('parsearFechaLocal acepta tambien una fecha con hora', () => {
 
 test('un bebe recien nacido tiene 0 anos, no -1', () => {
   assert.equal(calcularEdad('2026-05-14', HOY_CUMPLE), 0);
+});
+
+// BUG REAL: la consulta del 7 de octubre se mostraba como "(Hoy)" el 17 de
+// octubre. La fecha de las consultas lleva hora ("2026-10-07 18:14"), y el
+// parser anterior construia un Date invalido: todas las comparaciones fallaban
+// y no se acumulaba ningun tramo, asi que el texto era SIEMPRE "Hoy".
+const HOY_17 = new Date(2026, 9, 17);
+
+test('una consulta con hora NO se marca como "Hoy" si es de otro dia', () => {
+  assert.equal(calcularTiempoTranscurrido('2026-10-07 18:14', HOY_17), 'hace 10 días');
+});
+
+test('una consulta de hoy si se marca como "Hoy" (incluso con hora)', () => {
+  assert.equal(calcularTiempoTranscurrido('2026-10-17 09:05', HOY_17), 'Hoy');
+  assert.equal(calcularTiempoTranscurrido('2026-10-17', HOY_17), 'Hoy');
+});
+
+test('el tiempo transcurrido no depende de la zona horaria de la maquina', () => {
+  assert.equal(calcularTiempoTranscurrido('2026-01-01', new Date(2026, 0, 1)), 'Hoy');
+  assert.equal(calcularTiempoTranscurrido('2026-01-01 23:59', new Date(2026, 0, 2)), 'hace 1 día');
+});
+
+test('el tiempo transcurrido acumula anios, meses y dias', () => {
+  assert.equal(calcularTiempoTranscurrido('2024-10-17', new Date(2026, 9, 17)), 'hace 2 años');
+  assert.equal(calcularTiempoTranscurrido('2026-08-17', new Date(2026, 9, 17)), 'hace 2 meses');
+  assert.equal(calcularTiempoTranscurrido('2025-08-17', new Date(2026, 9, 17)), 'hace 1 año, 2 meses');
+});
+
+test('una fecha ilegible no rompe la etiqueta', () => {
+  assert.equal(calcularTiempoTranscurrido(''), '');
+  assert.equal(calcularTiempoTranscurrido(null), '');
+  assert.equal(calcularTiempoTranscurrido('no es una fecha'), '');
+});
+
+test('una fecha futura no dice "Hoy"', () => {
+  assert.equal(calcularTiempoTranscurrido('2026-12-31', HOY_17), '0 días');
 });

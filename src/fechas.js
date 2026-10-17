@@ -95,3 +95,51 @@ export const calcularEdad = (fechaNacimiento, hoy = new Date()) => {
     return '';
   }
 };
+
+/**
+ * Texto relativo de una fecha: "Hoy", "hace 3 días", "hace 1 año, 2 meses".
+ * Acepta 'AAAA-MM-DD' y 'AAAA-MM-DD HH:MM' (así guardan las consultas).
+ *
+ * BUG REAL: la versión anterior hacía `fecha.split('-')` y pasaba el día ya
+ * contaminado por la hora ("07 18:14") al constructor de Date, que producía una
+ * fecha inválida. Todas las comparaciones daban falso, no se acumulaba ningún
+ * tramo y el texto era SIEMPRE "Hoy": una consulta del 7 de octubre se mostraba
+ * como "(Hoy)" el 17 de octubre. Ahora se aísla el día antes de comparar.
+ *
+ * @param {string|Date} fecha
+ * @param {Date} [hoy] Fecha de referencia (útil para pruebas unitarias)
+ */
+export const calcularTiempoTranscurrido = (fecha, hoy = new Date()) => {
+  try {
+    if (!fecha) return '';
+    // Nos quedamos con el día: la hora no cambia "hace cuántos días".
+    const base = fecha instanceof Date ? fecha : String(fecha).trim().slice(0, 10);
+    const inicio = parsearFechaLocal(base);
+    if (!inicio) return '';
+
+    const fin = hoyLocal(hoy);
+    const inicioDia = new Date(inicio.getFullYear(), inicio.getMonth(), inicio.getDate());
+    if (inicioDia.getTime() === fin.getTime()) return 'Hoy';
+    if (inicioDia > fin) return '0 días';
+
+    let anios = fin.getFullYear() - inicioDia.getFullYear();
+    let meses = fin.getMonth() - inicioDia.getMonth();
+    let dias = fin.getDate() - inicioDia.getDate();
+    if (dias < 0) {
+      meses--;
+      dias += new Date(fin.getFullYear(), fin.getMonth(), 0).getDate();
+    }
+    if (meses < 0) {
+      anios--;
+      meses += 12;
+    }
+
+    const partes = [];
+    if (anios > 0) partes.push(`${anios} año${anios > 1 ? 's' : ''}`);
+    if (meses > 0) partes.push(`${meses} mes${meses > 1 ? 'es' : ''}`);
+    if (dias > 0) partes.push(`${dias} día${dias > 1 ? 's' : ''}`);
+    return partes.length === 0 ? 'Hoy' : 'hace ' + partes.join(', ');
+  } catch {
+    return '';
+  }
+};
