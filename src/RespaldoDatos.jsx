@@ -136,10 +136,10 @@ export default function RespaldoDatos() {
       <div className="flex flex-wrap gap-2 mt-3">
         <button type="button" onClick={descargar} disabled={ocupado}
           title={avisoPeso?.texto}
-          className={`${BOTON} bg-teal-600 hover:bg-teal-700 text-white`}>
+          className={`${BOTON} bg-teal-700 hover:bg-teal-800 text-white`}>
           {ocupado ? 'Preparando...' : '⬇ Descargar respaldo'}
           {!ocupado && avisoPeso?.tipo === 'ok' && (
-            <span className="font-normal opacity-80"> ({avisoPeso.texto.replace('El respaldo pesará unos ', '')})</span>
+            <span className="font-normal"> ({avisoPeso.texto.replace('El respaldo pesará unos ', '')})</span>
           )}
         </button>
 

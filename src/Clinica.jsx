@@ -269,7 +269,7 @@ export default function Clinica({
             className={`text-white px-6 py-2.5 rounded-lg font-bold shadow-md transition-all flex items-center justify-center gap-2 ${
               guardando 
                 ? 'bg-gray-400 cursor-not-allowed' 
-                : 'bg-teal-600 hover:bg-teal-700 active:scale-95'
+                : 'bg-teal-700 hover:bg-teal-800 active:scale-95'
             }`}
           >
             {guardando ? <><span>⏳</span> Guardando...</> : '💾 Guardar Clínica'}
@@ -474,7 +474,7 @@ export default function Clinica({
           className={`w-full sm:w-auto text-white px-10 py-3.5 rounded-xl font-black text-base shadow-xl transition-all flex items-center justify-center gap-2 ${
             guardando 
               ? 'bg-gray-400 cursor-not-allowed' 
-              : 'bg-teal-600 hover:bg-teal-700 active:scale-95 shadow-teal-300'
+              : 'bg-teal-700 hover:bg-teal-800 active:scale-95 shadow-teal-300'
           }`}
         >
           {guardando ? <><span>⏳</span> Guardando...</> : '💾 Guardar Medición Clínica'}

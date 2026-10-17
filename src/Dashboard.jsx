@@ -162,7 +162,7 @@ export default function Dashboard({ stats, historial, inventario }) {
                 <li key={index} className="flex justify-between items-center">
                   <span className="font-semibold text-gray-800 text-xs sm:text-sm">{item[0]}</span>
                   <div className="flex-1 mx-2 sm:mx-3 h-2.5 bg-gray-100 rounded-full overflow-hidden border border-gray-200">
-                    <div className="h-full bg-teal-600 rounded-full" style={{ width: `${(item[1] / topTratamientos[0][1]) * 100}%` }}></div>
+                    <div className="h-full bg-teal-700 rounded-full" style={{ width: `${(item[1] / topTratamientos[0][1]) * 100}%` }}></div>
                   </div>
                   <span className="text-teal-900 font-black text-xs sm:text-sm">{item[1]}</span>
                 </li>

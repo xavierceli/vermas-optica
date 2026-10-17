@@ -155,7 +155,7 @@ export default function Login({ dispositivo, entrarSinConexion }) {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100 p-4">
+    <main id="contenido" className="min-h-screen flex items-center justify-center bg-gray-100 p-4">
       <div className="bg-white p-6 sm:p-8 rounded-2xl shadow-xl w-full max-w-md border-t-8 border-teal-600">
         
         <div className="text-center mb-6 sm:mb-8">
@@ -204,7 +204,7 @@ export default function Login({ dispositivo, entrarSinConexion }) {
             <button 
               type="submit" 
               disabled={cargando}
-              className={`w-full p-3 rounded-lg font-black text-white shadow-md transition-all text-sm sm:text-base ${cargando ? 'bg-gray-400 cursor-not-allowed' : 'bg-teal-600 hover:bg-teal-700 active:scale-95'}`}
+              className={`w-full p-3 rounded-lg font-black text-white shadow-md transition-all text-sm sm:text-base ${cargando ? 'bg-gray-400 cursor-not-allowed' : 'bg-teal-700 hover:bg-teal-800 active:scale-95'}`}
             >
               {cargando ? 'Guardando...' : '🔐 Guardar Nueva Contraseña'}
             </button>
@@ -253,7 +253,7 @@ export default function Login({ dispositivo, entrarSinConexion }) {
               disabled={cargando}
               className={`w-full p-3 rounded-lg font-black text-white shadow-md transition-all text-sm sm:text-base ${
                 cargando ? 'bg-gray-400 cursor-not-allowed' : 
-                modoRecuperar ? 'bg-amber-500 hover:bg-amber-600 active:scale-95' : 'bg-teal-600 hover:bg-teal-700 active:scale-95'
+                modoRecuperar ? 'bg-amber-700 hover:bg-amber-800 active:scale-95' : 'bg-teal-700 hover:bg-teal-800 active:scale-95'
               }`}
             >
               {cargando ? 'Procesando...' : (modoRecuperar ? '📧 Enviar Enlace' : '🔐 Ingresar al Sistema')}
@@ -295,7 +295,7 @@ export default function Login({ dispositivo, entrarSinConexion }) {
                 <button
                   type="submit"
                   disabled={desbloqueando || pinLocal.length < 4}
-                  className="flex-1 py-2.5 rounded-lg font-bold text-white bg-teal-600 hover:bg-teal-700 disabled:opacity-50 transition-colors text-xs sm:text-sm"
+                  className="flex-1 py-2.5 rounded-lg font-bold text-white bg-teal-700 hover:bg-teal-800 disabled:opacity-50 transition-colors text-xs sm:text-sm"
                 >
                   {desbloqueando ? 'Abriendo…' : 'Entrar sin conexión'}
                 </button>
@@ -315,6 +315,6 @@ export default function Login({ dispositivo, entrarSinConexion }) {
         )}
 
       </div>
-    </div>
+    </main>
   );
 }

@@ -64,7 +64,7 @@ export default function ListaTarjetas({
               crearNuevoPaciente(busquedaTexto.trim());
             }
           }} 
-          className="w-full sm:w-auto bg-teal-600 hover:bg-teal-700 text-white px-5 py-2.5 rounded-lg font-bold shadow-md transition-colors flex items-center justify-center gap-2"
+          className="w-full sm:w-auto bg-teal-700 hover:bg-teal-800 text-white px-5 py-2.5 rounded-lg font-bold shadow-md transition-colors flex items-center justify-center gap-2"
         >
           ➕ Registrar Nuevo Paciente
         </button>
@@ -149,7 +149,7 @@ export default function ListaTarjetas({
                     <button type="button" onClick={() => abrirExpedienteCompleto(item)} className="text-xs sm:text-sm bg-indigo-50 text-indigo-700 border border-indigo-200 px-3 py-1.5 rounded-lg font-bold shadow-sm hover:bg-indigo-100 transition-colors flex items-center gap-1">
                       🗂️ Ver Evolución
                     </button>
-                    <button type="button" onClick={() => enviarWhatsApp(item)} className="text-xs sm:text-sm bg-green-600 text-white px-3 py-1.5 rounded-lg font-semibold shadow-sm hover:bg-green-700 transition-colors">
+                    <button type="button" onClick={() => enviarWhatsApp(item)} className="text-xs sm:text-sm bg-green-700 text-white px-3 py-1.5 rounded-lg font-semibold shadow-sm hover:bg-green-800 transition-colors">
                       💬 WhatsApp
                     </button>
                     
@@ -309,7 +309,7 @@ export default function ListaTarjetas({
                               {esAnulado ? 'Venta Anulada' : tieneDeudaReal ? '⚠ Costo Final (Con Saldo Pendiente)' : 'Costo Final'}
                             </span>
                             <div className="flex items-baseline gap-2">
-                              <span className={`text-base sm:text-xl font-black ${esAnulado ? 'line-through text-gray-400' : tieneDeudaReal ? 'text-red-600 animate-pulse' : 'text-gray-900'}`}>
+                              <span className={`text-base sm:text-xl font-black ${esAnulado ? 'line-through text-gray-500' : tieneDeudaReal ? 'text-red-600 animate-pulse' : 'text-gray-900'}`}>
                                 ${vFinal.toFixed(2)}
                               </span>
                               {!esAnulado && desc > 0 && <span className="text-xs text-green-700 font-bold">(-{desc}%)</span>}
@@ -321,7 +321,7 @@ export default function ListaTarjetas({
                             </div>
                           </>
                         ) : (
-                          <span className="text-xs text-gray-400 italic">Sin venta asociada</span>
+                          <span className="text-xs text-gray-500 italic">Sin venta asociada</span>
                         )}
                       </div>
 
@@ -354,7 +354,7 @@ export default function ListaTarjetas({
                             <button
                               type="button"
                               onClick={() => prepararNuevaVenta(item)}
-                              className="text-xs px-3 py-1.5 rounded-lg font-bold transition-all shadow-sm bg-emerald-600 hover:bg-emerald-700 text-white active:scale-95 flex items-center gap-1"
+                              className="text-xs px-3 py-1.5 rounded-lg font-bold transition-all shadow-sm bg-emerald-700 hover:bg-emerald-800 text-white active:scale-95 flex items-center gap-1"
                               title="Crear una nueva venta para este paciente"
                             >
                               🛒 Nueva Venta
@@ -367,7 +367,7 @@ export default function ListaTarjetas({
                               onClick={() => abrirPedido(item)} 
                               className={`text-xs px-3.5 py-1.5 rounded-lg font-bold transition-all shadow-sm flex items-center gap-1.5 ${
                                 !tienePedido
-                                  ? 'bg-teal-600 hover:bg-teal-700 text-white active:scale-95'
+                                  ? 'bg-teal-700 hover:bg-teal-800 text-white active:scale-95'
                                   : tieneDeudaReal 
                                   ? 'bg-red-600 hover:bg-red-700 text-white active:scale-95' 
                                   : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 active:scale-95'
@@ -379,7 +379,7 @@ export default function ListaTarjetas({
                               <button
                                 type="button"
                                 onClick={() => prepararNuevaVenta(item)}
-                                className="text-xs px-3 py-1.5 rounded-lg font-bold transition-all shadow-sm bg-emerald-600 hover:bg-emerald-700 text-white active:scale-95 flex items-center gap-1"
+                                className="text-xs px-3 py-1.5 rounded-lg font-bold transition-all shadow-sm bg-emerald-700 hover:bg-emerald-800 text-white active:scale-95 flex items-center gap-1"
                                 title="Crear otra venta adicional para este paciente con saldo pendiente"
                               >
                                 🛒 Nueva Venta
@@ -432,7 +432,7 @@ export default function ListaTarjetas({
                     crearNuevoPaciente(busquedaTexto.trim());
                   }
                 }} 
-                className="mt-3 bg-teal-600 text-white px-6 py-2.5 rounded-lg font-bold shadow-md hover:bg-teal-700 transition-colors text-sm"
+                className="mt-3 bg-teal-700 text-white px-6 py-2.5 rounded-lg font-bold shadow-md hover:bg-teal-800 transition-colors text-sm"
               >
                 ➕ Registrar como Nuevo Paciente
               </button>

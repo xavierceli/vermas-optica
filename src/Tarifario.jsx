@@ -213,7 +213,7 @@ export default function Tarifario({
             <button 
               type="button" 
               onClick={guardarPrecio} 
-              className="w-full p-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-bold rounded-lg text-xs sm:text-sm shadow-md transition-all"
+              className="w-full p-2.5 bg-emerald-700 hover:bg-emerald-800 active:scale-95 text-white font-bold rounded-lg text-xs sm:text-sm shadow-md transition-all"
             >
               {editandoPrecioId ? '💾 Actualizar Tarifa' : '➕ Guardar en Tarifario'}
             </button>

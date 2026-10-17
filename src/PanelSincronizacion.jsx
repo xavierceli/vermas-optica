@@ -223,7 +223,7 @@ export default function PanelSincronizacion({ abierta, cerrar, gestor, soloProbl
                             <span className="font-bold">Causa: </span>{op.motivo}
                           </p>
                         )}
-                        <p className="text-[10px] text-gray-400 mt-1">
+                        <p className="text-[10px] text-gray-500 mt-1">
                           Registrado: {new Date(op.creada).toLocaleString('es-EC')}
                         </p>
                       </div>

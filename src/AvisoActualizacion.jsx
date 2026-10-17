@@ -122,7 +122,7 @@ export default function AvisoActualizacion({ hayTrabajoSinGuardar = false, confi
           <button
             type="button"
             onClick={() => window.location.reload()}
-            className="flex-1 sm:flex-none px-3 py-2 rounded-lg bg-teal-500 hover:bg-teal-600 text-xs font-bold transition-colors"
+            className="flex-1 sm:flex-none px-3 py-2 rounded-lg bg-teal-700 hover:bg-teal-800 text-xs font-bold transition-colors"
           >
             {fallo ? 'Recargar ahora' : 'Actualizando…'}
           </button>
@@ -130,7 +130,7 @@ export default function AvisoActualizacion({ hayTrabajoSinGuardar = false, confi
           <button
             type="button"
             onClick={aplicar}
-            className="flex-1 sm:flex-none px-3 py-2 rounded-lg bg-teal-500 hover:bg-teal-600 text-xs font-bold transition-colors"
+            className="flex-1 sm:flex-none px-3 py-2 rounded-lg bg-teal-700 hover:bg-teal-800 text-xs font-bold transition-colors"
           >
             Actualizar
           </button>

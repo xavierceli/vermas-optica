@@ -244,7 +244,7 @@ export default function PedidosLista({
           <h2 className="text-xl sm:text-2xl font-bold text-gray-900">🛍️ Gestión de Ventas y Pedidos</h2>
           <p className="text-xs text-gray-600">Control de órdenes de laboratorio, entregas y pagos.</p>
         </div>
-        <button type="button" onClick={crearVentaDirecta} className="w-full sm:w-auto bg-amber-500 hover:bg-amber-600 text-white px-5 sm:px-6 py-2.5 rounded-lg font-bold shadow-md transition-all active:scale-95 text-sm sm:text-base">
+        <button type="button" onClick={crearVentaDirecta} className="w-full sm:w-auto bg-amber-700 hover:bg-amber-800 text-white px-5 sm:px-6 py-2.5 rounded-lg font-bold shadow-md transition-all active:scale-95 text-sm sm:text-base">
           🛒 Nueva Venta Directa
         </button>
       </div>
@@ -280,7 +280,7 @@ export default function PedidosLista({
             className={`px-3 sm:px-4 py-2 text-xs sm:text-sm font-bold rounded-t-lg transition-colors whitespace-nowrap flex items-center gap-2 ${filtroTab === 'Activos' ? 'bg-indigo-50 text-indigo-900 border-b-2 border-indigo-600' : 'text-gray-600 hover:bg-gray-50'}`}
           >
             <span>🔥 Con Saldo</span>
-            <span className={`px-2 py-0.5 rounded-full text-xs font-black shadow-sm ${conteos.pendientes > 0 ? 'bg-red-500 text-white animate-pulse' : 'bg-gray-200 text-gray-600'}`}>
+            <span className={`px-2 py-0.5 rounded-full text-xs font-black shadow-sm ${conteos.pendientes > 0 ? 'bg-red-600 text-white animate-pulse' : 'bg-gray-200 text-gray-600'}`}>
               {formatearContador(conteos.pendientes)}
             </span>
           </button>
@@ -291,7 +291,7 @@ export default function PedidosLista({
             className={`px-3 sm:px-4 py-2 text-xs sm:text-sm font-bold rounded-t-lg transition-colors whitespace-nowrap flex items-center gap-2 ${filtroTab === 'Laboratorio' ? 'bg-yellow-50 text-yellow-900 border-b-2 border-yellow-500' : 'text-gray-600 hover:bg-gray-50'}`}
           >
             <span>🟡 En Laboratorio</span>
-            <span className={`px-2 py-0.5 rounded-full text-xs font-black shadow-sm ${conteos.laboratorio > 0 ? 'bg-yellow-500 text-white' : 'bg-gray-200 text-gray-600'}`}>
+            <span className={`px-2 py-0.5 rounded-full text-xs font-black shadow-sm ${conteos.laboratorio > 0 ? 'bg-yellow-500 text-yellow-950' : 'bg-gray-200 text-gray-600'}`}>
               {formatearContador(conteos.laboratorio)}
             </span>
           </button>
@@ -450,7 +450,7 @@ export default function PedidosLista({
                           type="button"
                           onClick={() => ejecutarCobro(item)}
                           disabled={estaProcesando}
-                          className="bg-green-600 text-white px-4 py-1.5 rounded-lg font-bold text-xs sm:text-sm hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed shadow-sm transition-colors whitespace-nowrap active:scale-95"
+                          className="bg-green-700 text-white px-4 py-1.5 rounded-lg font-bold text-xs sm:text-sm hover:bg-green-800 disabled:bg-gray-400 disabled:cursor-not-allowed shadow-sm transition-colors whitespace-nowrap active:scale-95"
                         >
                           {estaProcesando
                             ? (subiendoId === item.id ? 'Subiendo...' : 'Procesando...')

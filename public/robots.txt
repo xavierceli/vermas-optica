@@ -1,0 +1,4 @@
+# VER+ Óptica es una aplicación privada de gestión clínica y comercial.
+# No debe indexarse en buscadores: contiene datos de pacientes.
+User-agent: *
+Disallow: /

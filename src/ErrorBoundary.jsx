@@ -102,7 +102,7 @@ export default class ErrorBoundary extends Component {
         </p>
 
         <div className="flex flex-wrap gap-3 justify-center">
-          <button type="button" onClick={this.reintentar} className={`${BOTON} bg-teal-600 hover:bg-teal-700 text-white`}>
+          <button type="button" onClick={this.reintentar} className={`${BOTON} bg-teal-700 hover:bg-teal-800 text-white`}>
             🔄 Reintentar
           </button>
           <button type="button" onClick={() => window.location.reload()} className={`${BOTON} bg-gray-100 hover:bg-gray-200 text-gray-700`}>

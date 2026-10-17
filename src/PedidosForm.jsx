@@ -457,7 +457,7 @@ export default function PedidosForm({
                    </div>
                  )}
 
-                 <button type="button" onClick={registrarAbono} disabled={bloqueado} className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2.5 rounded-lg text-xs sm:text-sm shadow-md transition-all active:scale-95 disabled:bg-gray-400 disabled:cursor-not-allowed">
+                 <button type="button" onClick={registrarAbono} disabled={bloqueado} className="w-full bg-green-700 hover:bg-green-800 text-white font-bold py-2.5 rounded-lg text-xs sm:text-sm shadow-md transition-all active:scale-95 disabled:bg-gray-400 disabled:cursor-not-allowed">
                    {subiendoComprobante ? "Guardando comprobante..." : "➕ Registrar Abono"}
                  </button>
 

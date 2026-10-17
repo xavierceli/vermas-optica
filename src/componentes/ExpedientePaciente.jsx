@@ -107,7 +107,7 @@ export default function ExpedientePaciente({
                 onCargarParaEditar(expediente);
               }
             }} 
-            className="bg-teal-600 hover:bg-teal-700 text-white px-4 py-2 rounded-lg font-bold text-sm shadow transition-colors w-full md:w-auto flex items-center justify-center gap-1.5"
+            className="bg-teal-700 hover:bg-teal-800 text-white px-4 py-2 rounded-lg font-bold text-sm shadow transition-colors w-full md:w-auto flex items-center justify-center gap-1.5"
           >
             ➕ Nueva Consulta
           </button>
@@ -303,9 +303,9 @@ export default function ExpedientePaciente({
                             {reg.tratam_ar === 'SI' && ' +AR'} {reg.tratam_ar_azul === 'SI' && ' +AR Azul'} {reg.tratam_azul === 'SI' && ' +Filtro Azul'} {reg.tratam_foto === 'SI' && ' +Foto'}
                           </td>
                           <td className="p-2 border-r text-center font-bold text-gray-900">
-                            {esAnulado ? <span className="line-through text-gray-400">${safeNum(reg.venta).toFixed(2)}</span> : `$${vFinal.toFixed(2)}`}
+                            {esAnulado ? <span className="line-through text-gray-500">${safeNum(reg.venta).toFixed(2)}</span> : `$${vFinal.toFixed(2)}`}
                           </td>
-                          <td className={`p-2 border-r text-center font-black ${esAnulado ? 'text-gray-400' : saldo > 0 ? 'text-red-600' : 'text-emerald-700'}`}>
+                          <td className={`p-2 border-r text-center font-black ${esAnulado ? 'text-gray-500' : saldo > 0 ? 'text-red-600' : 'text-emerald-700'}`}>
                             ${esAnulado ? '0.00' : Math.max(0, saldo).toFixed(2)}
                           </td>
                           <td className="p-2 border-r text-center">

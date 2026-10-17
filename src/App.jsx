@@ -265,7 +265,7 @@ function App() {
       {/* 2. Etiqueta de versión ultra delgada vertical */}
       <aside 
         aria-label="Información de compilación" 
-        className="fixed top-1/2 -translate-y-1/2 left-0 z-30 hidden sm:flex flex-col items-center py-2 px-0.5 bg-gray-900/30 hover:bg-gray-900/90 backdrop-blur-xs text-white rounded-r border-r border-t border-b border-gray-700/40 shadow-xs transition-all duration-300 opacity-40 hover:opacity-100 cursor-pointer group"
+        className="fixed top-1/2 -translate-y-1/2 left-0 z-30 hidden sm:flex flex-col items-center py-2 px-0.5 bg-gray-900/80 hover:bg-gray-900 backdrop-blur-xs text-white rounded-r border-r border-t border-b border-gray-700/40 shadow-xs transition-all duration-300 cursor-pointer group"
         onClick={() => {
           if (typeof __BUILD_ID__ !== 'undefined') {
             navigator.clipboard?.writeText(String(__BUILD_ID__));
@@ -273,7 +273,7 @@ function App() {
         }}
         title={`Versión: ${__BUILD_ID__ || 'DEV'} (${textoFechaCompilacion}). Haz clic para copiar.`}
       >
-        <span className="text-[8px] font-mono text-gray-300 [writing-mode:vertical-rl] rotate-180 tracking-widest uppercase py-1 select-none">
+        <span className="text-[8px] font-mono text-gray-100 [writing-mode:vertical-rl] rotate-180 tracking-widest uppercase py-1 select-none">
           {typeof __BUILD_ID__ === 'undefined' ? 'DEV' : __BUILD_ID__}
         </span>
       </aside>
@@ -307,7 +307,7 @@ function App() {
                 borradorActivo.descartar
               );
             }}
-            className="text-gray-400 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition-colors text-base shrink-0"
+            className="text-gray-500 hover:text-red-600 p-1.5 rounded-lg hover:bg-red-50 transition-colors text-base shrink-0"
             title="Descartar borrador"
           >
             🗑️
@@ -320,7 +320,7 @@ function App() {
           role="status"
           aria-live="polite"
           className={`fixed top-20 sm:top-24 right-3 sm:right-6 z-50 flex items-center gap-3 px-4 sm:px-6 py-3 sm:py-4 rounded-xl shadow-2xl transition-all max-w-sm sm:max-w-md ${
-            g.toast.tipo === 'success' ? 'bg-teal-600 text-white' : g.toast.tipo === 'error' ? 'bg-red-600 text-white' : 'bg-amber-500 text-white'
+            g.toast.tipo === 'success' ? 'bg-teal-700 text-white' : g.toast.tipo === 'error' ? 'bg-red-600 text-white' : 'bg-amber-700 text-white'
           }`}
         >
           <span className="text-xl sm:text-2xl" aria-hidden="true">{g.toast.tipo === 'success' ? '✅' : g.toast.tipo === 'error' ? '❌' : '⚠️'}</span>
@@ -393,7 +393,7 @@ function App() {
                 <span>{estadoOutbox.icono}</span>
                 <span className="leading-tight text-left">
                   <span className="block">{estadoOutbox.texto}</span>
-                  <span className="block text-[10px] font-bold opacity-75">{estadoOutbox.detalle}</span>
+                  <span className="block text-[10px] font-bold">{estadoOutbox.detalle}</span>
                 </span>
               </button>
             </div>
@@ -414,13 +414,13 @@ function App() {
             <button type="button" onClick={() => g.setVistaActual('historial')} className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold shadow-sm transition-all shrink-0 ${g.vistaActual === 'historial' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>📋 Historial</button>
             
             {mostrarPestanaClinica && (
-              <button type="button" onClick={() => g.setVistaActual('nueva_medicion')} className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold shadow-sm transition-all shrink-0 ${g.vistaActual === 'nueva_medicion' ? 'bg-teal-600 text-white' : 'bg-teal-50 text-teal-800 border border-teal-300 hover:bg-teal-100'}`}>🩺 Clínica</button>
+              <button type="button" onClick={() => g.setVistaActual('nueva_medicion')} className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold shadow-sm transition-all shrink-0 ${g.vistaActual === 'nueva_medicion' ? 'bg-teal-700 text-white' : 'bg-teal-50 text-teal-800 border border-teal-300 hover:bg-teal-100'}`}>🩺 Clínica</button>
             )}
 
             <button type="button" onClick={() => g.setVistaActual('pedidos_lista')} className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold shadow-sm transition-all shrink-0 ${g.vistaActual.includes('pedido') ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>🛍️ Pedidos</button>
             <button type="button" onClick={() => {g.setVistaActual('inventario'); g.cancelarEdicionInventario();}} className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold shadow-sm transition-all shrink-0 ${g.vistaActual === 'inventario' ? 'bg-purple-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>👓 Inventario</button>
-            <button type="button" onClick={() => g.setVistaActual('precios')} className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold shadow-sm transition-all shrink-0 ${g.vistaActual === 'precios' ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>🏷️ Tarifario</button>
-            <button type="button" onClick={() => g.setVistaActual('dashboard')} className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold shadow-sm transition-all shrink-0 ${g.vistaActual === 'dashboard' ? 'bg-amber-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>📊 Stats</button>
+            <button type="button" onClick={() => g.setVistaActual('precios')} className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold shadow-sm transition-all shrink-0 ${g.vistaActual === 'precios' ? 'bg-emerald-700 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>🏷️ Tarifario</button>
+            <button type="button" onClick={() => g.setVistaActual('dashboard')} className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold shadow-sm transition-all shrink-0 ${g.vistaActual === 'dashboard' ? 'bg-amber-700 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>📊 Stats</button>
             
             <div className="border-l-2 border-gray-200 h-6 mx-1 hidden md:block"></div>
             <button type="button" onClick={g.cerrarSesion} className="px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold shadow-sm bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 transition-all shrink-0 ml-auto">🚪 Salir</button>
