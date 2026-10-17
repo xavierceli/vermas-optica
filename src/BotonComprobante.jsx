@@ -52,7 +52,6 @@ export default function BotonComprobante({
         onClick={abrir}
         disabled={cargando}
         title={cargando ? 'Abriendo comprobante...' : 'Abrir comprobante'}
-        aria-label={cargando ? 'Abriendo comprobante' : 'Abrir comprobante de pago'}
         aria-busy={cargando}
         className={`transition-all touch-manipulation ${className} ${cargando ? 'opacity-60 cursor-wait' : 'active:scale-95'}`}
       >

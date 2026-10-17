@@ -273,7 +273,7 @@ export default function Inventario({
                       title="Clic para agrandar"
                     />
                   ) : (
-                    <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-gray-500 text-[10px] border border-gray-200 text-center leading-tight px-0.5 font-medium"
+                    <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center text-gray-600 text-[10px] border border-gray-200 text-center leading-tight px-0.5 font-medium"
                          title={item.imagen_url ? 'La foto no se pudo cargar o está pendiente de subida' : 'Este producto no tiene foto'}>
                       {item.imagen_url ? '⏳ Local' : 'Sin foto'}
                     </div>

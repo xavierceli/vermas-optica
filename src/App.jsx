@@ -423,7 +423,7 @@ function App() {
             <button type="button" onClick={() => g.setVistaActual('dashboard')} className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold shadow-sm transition-all shrink-0 ${g.vistaActual === 'dashboard' ? 'bg-amber-700 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>📊 Stats</button>
             
             <div className="border-l-2 border-gray-200 h-6 mx-1 hidden md:block"></div>
-            <button type="button" onClick={g.cerrarSesion} className="px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold shadow-sm bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 transition-all shrink-0 ml-auto">🚪 Salir</button>
+            <button type="button" onClick={g.cerrarSesion} className="px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold shadow-sm bg-red-50 text-red-700 hover:bg-red-100 border border-red-200 transition-all shrink-0 ml-auto">🚪 Salir</button>
           </nav>
         </header>
 
