@@ -84,7 +84,9 @@ function App() {
     : conflictos > 0
       ? { texto: 'Conflictos', detalle: `${conflictos} por revisar`, clases: 'bg-amber-100 text-amber-800 border-amber-300', icono: '⚠️' }
       : esOffline
-        ? { texto: 'Sin conexión', detalle: detalleCola, clases: 'bg-slate-800 text-slate-100 border-slate-600', icono: '📴' }
+        ? (g.modoSinConexion
+          ? { texto: 'PIN local', detalle: detalleCola, clases: 'bg-purple-100 text-purple-900 border-purple-300', icono: '🔓' }
+          : { texto: 'Sin conexión', detalle: detalleCola, clases: 'bg-slate-800 text-slate-100 border-slate-600', icono: '📴' })
         : sincronizando
           ? { texto: 'Sincronizando...', detalle: pendientes > 0 ? `Pendientes: ${pendientes}` : 'Enviando a la nube', clases: 'bg-blue-100 text-blue-800 border-blue-300', icono: '🔄' }
           : pendientes > 0
@@ -370,7 +372,7 @@ function App() {
 
       <main id="contenido" className="max-w-[1400px] mx-auto space-y-4 sm:space-y-6">
 
-        <header className="bg-white p-3 sm:p-4 rounded-xl shadow-sm flex flex-col md:flex-row justify-between items-center border border-gray-100 gap-3 sm:gap-4">
+        <header className="bg-white p-3 sm:p-4 rounded-xl shadow-sm flex flex-col md:flex-row md:flex-wrap justify-between items-center border border-gray-100 gap-3 sm:gap-4">
           <div className="flex flex-wrap items-center justify-between w-full md:w-auto gap-3">
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="font-extrabold text-teal-800 text-xl sm:text-2xl tracking-wider">VER+ ÓPTICA</h1>
@@ -415,7 +417,7 @@ function App() {
             </button>
           )}
 
-          <nav aria-label="Secciones principales" className="flex flex-wrap sm:flex-nowrap gap-1.5 sm:gap-2 items-center w-full md:w-auto overflow-x-auto pb-1 sm:pb-0">
+          <nav aria-label="Secciones principales" className="flex flex-wrap justify-center gap-1.5 sm:gap-2 items-center w-full md:w-auto min-w-0">
             <button type="button" onClick={() => g.setVistaActual('historial')} className={`px-3 sm:px-4 py-2 rounded-lg text-xs sm:text-sm font-bold shadow-sm transition-all shrink-0 ${g.vistaActual === 'historial' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>📋 Historial</button>
             
             {mostrarPestanaClinica && (

@@ -115,7 +115,7 @@ export default function ListaTarjetas({
                           <button 
                             type="button" 
                             onClick={() => toggleAlias(claveItem)}
-                            className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold transition-all shadow-sm border ${aliasVisibles?.[claveItem] ? 'bg-teal-50 text-teal-800 border-teal-300' : 'bg-gray-100 text-gray-700 border-gray-200 hover:bg-teal-50 hover:text-teal-700'}`}
+                            className={`flex items-center gap-1.5 px-2.5 py-1 min-h-8 rounded-full text-xs font-bold transition-all shadow-sm border ${aliasVisibles?.[claveItem] ? 'bg-teal-50 text-teal-800 border-teal-300' : 'bg-gray-100 text-gray-700 border-gray-200 hover:bg-teal-50 hover:text-teal-700'}`}
                             title="Clic para ver u ocultar Alias"
                           >
                             🏷️ {aliasVisibles?.[claveItem] ? safeString(item?.alias) : 'Alias'}
@@ -141,28 +141,28 @@ export default function ListaTarjetas({
                           cargarParaEditarClinico(item);
                         }
                       }} 
-                      className="text-xs sm:text-sm bg-teal-50 text-teal-800 border border-teal-300 px-3 py-1.5 rounded-lg font-bold shadow-sm hover:bg-teal-100 transition-colors flex items-center gap-1"
+                      className="text-xs sm:text-sm bg-teal-50 text-teal-800 border border-teal-300 px-3 py-1.5 min-h-10 rounded-lg font-bold shadow-sm hover:bg-teal-100 transition-colors flex items-center gap-1"
                       title="Registrar una nueva evaluación clínica a este paciente"
                     >
                       ➕ Nueva Consulta
                     </button>
-                    <button type="button" onClick={() => abrirExpedienteCompleto(item)} className="text-xs sm:text-sm bg-indigo-50 text-indigo-700 border border-indigo-200 px-3 py-1.5 rounded-lg font-bold shadow-sm hover:bg-indigo-100 transition-colors flex items-center gap-1">
+                    <button type="button" onClick={() => abrirExpedienteCompleto(item)} className="text-xs sm:text-sm bg-indigo-50 text-indigo-700 border border-indigo-200 px-3 py-1.5 min-h-10 rounded-lg font-bold shadow-sm hover:bg-indigo-100 transition-colors flex items-center gap-1">
                       🗂️ Ver Evolución
                     </button>
-                    <button type="button" onClick={() => enviarWhatsApp(item)} className="text-xs sm:text-sm bg-green-700 text-white px-3 py-1.5 rounded-lg font-semibold shadow-sm hover:bg-green-800 transition-colors">
+                    <button type="button" onClick={() => enviarWhatsApp(item)} className="text-xs sm:text-sm bg-green-700 text-white px-3 py-1.5 min-h-10 rounded-lg font-semibold shadow-sm hover:bg-green-800 transition-colors">
                       💬 WhatsApp
                     </button>
                     
                     <div className="flex border border-gray-300 rounded-lg overflow-hidden shadow-sm">
-                      <button type="button" onClick={() => imprimirInforme(item)} className="text-xs sm:text-sm bg-gray-100 text-gray-800 px-2.5 sm:px-3 py-1.5 font-semibold hover:bg-gray-200 transition-colors">
+                      <button type="button" onClick={() => imprimirInforme(item)} className="text-xs sm:text-sm bg-gray-100 text-gray-800 px-2.5 sm:px-3 py-1.5 min-h-10 font-semibold hover:bg-gray-200 transition-colors">
                         📄 Informe
                       </button>
-                      <button type="button" onClick={() => imprimirRecetaSimple(item)} className="text-xs sm:text-sm bg-gray-100 text-gray-800 px-2.5 sm:px-3 py-1.5 font-semibold border-l border-gray-300 hover:bg-gray-200 transition-colors">
+                      <button type="button" onClick={() => imprimirRecetaSimple(item)} className="text-xs sm:text-sm bg-gray-100 text-gray-800 px-2.5 sm:px-3 py-1.5 min-h-10 font-semibold border-l border-gray-300 hover:bg-gray-200 transition-colors">
                         📝 Receta
                       </button>
                     </div>
                     
-                    <button type="button" onClick={() => cargarParaEditarClinico(item)} className="text-xs sm:text-sm bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-1.5 rounded-lg font-bold shadow-sm hover:bg-blue-100 transition-colors" title="Editar / Corregir esta consulta">
+                    <button type="button" onClick={() => cargarParaEditarClinico(item)} className="text-xs sm:text-sm bg-blue-50 text-blue-700 border border-blue-200 px-2.5 py-1.5 min-h-10 min-w-10 rounded-lg font-bold shadow-sm hover:bg-blue-100 transition-colors flex items-center justify-center" title="Editar / Corregir esta consulta">
                       ✏️
                     </button>
                     <BotonEliminarPaciente item={item} onEliminar={manejarBorradoCompleto} esAdmin={esAdmin} />
@@ -279,7 +279,7 @@ export default function ListaTarjetas({
                                       <BotonComprobante
                                         ruta={item.comprobante_url}
                                         refId={safeString(item?.pedido_id) || claveItem}
-                                        className="font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-0.5 rounded border border-indigo-300 shadow-sm cursor-pointer transition-colors"
+                                        className="font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 min-h-9 inline-flex items-center rounded border border-indigo-300 shadow-sm cursor-pointer transition-colors"
                                       >
                                         Ver Comprobante 📄
                                       </BotonComprobante>

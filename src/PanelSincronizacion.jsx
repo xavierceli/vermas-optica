@@ -155,7 +155,9 @@ export default function PanelSincronizacion({ abierta, cerrar, gestor, soloProbl
             </h2>
             <p className="text-xs text-gray-600 mt-1" aria-live="polite">
               {estadoSync.online === false
-                ? 'Sin conexión: los cambios están seguros en este equipo.'
+                ? (gestor?.modoSinConexion
+                  ? 'Sin sesión: los cambios están seguros en este equipo y subirán al iniciar sesión.'
+                  : 'Sin conexión: los cambios están seguros en este equipo.')
                 : 'Con conexión a internet.'}
               {estadoSync.phase === 'syncing' ? ' Sincronizando ahora…' : ''}
               {ultimaSync ? ` Última sincronización: ${ultimaSync}.` : ''}

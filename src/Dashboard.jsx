@@ -102,7 +102,7 @@ export default function Dashboard({ stats, historial, inventario }) {
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4 mb-8 sm:mb-10">
         
         <div className="col-span-2 lg:col-span-1 bg-gradient-to-br from-indigo-50 to-indigo-100 p-4 sm:p-5 rounded-xl border border-indigo-200 shadow-sm flex flex-col justify-between">
-          <p className="text-indigo-900 font-bold text-xs uppercase tracking-tight flex items-center gap-1"><span>👥</span> Total Pacientes</p>
+          <p className="text-indigo-900 font-bold text-xs uppercase tracking-tight flex items-center gap-1" title="Pacientes con ventas o consultas registradas (no incluye consumidor final)"><span>👥</span> Pacientes atendidos</p>
           <p className="text-2xl sm:text-3xl font-black text-indigo-950 mt-2">{stats?.totalPacientes || 0}</p>
         </div>
 

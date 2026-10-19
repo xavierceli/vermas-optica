@@ -274,7 +274,7 @@ export default function PedidosLista({
       </div>
 
       {!busqueda.trim().length && (
-        <div className="flex gap-2 overflow-x-auto mb-6 pb-2 border-b border-gray-200">
+        <div className="flex flex-wrap gap-2 mb-6 pb-2 border-b border-gray-200">
           <button 
             type="button" 
             onClick={() => setFiltroTab('Activos')} 
@@ -339,7 +339,11 @@ export default function PedidosLista({
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
                   <div>
                     <h3 className="font-extrabold text-lg text-indigo-950">{safeString(item.nombre)}</h3>
-                    <p className="text-xs sm:text-sm text-gray-700 font-semibold mb-1">{safeString(item.pedido_id) ? `Pedido: ${safeString(item.fecha_venta || item.fecha).slice(0, 10)} | ` : ''}Registro: {safeString(item.fecha)} | 🆔 {safeString(item.cedula)}</p>
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs sm:text-sm text-gray-700 font-semibold mb-1">
+                      {safeString(item.pedido_id) && <span>Pedido: {safeString(item.fecha_venta || item.fecha).slice(0, 10)}</span>}
+                      <span>Registro: {safeString(item.fecha)}</span>
+                      <span>🆔 {safeString(item.cedula)}</span>
+                    </div>
                     <div className="flex gap-2 items-center flex-wrap mt-1">
                       
                       <select 
@@ -347,7 +351,7 @@ export default function PedidosLista({
                         value={safeString(item.estado) || 'Ninguno'} 
                         onChange={(e) => cambiarEstadoRapido(item, e.target.value)}
                         disabled={estaProcesando}
-                        className={`px-3 py-1 rounded-full text-xs font-bold uppercase cursor-pointer outline-none border shadow-sm transition-colors disabled:opacity-60 ${
+                        className={`px-3 py-1 min-h-9 rounded-full text-xs font-bold uppercase cursor-pointer outline-none border shadow-sm transition-colors disabled:opacity-60 ${
                           item.estado === 'Entregado' ? 'bg-green-100 text-green-900 border-green-300' : 
                           item.estado === 'Listo para Entrega' ? 'bg-blue-100 text-blue-900 border-blue-300' : 
                           item.estado === 'En laboratorio' ? 'bg-yellow-100 text-yellow-900 border-yellow-300' : 
@@ -364,25 +368,25 @@ export default function PedidosLista({
                         <BotonComprobante
                           ruta={item.comprobante_url}
                           refId={item.pedido_id || item.id}
-                          className="text-xs bg-indigo-50 text-indigo-700 font-bold px-3 py-1 rounded-full border border-indigo-200 hover:bg-indigo-100 flex items-center gap-1 shadow-sm"
+                          className="text-xs bg-indigo-50 text-indigo-700 font-bold px-3 py-1 min-h-9 rounded-full border border-indigo-200 hover:bg-indigo-100 flex items-center gap-1 shadow-sm"
                         />
                       )}
                     </div>
                   </div>
                   
                   <div className="flex gap-1.5 sm:gap-2 flex-wrap justify-start sm:justify-end w-full md:w-auto">
-                    <button type="button" onClick={() => imprimirRecibo(item)} className="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-xs sm:text-sm font-bold shadow-sm hover:bg-blue-700 transition-colors">
+                    <button type="button" onClick={() => imprimirRecibo(item)} className="bg-blue-600 text-white px-3 py-1.5 min-h-10 rounded-lg text-xs sm:text-sm font-bold shadow-sm hover:bg-blue-700 transition-colors">
                       🧾 Recibo
                     </button>
-                    <button type="button" onClick={() => imprimirOrdenTrabajo(item)} className="bg-gray-800 text-white px-3 py-1.5 rounded-lg text-xs sm:text-sm font-bold shadow-sm hover:bg-gray-900 transition-colors">
+                    <button type="button" onClick={() => imprimirOrdenTrabajo(item)} className="bg-gray-800 text-white px-3 py-1.5 min-h-10 rounded-lg text-xs sm:text-sm font-bold shadow-sm hover:bg-gray-900 transition-colors">
                       🖨️ Orden Lab
                     </button>
                     {esAdmin && (
-                      <button type="button" onClick={() => manejarCancelarOptimista(item)} disabled={estaProcesando} className="bg-white border border-red-200 text-red-700 px-3 py-1.5 rounded-lg text-xs sm:text-sm font-bold shadow-sm hover:bg-red-50 transition-colors disabled:opacity-50 active:scale-95">
+                      <button type="button" onClick={() => manejarCancelarOptimista(item)} disabled={estaProcesando} className="bg-white border border-red-200 text-red-700 px-3 py-1.5 min-h-10 rounded-lg text-xs sm:text-sm font-bold shadow-sm hover:bg-red-50 transition-colors disabled:opacity-50 active:scale-95">
                         🗑️ Cancelar
                       </button>
                     )}
-                    <button type="button" onClick={() => abrirPedido(item)} disabled={estaProcesando} className="bg-indigo-600 text-white px-4 sm:px-5 py-1.5 rounded-lg text-xs sm:text-sm font-bold shadow hover:bg-indigo-700 transition-colors disabled:opacity-50">
+                    <button type="button" onClick={() => abrirPedido(item)} disabled={estaProcesando} className="bg-indigo-600 text-white px-4 sm:px-5 py-1.5 min-h-10 rounded-lg text-xs sm:text-sm font-bold shadow hover:bg-indigo-700 transition-colors disabled:opacity-50">
                       ✏️ Ver / Editar
                     </button>
                   </div>
@@ -421,14 +425,14 @@ export default function PedidosLista({
                           disabled={estaProcesando}
                           value={abonosRapidos[item.id] || ''} 
                           onChange={(e) => manejarCambioAbono(item.id, e.target.value)}
-                          className="w-20 p-1.5 border border-gray-300 rounded outline-none text-sm text-center font-bold bg-white text-gray-900 disabled:opacity-60" 
+                          className="w-20 p-1.5 min-h-9 border border-gray-300 rounded outline-none text-sm text-center font-bold bg-white text-gray-900 disabled:opacity-60" 
                         />
                         <select 
                           aria-label="Forma de pago"
                           value={metodoActual} 
                           disabled={estaProcesando}
                           onChange={(e) => manejarCambioFormaPago(item.id, e.target.value)}
-                          className="p-1.5 border border-gray-300 rounded outline-none text-xs bg-white font-semibold cursor-pointer text-gray-900 disabled:opacity-60" 
+                          className="p-1.5 min-h-9 border border-gray-300 rounded outline-none text-xs bg-white font-semibold cursor-pointer text-gray-900 disabled:opacity-60" 
                         >
                           <option value="Efectivo">Efectivo</option>
                           <option value="Transferencia">Transferencia</option>
@@ -451,7 +455,7 @@ export default function PedidosLista({
                           type="button"
                           onClick={() => ejecutarCobro(item)}
                           disabled={estaProcesando}
-                          className="bg-green-700 text-white px-4 py-1.5 rounded-lg font-bold text-xs sm:text-sm hover:bg-green-800 disabled:bg-gray-400 disabled:cursor-not-allowed shadow-sm transition-colors whitespace-nowrap active:scale-95"
+                          className="bg-green-700 text-white px-4 py-1.5 min-h-10 rounded-lg font-bold text-xs sm:text-sm hover:bg-green-800 disabled:bg-gray-400 disabled:cursor-not-allowed shadow-sm transition-colors whitespace-nowrap active:scale-95"
                         >
                           {estaProcesando
                             ? (subiendoId === item.id ? 'Subiendo...' : 'Procesando...')

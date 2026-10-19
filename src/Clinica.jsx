@@ -272,7 +272,7 @@ export default function Clinica({
                 : 'bg-teal-700 hover:bg-teal-800 active:scale-95'
             }`}
           >
-            {guardando ? <><span>⏳</span> Guardando...</> : '💾 Guardar Clínica'}
+            {guardando ? <><span>⏳</span> Guardando...</> : '💾 Guardar consulta'}
           </button>
         </div>
       </div>
@@ -477,7 +477,7 @@ export default function Clinica({
               : 'bg-teal-700 hover:bg-teal-800 active:scale-95 shadow-teal-300'
           }`}
         >
-          {guardando ? <><span>⏳</span> Guardando...</> : '💾 Guardar Medición Clínica'}
+          {guardando ? <><span>⏳</span> Guardando...</> : '💾 Guardar consulta'}
         </button>
       </div>
     </div>

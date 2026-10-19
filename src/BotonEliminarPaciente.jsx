@@ -79,7 +79,7 @@ export default function BotonEliminarPaciente({ item, onEliminar, esAdmin = fals
       <button
         type="button"
         onClick={abrir}
-        className="text-xs sm:text-sm bg-red-50 text-red-700 border border-red-200 px-2.5 py-1.5 rounded-lg font-bold shadow-sm hover:bg-red-100 transition-colors"
+        className="text-xs sm:text-sm bg-red-50 text-red-700 border border-red-200 px-2.5 py-1.5 min-h-10 min-w-10 rounded-lg font-bold shadow-sm hover:bg-red-100 transition-colors flex items-center justify-center"
         title="Eliminar definitivamente todo el paciente y sus ventas"
         aria-label={`Eliminar definitivamente a ${nombre}`}
       >

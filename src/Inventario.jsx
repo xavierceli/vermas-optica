@@ -110,6 +110,8 @@ export default function Inventario({
   const modelosAccesorios = (inventario || []).filter(i => safeString(i?.categoria) === 'Accesorio');
   const totalModelosAccesorios = modelosAccesorios.length;
   const stockAccesorios = modelosAccesorios.reduce((acc, curr) => acc + safeNum(curr?.stock), 0);
+  const armazonesConStock = modelosArmazones.filter(i => safeNum(i?.stock) > 0).length;
+  const accesoriosConStock = modelosAccesorios.filter(i => safeNum(i?.stock) > 0).length;
 
   const totalStockGeneral = stockArmazones + stockAccesorios;
 
@@ -128,13 +130,13 @@ export default function Inventario({
         <div className="bg-blue-50 p-4 rounded-xl border border-blue-200 flex flex-col justify-center items-center shadow-sm">
           <span className="text-xs font-bold text-blue-700 uppercase tracking-wider mb-1">👓 Armazones</span>
           <span className="text-xl sm:text-2xl font-black text-blue-900">{stockArmazones} <span className="text-xs sm:text-sm font-bold text-blue-700">unid.</span></span>
-          <span className="text-xs text-blue-800 font-semibold mt-1">Repartidos en {totalModelosArmazones} modelos</span>
+          <span className="text-xs text-blue-800 font-semibold mt-1">{totalModelosArmazones} modelos · {armazonesConStock} con stock</span>
         </div>
         
         <div className="bg-amber-50 p-4 rounded-xl border border-amber-200 flex flex-col justify-center items-center shadow-sm">
           <span className="text-xs font-bold text-amber-800 uppercase tracking-wider mb-1">👜 Accesorios / Varios</span>
           <span className="text-xl sm:text-2xl font-black text-amber-950">{stockAccesorios} <span className="text-xs sm:text-sm font-bold text-amber-800">unid.</span></span>
-          <span className="text-xs text-amber-900 font-semibold mt-1">Repartidos en {totalModelosAccesorios} tipos</span>
+          <span className="text-xs text-amber-900 font-semibold mt-1">{totalModelosAccesorios} tipos · {accesoriosConStock} con stock</span>
         </div>
       </div>
 
@@ -311,7 +313,7 @@ export default function Inventario({
                           type="button" 
                           onClick={() => handleImprimirD30(item)}
                           disabled={imprimiendoD30Id === item.id}
-                          className="bg-purple-700 text-white px-2.5 py-1 rounded text-xs font-bold hover:bg-purple-800 active:scale-95 transition-all shadow-sm flex items-center gap-1 disabled:opacity-50" 
+                          className="bg-purple-700 text-white px-2.5 py-1 min-h-9 rounded text-xs font-bold hover:bg-purple-800 active:scale-95 transition-all shadow-sm flex items-center gap-1 disabled:opacity-50" 
                           title="Imprimir en rotuladora Phomemo D30 vía Bluetooth"
                         >
                           {imprimiendoD30Id === item.id ? '⏳ Conectando...' : '🏷️ D30'}
@@ -319,7 +321,7 @@ export default function Inventario({
                         <button 
                           type="button" 
                           onClick={() => imprimirEtiqueta(item)} 
-                          className="bg-gray-800 text-white px-2.5 py-1 rounded text-xs font-bold hover:bg-gray-900 transition-colors shadow-sm" 
+                          className="bg-gray-800 text-white px-2.5 py-1 min-h-9 rounded text-xs font-bold hover:bg-gray-900 transition-colors shadow-sm" 
                           title="Imprimir Etiqueta Mariposa estándar"
                         >
                           🖨️ Etiqueta
@@ -328,10 +330,10 @@ export default function Inventario({
                     )}
                     {esAdmin && (
                       <>
-                        <button type="button" onClick={() => cargarParaEditarInventario(item)} className="bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 px-2.5 py-1 rounded text-xs font-bold transition-colors shadow-sm">
+                        <button type="button" onClick={() => cargarParaEditarInventario(item)} className="bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 px-2.5 py-1 min-h-9 rounded text-xs font-bold transition-colors shadow-sm">
                           Editar
                         </button>
-                        <button type="button" onClick={() => eliminarItemInventario(item.id)} className="bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 px-2.5 py-1 rounded text-xs font-bold transition-colors shadow-sm">
+                        <button type="button" onClick={() => eliminarItemInventario(item.id)} className="bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 px-2.5 py-1 min-h-9 rounded text-xs font-bold transition-colors shadow-sm">
                           Eliminar
                         </button>
                       </>

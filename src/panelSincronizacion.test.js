@@ -22,6 +22,11 @@ test('el panel explica la conexión y muestra la sincronización más reciente d
   assert.match(fuente, /Última sincronización: /);
 });
 
+test('en modo PIN el panel dice que sube al iniciar sesión, no que no hay internet', () => {
+  assert.match(fuente, /gestor\?\.modoSinConexion/);
+  assert.match(fuente, /Sin sesión: los cambios están seguros en este equipo y subirán al iniciar sesión\./);
+});
+
 test('un error al consultar la cola se comunica en lugar de quedar sin explicación', () => {
   assert.match(fuente, /No se pudo consultar la cola de sincronización/);
   assert.match(fuente, /role="alert"/);
