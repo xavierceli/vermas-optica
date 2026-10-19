@@ -21,6 +21,10 @@ export default function Login({ dispositivo, entrarSinConexion }) {
   const [modoRecuperar, setModoRecuperar] = useState(false);
   const [nuevaClave, setNuevaClave] = useState('');
   const [confirmarClave, setConfirmarClave] = useState('');
+  // Ver la contraseña mientras se escribe evita el error tipico de la app: entrar
+  // con la clave mal tecleada y pensar que el sistema falla.
+  const [verPassword, setVerPassword] = useState(false);
+  const [verNuevaClave, setVerNuevaClave] = useState(false);
 
   const [pinLocal, setPinLocal] = useState('');
   const [verPin, setVerPin] = useState(false);
@@ -178,10 +182,21 @@ export default function Login({ dispositivo, entrarSinConexion }) {
         {modoNuevaClave ? (
           <form onSubmit={guardarNuevaClave} className="space-y-4 sm:space-y-5">
             <div>
-              <label htmlFor="nueva-clave" className="block text-xs sm:text-sm font-bold text-gray-800 mb-1">Nueva Contraseña</label>
+              <div className="flex justify-between items-center mb-1">
+                <label htmlFor="nueva-clave" className="block text-xs sm:text-sm font-bold text-gray-800">Nueva Contraseña</label>
+                <button
+                  type="button"
+                  onClick={() => setVerNuevaClave(v => !v)}
+                  aria-pressed={verNuevaClave}
+                  title={verNuevaClave ? 'Ocultar las contraseñas' : 'Mostrar las contraseñas'}
+                  className="text-xs text-teal-700 hover:text-teal-900 font-bold transition-colors py-1"
+                >
+                  {verNuevaClave ? 'Ocultar contraseñas' : 'Ver contraseñas'}
+                </button>
+              </div>
               <input 
                 id="nueva-clave"
-                type="password" 
+                type={verNuevaClave ? 'text' : 'password'} 
                 value={nuevaClave}
                 onChange={(e) => setNuevaClave(e.target.value)}
                 className="w-full p-2.5 sm:p-3 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-teal-500 bg-gray-50 focus:bg-white transition-all font-semibold text-gray-900 text-sm"
@@ -193,7 +208,7 @@ export default function Login({ dispositivo, entrarSinConexion }) {
               <label htmlFor="confirmar-clave" className="block text-xs sm:text-sm font-bold text-gray-800 mb-1">Confirmar Contraseña</label>
               <input 
                 id="confirmar-clave"
-                type="password" 
+                type={verNuevaClave ? 'text' : 'password'} 
                 value={confirmarClave}
                 onChange={(e) => setConfirmarClave(e.target.value)}
                 className="w-full p-2.5 sm:p-3 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-teal-500 bg-gray-50 focus:bg-white transition-all font-semibold text-gray-900 text-sm"
@@ -236,15 +251,26 @@ export default function Login({ dispositivo, entrarSinConexion }) {
                     ¿Olvidaste tu contraseña?
                   </button>
                 </div>
-                <input 
-                  id="login-password"
-                  type="password" 
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full p-2.5 sm:p-3 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-teal-500 bg-gray-50 focus:bg-white transition-all font-semibold text-gray-900 text-sm"
-                  placeholder="••••••••"
-                  required={!modoRecuperar}
-                />
+                <div className="relative">
+                  <input 
+                    id="login-password"
+                    type={verPassword ? 'text' : 'password'} 
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="w-full p-2.5 sm:p-3 pr-16 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-teal-500 bg-gray-50 focus:bg-white transition-all font-semibold text-gray-900 text-sm"
+                    placeholder="••••••••"
+                    required={!modoRecuperar}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setVerPassword(v => !v)}
+                    aria-pressed={verPassword}
+                    title={verPassword ? 'Ocultar la contraseña' : 'Mostrar la contraseña'}
+                    className="absolute right-1.5 top-1/2 -translate-y-1/2 h-8 px-2.5 rounded-md text-[11px] font-bold text-gray-600 hover:text-gray-900 hover:bg-gray-200 focus:outline-none focus:ring-2 focus:ring-teal-500 transition-colors"
+                  >
+                    {verPassword ? 'Ocultar' : 'Ver'}
+                  </button>
+                </div>
               </div>
             )}
 
