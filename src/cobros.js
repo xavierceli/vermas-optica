@@ -9,6 +9,8 @@
 //  - Admite comas o puntos como separador decimal.
 // ---------------------------------------------------------------------------
 
+import { calcularSaldo, calcularTotal } from './reglas.js';
+
 /**
  * Devuelve un mensaje de error si el monto no es válido o null si es correcto.
  * @param {number|string} monto
@@ -77,4 +79,32 @@ export const validarVentaParaCambiarEstado = (item) => {
     return 'Este registro todavía no tiene una venta local.';
   }
   return null;
+};
+
+/**
+ * Texto de la confirmacion antes de marcar una venta como "Entregado".
+ *
+ * Marcar entregado es un solo clic en la lista, y lo que pasa despues depende
+ * del dinero: si ya estaba pagada, la tarjeta desaparece de la pestaña actual y
+ * se va a "Entregados y Pagados"; si todavia debe, se queda donde esta. Decirlo
+ * ANTES evita el susto de "se borro la venta" y el entregar sin querer.
+ *
+ * @param {Object} item venta o consulta con venta
+ * @returns {string}
+ */
+export const mensajeConfirmarEntrega = (item) => {
+  const nombre = String(item?.nombre ?? '').trim().slice(0, 40);
+  const quien = nombre ? ` de ${nombre}` : '';
+  const saldo = calcularSaldo(item?.venta, item?.descuento, item?.abono);
+  const total = calcularTotal(item?.venta, item?.descuento);
+
+  if (total > 0 && saldo <= 0) {
+    return `¿Marcar como Entregado el pedido${quien}? Ya está pagado: pasará a "✅ Entregados y Pagados" y saldrá de esta lista.`;
+  }
+
+  if (saldo > 0) {
+    return `¿Marcar como Entregado el pedido${quien}? Todavía tiene $${saldo.toFixed(2)} de saldo: seguirá en "🔥 Con Saldo" hasta que se cobre.`;
+  }
+
+  return `¿Marcar como Entregado el pedido${quien}?`;
 };

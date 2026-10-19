@@ -64,3 +64,22 @@ test('una deuda normal no parpadea para siempre', () => {
   // El contador de "Con Saldo" tampoco late.
   assert.doesNotMatch(pedidos, /bg-red-600 text-white animate-pulse/);
 });
+
+test('el formulario clinico guarda desde una barra que no se pierde de vista', () => {
+  // La consulta tiene decenas de campos: el boton de guardar del final queda a
+  // varios pantallazos del principio. Se ancla abajo y dice de quien es.
+  const fuente = leer('Clinica.jsx');
+  const inicio = fuente.indexOf('{/* Barra de guardado');
+  assert.ok(inicio > -1, 'debe existir la barra de guardado');
+  const bloque = fuente.slice(inicio, inicio + 2000);
+
+  assert.match(bloque, /sm:sticky sm:bottom-0/, 'debe quedarse pegada al borde inferior');
+  assert.match(bloque, /guardarPacienteClinico/, 'debe guardar con el mismo manejador de siempre');
+  assert.match(bloque, /paciente\.nombre/, 'debe recordar el nombre del paciente mientras se baja');
+});
+
+test('la lista de pedidos recibe el dialogo de confirmacion de la app', () => {
+  // Sin este cableado, entregar una venta no preguntaria nada y el usuario
+  // volveria a ver desaparecer la tarjeta sin explicacion.
+  assert.match(leer('App.jsx'), /<PedidosLista[^>]*confirmar=\{g\.confirmar\}/);
+});

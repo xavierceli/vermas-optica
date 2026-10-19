@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
-  validarCobroSobreVenta, validarMontoCobro, validarVentaParaCambiarEstado
+  mensajeConfirmarEntrega, validarCobroSobreVenta, validarMontoCobro, validarVentaParaCambiarEstado
 } from './cobros.js';
 
 const SRC = join(dirname(fileURLToPath(import.meta.url)));
@@ -85,4 +85,35 @@ test('ninguna pantalla vuelve a comprobar el monto por su cuenta', () => {
       `${archivo} comprueba el monto a mano: la regla vive en cobros.js, con tests`
     );
   }
+});
+
+// --- Entregar una venta: que dice el aviso antes de hacerlo ----------------
+// Marcar "Entregado" en la lista es un solo clic y, si la venta ya estaba
+// pagada, la tarjeta sale de la pestaña y se va a "Entregados y Pagados". Antes
+// de eso hay que decir el nombre y que pasara con el dinero.
+test('una venta ya pagada avisa que saldra de la lista actual', () => {
+  const mensaje = mensajeConfirmarEntrega({ nombre: 'Ana Pérez', venta: '100', abono: '100' });
+  assert.match(mensaje, /Ana Pérez/);
+  assert.match(mensaje, /Entregados y Pagados/);
+  assert.match(mensaje, /saldrá de esta lista/);
+});
+
+test('una venta con saldo avisa cuanto queda por cobrar', () => {
+  const mensaje = mensajeConfirmarEntrega({ nombre: 'Luis', venta: '100', descuento: '10', abono: '40' });
+  assert.match(mensaje, /Luis/);
+  assert.match(mensaje, /\$50\.00/, 'total 90 menos 40 abonado');
+  assert.match(mensaje, /Con Saldo/);
+});
+
+test('sin datos de dinero el aviso sigue siendo claro', () => {
+  const mensaje = mensajeConfirmarEntrega({});
+  assert.match(mensaje, /¿Marcar como Entregado el pedido\?/);
+  assert.doesNotMatch(mensaje, /undefined|NaN/);
+});
+
+test('el nombre muy largo no rompe el aviso', () => {
+  const largo = 'A'.repeat(120);
+  const mensaje = mensajeConfirmarEntrega({ nombre: largo, venta: '50', abono: '50' });
+  assert.ok(mensaje.length < 260, 'el aviso debe caber en el dialogo');
+  assert.doesNotMatch(mensaje, /undefined|NaN/);
 });

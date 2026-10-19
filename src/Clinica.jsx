@@ -492,7 +492,16 @@ export default function Clinica({
         </div>
       </div>
 
-      <div className="w-full border-t-2 border-teal-500 pt-6 mt-6 bg-teal-50/40 p-4 rounded-xl flex flex-col sm:flex-row justify-end items-center gap-3 sm:gap-4">
+      {/* Barra de guardado: en escritorio se queda pegada al borde inferior
+          mientras se recorre el formulario, que es muy largo. Asi el boton de
+          guardar (y el nombre del paciente) nunca quedan fuera de la vista. */}
+      <div className="w-full border-t-2 border-teal-500 mt-6 bg-teal-50/40 p-3 sm:p-4 rounded-xl flex flex-col sm:flex-row justify-end items-center gap-3 sm:gap-4 sm:sticky sm:bottom-0 sm:z-30 sm:bg-white/95 sm:backdrop-blur sm:shadow-[0_-6px_16px_rgba(15,23,42,0.08)]">
+        <div className="hidden sm:block mr-auto min-w-0 text-left">
+          <p className="text-[10px] font-bold uppercase tracking-wide text-gray-500">Consulta de</p>
+          <p className="text-sm font-black text-gray-900 truncate max-w-[18rem]">
+            {safeString(paciente.nombre).trim() || safeString(paciente.cedula).trim() || 'Sin paciente todavía'}
+          </p>
+        </div>
         {editandoId && (
           <button 
             type="button"

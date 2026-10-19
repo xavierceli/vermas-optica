@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { safeString, safeNum, comprimirImagen } from './utilidades';
 import { mostrarAviso } from './avisos';
-import { validarCobroSobreVenta, validarVentaParaCambiarEstado } from './cobros';
+import { validarCobroSobreVenta, validarVentaParaCambiarEstado, mensajeConfirmarEntrega } from './cobros';
 import { supabase } from './supabaseClient';
 import { createUuid as generarId } from './localDb';
 import { cambiarEstadoVentaLocal, registrarPagoLocal, guardarAdjuntoLocal } from './localRepository';
@@ -20,7 +20,7 @@ const formatearContador = (num) => {
 export default function PedidosLista({
   crearVentaDirecta, busqueda, setBusqueda, pedidosFiltrados = [],
   imprimirRecibo, imprimirOrdenTrabajo, cancelarPedido, abrirPedido,
-  refrescarDatos, esAdmin = false, sinSesion = false
+  refrescarDatos, esAdmin = false, sinSesion = false, confirmar
 }) {
 
   const [abonosRapidos, setAbonosRapidos] = useState({});
@@ -39,14 +39,39 @@ export default function PedidosLista({
   const manejarCambioFormaPago = (id, valor) => setFormasPagoRapidas(prev => ({ ...prev, [id]: valor }));
   const manejarCambioArchivo = (id, archivo) => setComprobantesRapidos(prev => ({ ...prev, [id]: archivo }));
 
-  const cambiarEstadoRapido = async (item, nuevoEstado) => {
+  const cambiarEstadoRapido = async (item, nuevoEstado, evento) => {
+    // El <select> ya pinto la opcion elegida. Si al final no se guarda nada, hay
+    // que devolverlo a lo que dice la base: si no, el usuario ve "Entregado"
+    // aunque la venta siga en laboratorio.
+    const volverAlEstadoGuardado = () => {
+      if (evento && evento.target) evento.target.value = safeString(item.estado) || 'Ninguno';
+    };
+
     const problema = validarVentaParaCambiarEstado(item);
-    if (problema) return mostrarAviso(problema, 'warning');
+    if (problema) {
+      volverAlEstadoGuardado();
+      return mostrarAviso(problema, 'warning');
+    }
+
+    // Marcar "Entregado" es el unico estado que saca la tarjeta de la lista en
+    // la que esta el usuario. Se pregunta antes, con el nombre y el saldo, para
+    // que no se entregue un pedido sin querer ni parezca que se borro la venta.
+    if (nuevoEstado === 'Entregado' && safeString(item.estado) !== 'Entregado') {
+      const sigueAdelante = typeof confirmar === 'function'
+        ? await confirmar(mensajeConfirmarEntrega(item))
+        : true;
+      if (!sigueAdelante) {
+        volverAlEstadoGuardado();
+        return;
+      }
+    }
+
     try {
       await cambiarEstadoVentaLocal({ saleId: item.pedido_id, estado: nuevoEstado });
       await refrescarDatos({ sync: false });
       void sincronizarAhora({ pull: false });
     } catch (err) {
+      volverAlEstadoGuardado();
       mostrarAviso('Error actualizando estado: ' + err.message, 'error');
     }
   };
@@ -349,7 +374,7 @@ export default function PedidosLista({
                       <select 
                         aria-label="Estado del pedido"
                         value={safeString(item.estado) || 'Ninguno'} 
-                        onChange={(e) => cambiarEstadoRapido(item, e.target.value)}
+                        onChange={(e) => cambiarEstadoRapido(item, e.target.value, e)}
                         disabled={estaProcesando}
                         className={`px-3 py-1 min-h-9 rounded-full text-xs font-bold uppercase cursor-pointer outline-none focus:ring-2 focus:ring-teal-500 border shadow-sm transition-colors disabled:opacity-60 ${
                           item.estado === 'Entregado' ? 'bg-green-100 text-green-900 border-green-300' : 
