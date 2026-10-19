@@ -8,6 +8,7 @@ import { cambiarEstadoVentaLocal, registrarPagoLocal, guardarAdjuntoLocal } from
 import { sincronizarAhora } from './syncEngine';
 import { calcularTotal, calcularSaldo } from './reglas';
 import { contarSoloLocales } from './estadoSincronizacion';
+import { cuandoSube } from './avisosSync';
 import BotonComprobante from './BotonComprobante';
 
 const formatearContador = (num) => {
@@ -19,7 +20,7 @@ const formatearContador = (num) => {
 export default function PedidosLista({
   crearVentaDirecta, busqueda, setBusqueda, pedidosFiltrados = [],
   imprimirRecibo, imprimirOrdenTrabajo, cancelarPedido, abrirPedido,
-  refrescarDatos, esAdmin = false
+  refrescarDatos, esAdmin = false, sinSesion = false
 }) {
 
   const [abonosRapidos, setAbonosRapidos] = useState({});
@@ -256,7 +257,7 @@ export default function PedidosLista({
             {soloLocales === 1
               ? '1 venta de esta lista está solo en este equipo.'
               : `${soloLocales} ventas de esta lista están solo en este equipo.`}
-            {' '}Aún no están en la nube; se subirán solas. Si el equipo se apaga o se daña, se pierden.
+            {' '}Aún no están en la nube; se subirán {cuandoSube(sinSesion)}. Si el equipo se apaga o se daña, se pierden.
           </p>
         </div>
       )}

@@ -8,6 +8,8 @@ import { calcularTotal, calcularSaldo, calcularMontoDescuento, normalizarDescuen
 import { supabase } from './supabaseClient';
 import { guardarAdjuntoLocal } from './localRepository';
 import { createUuid as generarId } from './localDb';
+import { sinSesionActiva } from './syncEngine';
+import { textoComprobantePendiente } from './avisosSync';
 import BotonComprobante from './BotonComprobante';
 
 export default function PedidosForm({
@@ -138,7 +140,7 @@ export default function PedidosForm({
       setImagenComprobante(null);
 
       if (comprobantePendiente) {
-        avisarComprobantePendiente('Comprobante guardado localmente. Se subirá al recuperar conexión.');
+        avisarComprobantePendiente(textoComprobantePendiente(sinSesionActiva()));
       }
     } catch (err) {
       mostrarAviso('No se pudo registrar el abono localmente: ' + err.message, 'error');

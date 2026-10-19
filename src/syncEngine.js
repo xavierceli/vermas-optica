@@ -74,6 +74,13 @@ export const fijarSesionAusente = activa => {
   emit();
 };
 
+/**
+ * ¿Estamos sin sesión con la nube? Es el caso del modo PIN local: hay internet,
+ * pero lo pendiente NO sube hasta que el usuario entre con su contraseña. Los
+ * avisos usan esto para no prometer una subida que no va a ocurrir.
+ */
+export const sinSesionActiva = () => sesionAusente;
+
 const emit = () => {
   status = { ...status };
   listeners.forEach(listener => listener(status));

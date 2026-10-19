@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { safeString, calcularEdad } from '../utilidades';
 import { createUuid as generarId } from '../localDb';
 import { guardarConsultaLocal, archivarConsultaIndividualLocal } from '../localRepository';
-import { sincronizarAhora } from '../syncEngine';
+import { sincronizarAhora, sinSesionActiva } from '../syncEngine';
+import { textoConsultaPendiente } from '../avisosSync';
 import { eliminarPacienteDefinitivo } from '../eliminacionPaciente';
 import { limpiarHtml } from '../escape';
 import { validarFichaClinica } from '../validacion';
@@ -127,7 +128,7 @@ export function useClinica({
       mostrarToast(
         subio
           ? 'Consulta guardada y sincronizada con la nube.'
-          : 'Consulta guardada en este dispositivo. Se subirá a la nube en unos segundos.',
+          : textoConsultaPendiente(sinSesionActiva()),
         subio ? 'success' : 'warning'
       );
     } catch(e) { 

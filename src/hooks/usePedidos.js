@@ -2,7 +2,8 @@ import { useState, useMemo, useRef } from 'react';
 import { safeString, safeNum } from '../utilidades';
 import { createUuid as generarId } from '../localDb';
 import { guardarVentaLocal, anularVentaLocal, anularVentaConReembolso } from '../localRepository';
-import { sincronizarAhora } from '../syncEngine';
+import { sincronizarAhora, sinSesionActiva } from '../syncEngine';
+import { textoVentaPendiente } from '../avisosSync';
 import { motivoDocumentoInvalido } from '../validacion';
 import { validarMontosVenta } from '../reglas';
 import { autocompletarArmazon, fechaDelPedido, problemaFechaPedido } from '../pedidos';
@@ -280,7 +281,7 @@ export function usePedidos({
         );
       } else if (pendientes > 0 || estadoSync?.phase === 'offline') {
         mostrarToast(
-          'Venta guardada localmente. Se subirá al recuperar conexión.',
+          textoVentaPendiente(sinSesionActiva()),
           'warning', 5000
         );
       } else {

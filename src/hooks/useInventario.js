@@ -3,7 +3,8 @@ import { safeNum, comprimirImagen } from '../utilidades';
 import { createUuid as generarId } from '../localDb';
 import { supabase } from '../supabaseClient';
 import { guardarInventarioLocal, eliminarInventarioLocal, guardarAdjuntoLocal } from '../localRepository';
-import { sincronizarAhora } from '../syncEngine';
+import { sincronizarAhora, sinSesionActiva } from '../syncEngine';
+import { textoFotoPendiente } from '../avisosSync';
 import { limpiarHtml } from '../escape';
 
 // ---------------------------------------------------------------------------
@@ -104,7 +105,7 @@ export function useInventario({ invInicial, mostrarToast, obtenerDatos, solicita
       void sincronizarAhora({ pull: false });
       mostrarToast(
         fotoPendienteSync 
-          ? 'Producto guardado. La fotografía se subirá a la nube al recuperar conexión.' 
+          ? textoFotoPendiente(sinSesionActiva())
           : 'Producto guardado en este dispositivo.', 
         'success'
       );

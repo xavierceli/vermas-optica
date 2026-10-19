@@ -5,6 +5,7 @@ import AvisoActualizacion from './AvisoActualizacion';
 import PanelSincronizacion from './PanelSincronizacion';
 import ErrorBoundary from './ErrorBoundary.jsx';
 import { safeString } from './utilidades.js';
+import { textoColaPendiente } from './avisosSync.js';
 
 // Importaciones estáticas directas para garantizar funcionamiento offline total
 import Login from './Login.jsx';
@@ -56,10 +57,14 @@ function App() {
   const hayErrorSync = faseSync === 'error' && !!g.syncEstado?.lastError;
   const sesionInvalida = !!g.syncEstado?.sesionInvalida;
 
+  // Sin sesión (PIN local) o con la sesión expirada, lo pendiente NO sube aunque
+  // haya internet: solo sube al iniciar sesión. La frase sale de avisosSync.js.
+  const sinSesion = !!g.modoSinConexion || sesionInvalida;
+
   const detalleCola = descartadas > 0
     ? `${descartadas} se descartaron; revisa el panel de sincronización`
     : esOffline
-    ? (pendientes > 0 ? 'Se subirán al recuperar conexión' : 'Todo guardado aquí')
+    ? (pendientes > 0 ? textoColaPendiente(sinSesion) : 'Todo guardado aquí')
     : fallos.length > 0
     ? String(fallos[0].motivo || '').slice(0, 100)
     : 'En cola de salida';
@@ -446,7 +451,7 @@ function App() {
             />
           )}
           {g.vistaActual === 'nueva_medicion' && <Clinica paciente={g.paciente} setPaciente={g.setPaciente} estadoInicial={g.estadoInicial} editandoId={g.editandoId} setEditandoId={g.setEditandoId} guardarPacienteClinico={g.guardarPacienteClinico} manejarCambio={g.manejarCambio} edadActual={g.edadActual} claseInputRef={g.claseInputRef} historial={g.historial} cedulasArchivadas={g.cedulasArchivadas} guardando={g.guardando} />}
-          {g.vistaActual === 'pedidos_lista' && <PedidosLista crearVentaDirecta={g.crearVentaDirecta} busqueda={g.busqueda} setBusqueda={g.setBusqueda} pedidosFiltrados={g.pedidosFiltrados} imprimirRecibo={imprimirRecibo} imprimirOrdenTrabajo={imprimirOrdenTrabajo} cancelarPedido={g.cancelarPedido} abrirPedido={g.abrirPedido} refrescarDatos={g.obtenerDatos} esAdmin={g.esAdmin} />}
+          {g.vistaActual === 'pedidos_lista' && <PedidosLista crearVentaDirecta={g.crearVentaDirecta} busqueda={g.busqueda} setBusqueda={g.setBusqueda} pedidosFiltrados={g.pedidosFiltrados} imprimirRecibo={imprimirRecibo} imprimirOrdenTrabajo={imprimirOrdenTrabajo} cancelarPedido={g.cancelarPedido} abrirPedido={g.abrirPedido} refrescarDatos={g.obtenerDatos} esAdmin={g.esAdmin} sinSesion={sinSesion} />}
           {g.vistaActual === 'pedidos_form' && g.pedidoSeleccionado && <PedidosForm pedidoSeleccionado={g.pedidoSeleccionado} setPedidoSeleccionado={g.setPedidoSeleccionado} setVistaActual={g.setVistaActual} guardarPedido={g.guardarPedido} manejarCambioPedido={g.manejarCambioPedido} cambiarMedicionPedido={g.cambiarMedicionPedido} medidasPaciente={g.medidasPaciente} inventario={g.inventario} accesorioOriginalId={g.accesorioOriginalId} forzarRecalculo={g.forzarRecalculo} confirmarAccion={g.solicitarConfirmacion} />}
         </ErrorBoundary>
 

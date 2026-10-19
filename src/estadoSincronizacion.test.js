@@ -33,7 +33,13 @@ test('la etiqueta de pendiente explica donde esta el dato', () => {
   const e = estadoDeSincronizacion({ syncStatus: 'pending' });
   assert.equal(e.estado, 'pendiente');
   assert.equal(e.texto, 'Solo en este equipo');
-  assert.ok(e.detalle.length > 0, 'debe explicar que se subira sola');
+  assert.match(e.detalle, /al recuperar conexión/, 'con sesión, sube al volver la conexión');
+});
+
+test('sin sesión (modo PIN) la etiqueta manda a iniciar sesión', () => {
+  const e = estadoDeSincronizacion({ syncStatus: 'pending' }, { sinSesion: true });
+  assert.match(e.detalle, /al iniciar sesión/);
+  assert.doesNotMatch(e.detalle, /conexión/);
 });
 
 test('una venta sincronizada no muestra etiqueta', () => {

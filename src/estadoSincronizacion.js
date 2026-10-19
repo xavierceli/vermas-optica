@@ -11,6 +11,8 @@
 // visible. Modulo puro, sin React ni Supabase, para poder probarlo con node --test.
 // ---------------------------------------------------------------------------
 
+import { cuandoSube } from './avisosSync.js';
+
 const ESTADO = {
   PENDIENTE: 'pendiente',
   DESCARTADA: 'descartada'
@@ -33,13 +35,17 @@ export const esSoloLocal = registro => {
  * - pendiente : guardada aqui, todavia no confirmada por el servidor.
  * - descartada: el servidor la rechazo y ya no se reintentara sola.
  * - sincronizada: el servidor la confirmo.
+ * @param {object} registro venta o consulta con syncStatus.
+ * @param {{ sinSesion?: boolean }} opciones sinSesion=true cuando no hay sesión
+ *   (modo PIN local): entonces lo pendiente sube al iniciar sesión, no al volver
+ *   la conexión.
  */
-export const estadoDeSincronizacion = registro => {
+export const estadoDeSincronizacion = (registro, { sinSesion = false } = {}) => {
   if (esSoloLocal(registro)) {
     return {
       estado: ESTADO.PENDIENTE,
       texto: 'Solo en este equipo',
-      detalle: 'Guardada aquí, todavía no está en la nube. Se subirá sola.',
+      detalle: `Guardada aquí, todavía no está en la nube. Se subirá ${cuandoSube(sinSesion)}.`,
       clases: 'bg-amber-100 text-amber-900 border-amber-300',
       icono: '⏳'
     };
