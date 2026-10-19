@@ -91,7 +91,13 @@ test('la consulta avisa en vivo que datos de refraccion faltan, y lleva al prime
   assert.match(clinica, /const faltantesRefraccion = refraccionFaltante\(paciente\)/);
   assert.match(clinica, /onClick=\{irAlPrimerFaltante\}/, 'el aviso debe ser accionable');
   assert.match(clinica, /scrollIntoView\(\{ block: 'center', behavior: 'smooth' \}\)/);
-  assert.match(clinica, /input\[name="\$\{primero\.campo\}"\]/, 'debe enfocar el campo por su name');
+  assert.match(clinica, /input\[name="\$\{nombre\}"\]/, 'debe enfocar el campo por su name');
+
+  // Y si se pulsa Guardar con huecos, va solo al primero (no hay que buscarlo).
+  assert.match(clinica, /if \(!intentosGuardado\) return;[\s\S]{0,140}irAlCampoClinico/);
+  assert.match(leer('hooks/useClinica.js'), /setIntentosGuardado\(n => n \+ 1\)/);
+  assert.match(leer('useGestor.js'), /intentosGuardado,/, 'useGestor debe exponerlo a la vista');
+  assert.match(leer('App.jsx'), /intentosGuardado=\{g\.intentosGuardado\}/);
 
   // Y la regla estricta sigue en pie: sin los 18 datos no se guarda.
   assert.match(leer('hooks/useClinica.js'), /if \(!validacion\.ok\)[\s\S]*?setIntentadoGuardar\(true\)/);

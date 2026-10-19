@@ -25,6 +25,10 @@ export function useClinica({
   const [paciente, setPaciente] = useState(estadoInicial);
   const [editandoId, setEditandoId] = useState(null);
   const [intentadoGuardar, setIntentadoGuardar] = useState(false);
+  // Cuenta los intentos fallidos de guardar. La pantalla lo usa para llevar al
+  // primer dato vacio: si solo fuera un booleano, el segundo intento no haria
+  // nada (el valor ya estaba en true) y el usuario seguiria sin saber donde ir.
+  const [intentosGuardado, setIntentosGuardado] = useState(0);
   const [guardando, setGuardando] = useState(false);
 
   const manejarCambio = (e) => {
@@ -60,6 +64,7 @@ export function useClinica({
       const validacion = validarFichaClinica(paciente);
       if (!validacion.ok) {
         setIntentadoGuardar(true);
+        setIntentosGuardado(n => n + 1);
         return mostrarToast(validacion.mensaje, 'warning', 9000);
       }
 
@@ -252,6 +257,6 @@ export function useClinica({
     paciente, setPaciente, editandoId, setEditandoId, guardando,
     manejarCambio, guardarPacienteClinico, borrarHistoriaClinica,
     archivarConsultaPuntual, cargarParaEditarClinico, iniciarNuevaConsulta,
-    crearNuevoPaciente, edadActual, claseInputRef
+    crearNuevoPaciente, edadActual, claseInputRef, intentosGuardado
   };
 }

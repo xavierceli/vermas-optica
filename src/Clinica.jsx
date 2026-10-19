@@ -2,12 +2,39 @@ import { useState, useEffect, useRef, Fragment } from 'react';
 import { safeString, calcularCerca, buscarPacientesEnSupabase } from './utilidades';
 import { LIMITE_QUERATOMETRIA, esQueratometriaAlta } from './reglas';
 import { buscarCoincidenciasPacientes, datosParaCompletarPaciente } from './fichaClinica';
-import { refraccionFaltante } from './validacion';
+import { ETIQUETAS_CAMPOS, refraccionFaltante } from './validacion';
 import { normalizeCedula } from './localRepository';
 
 const claseQueratometria = alta => `w-14 p-1 border rounded outline-none text-center text-sm font-bold focus:ring-1 focus:ring-teal-500 ${alta ? 'border-red-500 bg-red-50 text-red-700' : 'border-gray-300 text-gray-900'}`;
 
 const etiqueta = (ojo, concepto) => `${concepto} ${ojo === 'od' ? 'ojo derecho' : 'ojo izquierdo'}`;
+
+// Lleva la vista y el cursor a un campo del formulario clinico por su `name`.
+// Se usa desde el aviso de refraccion incompleta: si faltan datos, el usuario
+// tiene que poder llegar al hueco sin buscarlo entre 18 campos.
+const irAlCampoClinico = (nombre) => {
+  if (!nombre) return;
+  const campo = document.querySelector(`input[name="${nombre}"]`);
+  if (!campo) return;
+  campo.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  campo.focus({ preventScroll: true });
+};
+
+// El primer dato obligatorio vacio, leido de lo que hay en pantalla. Se usa
+// justo despues de un guardado rechazado, cuando lo que importa es donde esta
+// el hueco (no lo que diga el estado de React en ese instante). Primero nombre y
+// cedula porque estan arriba; despues, la refraccion.
+const CAMPOS_REFRACCION = Object.keys(ETIQUETAS_CAMPOS);
+const primerCampoObligatorioVacio = () => {
+  for (const nombre of ['nombre', 'cedula']) {
+    const input = document.querySelector(`input[name="${nombre}"]`);
+    if (input && !input.value.trim()) return nombre;
+  }
+  return CAMPOS_REFRACCION.find((campo) => {
+    const input = document.querySelector(`input[name="${campo}"]`);
+    return input && !input.value.trim();
+  });
+};
 
 const FilaRefraccion = ({ ojo, label, paciente, manejarCambio, claseInputRef }) => (
   <tr className={ojo === 'od' ? "border-b hover:bg-gray-50" : "hover:bg-gray-50"}>
@@ -147,7 +174,7 @@ const BloqueQueratometria = ({ ojo, label, paciente, manejarCambio }) => {
 export default function Clinica({
   paciente, setPaciente, estadoInicial, editandoId, setEditandoId,
   guardarPacienteClinico, manejarCambio, edadActual, claseInputRef, historial, cedulasArchivadas,
-  guardando
+  guardando, intentosGuardado = 0
 }) {
   const [sugerenciasCedula, setSugerenciasCedula] = useState([]);
   const [mostrarSugerencias, setMostrarSugerencias] = useState(false);
@@ -163,14 +190,14 @@ export default function Clinica({
   const faltantesRefraccion = refraccionFaltante(paciente);
 
   // Lleva al primer dato que falta: sin esto el aviso seria solo un reproche.
-  const irAlPrimerFaltante = () => {
-    const primero = faltantesRefraccion[0];
-    if (!primero) return;
-    const campo = document.querySelector(`input[name="${primero.campo}"]`);
-    if (!campo) return;
-    campo.scrollIntoView({ block: 'center', behavior: 'smooth' });
-    campo.focus({ preventScroll: true });
-  };
+  const irAlPrimerFaltante = () => irAlCampoClinico(faltantesRefraccion[0]?.campo);
+
+  // Si el guardado falla porque falta algo, se va solo al primer hueco: el
+  // mensaje dice que falta, pero con 18 campos hay que ver donde.
+  useEffect(() => {
+    if (!intentosGuardado) return;
+    irAlCampoClinico(primerCampoObligatorioVacio());
+  }, [intentosGuardado]);
 
   // Cierra el menú desplegable si se hace clic fuera del input
   useEffect(() => {
