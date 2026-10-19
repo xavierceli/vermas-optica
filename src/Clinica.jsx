@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, Fragment } from 'react';
 import { safeString, calcularCerca, buscarPacientesEnSupabase } from './utilidades';
 import { LIMITE_QUERATOMETRIA, esQueratometriaAlta } from './reglas';
 import { buscarCoincidenciasPacientes, datosParaCompletarPaciente } from './fichaClinica';
+import { refraccionFaltante } from './validacion';
 import { normalizeCedula } from './localRepository';
 
 const claseQueratometria = alta => `w-14 p-1 border rounded outline-none text-center text-sm font-bold focus:ring-1 focus:ring-teal-500 ${alta ? 'border-red-500 bg-red-50 text-red-700' : 'border-gray-300 text-gray-900'}`;
@@ -156,6 +157,20 @@ export default function Clinica({
   const contenedorCedulaRef = useRef(null);
 
   useEffect(() => () => { if (timerNube.current) clearTimeout(timerNube.current); }, []);
+
+  // Datos de refraccion sin escribir. Se calcula en cada tecla (son 18 campos)
+  // para que el aviso de la barra de guardado diga siempre la verdad.
+  const faltantesRefraccion = refraccionFaltante(paciente);
+
+  // Lleva al primer dato que falta: sin esto el aviso seria solo un reproche.
+  const irAlPrimerFaltante = () => {
+    const primero = faltantesRefraccion[0];
+    if (!primero) return;
+    const campo = document.querySelector(`input[name="${primero.campo}"]`);
+    if (!campo) return;
+    campo.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    campo.focus({ preventScroll: true });
+  };
 
   // Cierra el menú desplegable si se hace clic fuera del input
   useEffect(() => {
@@ -391,7 +406,20 @@ export default function Clinica({
       </div>
 
       <div>
-        <h3 className="text-base sm:text-lg font-bold text-teal-900 mb-2 border-b pb-1">Agudeza Visual y Refracción <span className="text-xs font-normal text-gray-600">(Obligatorios)</span></h3>
+        <h3 className="text-base sm:text-lg font-bold text-teal-900 mb-2 border-b pb-1">Agudeza Visual y Refracción <span className="text-xs font-normal text-gray-600">(Obligatorios)</span>
+          {faltantesRefraccion.length === 0 ? (
+            <span className="ml-2 align-middle text-[11px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-300 px-2 py-0.5 rounded-full">✅ completa</span>
+          ) : (
+            <button
+              type="button"
+              onClick={irAlPrimerFaltante}
+              title={`Falta escribir: ${faltantesRefraccion.map(f => f.etiqueta).join(', ')}`}
+              className="ml-2 align-middle text-[11px] font-bold text-amber-900 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-full hover:bg-amber-200 transition-colors"
+            >
+              ⚠️ faltan {faltantesRefraccion.length}
+            </button>
+          )}
+        </h3>
         <div className="overflow-x-auto border border-gray-200 rounded-lg shadow-sm">
           <table className="w-full text-left border-collapse bg-white text-xs sm:text-sm min-w-[760px]">
             <thead>
@@ -502,6 +530,20 @@ export default function Clinica({
             {safeString(paciente.nombre).trim() || safeString(paciente.cedula).trim() || 'Sin paciente todavía'}
           </p>
         </div>
+        {faltantesRefraccion.length > 0 ? (
+          <button
+            type="button"
+            onClick={irAlPrimerFaltante}
+            title={`Falta escribir: ${faltantesRefraccion.map(f => f.etiqueta).join(', ')}. Pulsa para ir al primero.`}
+            className="w-full sm:w-auto bg-amber-100 border border-amber-300 text-amber-900 px-3 py-2 min-h-10 rounded-lg text-xs font-bold hover:bg-amber-200 transition-colors"
+          >
+            ⚠️ Faltan {faltantesRefraccion.length} {faltantesRefraccion.length === 1 ? 'dato' : 'datos'} de refracción
+          </button>
+        ) : (
+          <span className="w-full sm:w-auto text-center bg-emerald-50 border border-emerald-200 text-emerald-800 px-3 py-2 min-h-10 rounded-lg text-xs font-bold flex items-center justify-center">
+            ✅ Refracción completa
+          </span>
+        )}
         {editandoId && (
           <button 
             type="button"

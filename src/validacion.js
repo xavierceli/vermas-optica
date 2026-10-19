@@ -22,6 +22,21 @@ export const ETIQUETAS_CAMPOS = {
 
 const REFRACCION_OBLIGATORIA = Object.keys(ETIQUETAS_CAMPOS);
 
+/**
+ * Datos de refraccion que faltan por escribir, en el orden de la tabla.
+ *
+ * Sin ellos el lente no se puede tallar, asi que la pantalla de la consulta los
+ * muestra en vivo ("faltan 3") y lleva al primero que falta. Es un aviso, no un
+ * permiso: el guardado sigue exigiendolos todos (validarFichaClinica).
+ *
+ * @param {Object} paciente
+ * @returns {Array<{campo: string, etiqueta: string}>}
+ */
+export const refraccionFaltante = (paciente = {}) =>
+  REFRACCION_OBLIGATORIA
+    .filter(campo => String(paciente?.[campo] ?? '').trim() === '')
+    .map(campo => ({ campo, etiqueta: ETIQUETAS_CAMPOS[campo] }));
+
 /** El documento admite cédula numérica (10 o 13 dígitos), pasaporte o 9999999999. */
 export const documentoValido = doc => {
   const str = String(doc ?? '').trim().toUpperCase();

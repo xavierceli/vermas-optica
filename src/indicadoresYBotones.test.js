@@ -71,7 +71,7 @@ test('el formulario clinico guarda desde una barra que no se pierde de vista', (
   const fuente = leer('Clinica.jsx');
   const inicio = fuente.indexOf('{/* Barra de guardado');
   assert.ok(inicio > -1, 'debe existir la barra de guardado');
-  const bloque = fuente.slice(inicio, inicio + 2000);
+  const bloque = fuente.slice(inicio, inicio + 3200);
 
   assert.match(bloque, /sm:sticky sm:bottom-0/, 'debe quedarse pegada al borde inferior');
   assert.match(bloque, /guardarPacienteClinico/, 'debe guardar con el mismo manejador de siempre');
@@ -82,4 +82,18 @@ test('la lista de pedidos recibe el dialogo de confirmacion de la app', () => {
   // Sin este cableado, entregar una venta no preguntaria nada y el usuario
   // volveria a ver desaparecer la tarjeta sin explicacion.
   assert.match(leer('App.jsx'), /<PedidosLista[^>]*confirmar=\{g\.confirmar\}/);
+});
+
+test('la consulta avisa en vivo que datos de refraccion faltan, y lleva al primero', () => {
+  // Sin estos datos el lente no se puede tallar. La app NO relaja la regla (que
+  // fue lo que pidio el usuario): avisa de lo que falta y te deja saltar ahi.
+  const clinica = leer('Clinica.jsx');
+  assert.match(clinica, /const faltantesRefraccion = refraccionFaltante\(paciente\)/);
+  assert.match(clinica, /onClick=\{irAlPrimerFaltante\}/, 'el aviso debe ser accionable');
+  assert.match(clinica, /scrollIntoView\(\{ block: 'center', behavior: 'smooth' \}\)/);
+  assert.match(clinica, /input\[name="\$\{primero\.campo\}"\]/, 'debe enfocar el campo por su name');
+
+  // Y la regla estricta sigue en pie: sin los 18 datos no se guarda.
+  assert.match(leer('hooks/useClinica.js'), /if \(!validacion\.ok\)[\s\S]*?setIntentadoGuardar\(true\)/);
+  assert.match(leer('validacion.js'), /const REFRACCION_OBLIGATORIA = Object\.keys\(ETIQUETAS_CAMPOS\)/);
 });

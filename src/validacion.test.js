@@ -5,6 +5,7 @@ import {
   documentoValido,
   motivoDocumentoInvalido,
   construirMensajeFaltantes,
+  refraccionFaltante,
   ETIQUETAS_CAMPOS
 } from './validacion.js';
 
@@ -101,4 +102,45 @@ test('un espacio en blanco no cuenta como nombre', () => {
 
 test('sin faltantes no hay mensaje', () => {
   assert.equal(construirMensajeFaltantes([]), null);
+});
+
+// --- Que falte exactamente, y en el orden de la tabla ----------------------
+// La pantalla de la consulta avisa en vivo "faltan 3" y lleva al primero que
+// falta. Si esta lista no coincidiera con la validacion, el aviso enganaria al
+// optometra: diria "completa" y el guardado lo rechazaria (o al reves).
+test('una ficha vacia tiene los 18 datos de refraccion pendientes', () => {
+  const faltan = refraccionFaltante({});
+  assert.equal(faltan.length, 18);
+  assert.equal(faltan[0].campo, 'avsl_od');
+  assert.equal(faltan[0].etiqueta, 'AVS Lejos OD');
+  assert.equal(faltan[faltan.length - 1].campo, 'avcc_oi');
+});
+
+test('el orden de la lista es el de la tabla (OD antes que OI)', () => {
+  const campos = refraccionFaltante({}).map(f => f.campo);
+  assert.ok(campos.indexOf('esfera_od') < campos.indexOf('esfera_oi'));
+  assert.deepEqual(campos.slice(0, 2), ['avsl_od', 'avsc_od']);
+});
+
+test('solo se listan los que estan vacios, y los espacios no cuentan', () => {
+  const paciente = refraccionCompleta();
+  delete paciente.eje_od;
+  paciente.dnp_oi = '   ';
+  assert.deepEqual(
+    refraccionFaltante(paciente).map(f => f.campo),
+    ['eje_od', 'dnp_oi']
+  );
+});
+
+test('una ficha completa no tiene faltantes', () => {
+  assert.deepEqual(refraccionFaltante(refraccionCompleta()), []);
+});
+
+test('el aviso y la validacion cuentan lo MISMO', () => {
+  const aMedias = { ...refraccionCompleta(), eje_od: '', avcc_oi: '' };
+  const aviso = refraccionFaltante(aMedias);
+  const validacion = validarFichaClinica({ cedula: '1712345678', nombre: 'ANA', ...aMedias });
+  assert.equal(aviso.length, validacion.sinRefraccion.length);
+  assert.deepEqual(aviso.map(f => f.etiqueta), validacion.sinRefraccion);
+  assert.equal(validacion.ok, false, 'con datos de refraccion vacios no se guarda');
 });
