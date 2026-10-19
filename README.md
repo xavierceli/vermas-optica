@@ -80,6 +80,15 @@ localDb.js (Dexie / IndexedDB)  ⇄  syncEngine.js  ⇄  Supabase
 Se publica en **Vercel** (`vercel.json` incluye la CSP y las cabeceras de
 seguridad). La base de datos son las migraciones de `supabase/migrations/`.
 
+- **Producción**: <https://vermasoptica.vercel.app/> — se actualiza sola con cada
+  empujón a `main`.
+- **CI**: `.github/workflows/ci.yml` corre lint, las dos suites de pruebas y el
+  build en cada push y en cada pull request. Si algo falla, el motivo queda en la
+  pestaña *Checks* del commit.
+- Las direcciones que Vercel genera por despliegue (por ejemplo
+  `asistencia-xxxx-xavico.vercel.app`) piden el login de Vercel. El dominio del
+  proyecto, `vermasoptica.vercel.app`, es público.
+
 El service worker se registra en modo **"prompt"**: cuando hay una versión nueva
 se avisa y el usuario decide cuándo actualizar, para no perder un formulario a
 medio llenar.
