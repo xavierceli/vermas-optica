@@ -281,7 +281,7 @@ export default function PedidosLista({
             className={`px-3 sm:px-4 py-2 text-xs sm:text-sm font-bold rounded-t-lg transition-colors whitespace-nowrap flex items-center gap-2 ${filtroTab === 'Activos' ? 'bg-indigo-50 text-indigo-900 border-b-2 border-indigo-600' : 'text-gray-600 hover:bg-gray-50'}`}
           >
             <span>🔥 Con Saldo</span>
-            <span className={`px-2 py-0.5 rounded-full text-xs font-black shadow-sm ${conteos.pendientes > 0 ? 'bg-red-600 text-white animate-pulse' : 'bg-gray-200 text-gray-600'}`}>
+            <span className={`px-2 py-0.5 rounded-full text-xs font-black shadow-sm ${conteos.pendientes > 0 ? 'bg-red-600 text-white' : 'bg-gray-200 text-gray-600'}`}>
               {formatearContador(conteos.pendientes)}
             </span>
           </button>
@@ -375,17 +375,17 @@ export default function PedidosLista({
                   </div>
                   
                   <div className="flex gap-1.5 sm:gap-2 flex-wrap justify-start sm:justify-end w-full md:w-auto">
-                    <button type="button" onClick={() => imprimirRecibo(item)} className="bg-blue-600 text-white px-3 py-1.5 min-h-10 rounded-lg text-xs sm:text-sm font-bold shadow-sm hover:bg-blue-700 transition-colors">
-                      🧾 Recibo
-                    </button>
-                    <button type="button" onClick={() => imprimirOrdenTrabajo(item)} className="bg-gray-800 text-white px-3 py-1.5 min-h-10 rounded-lg text-xs sm:text-sm font-bold shadow-sm hover:bg-gray-900 transition-colors">
-                      🖨️ Orden Lab
-                    </button>
                     {esAdmin && (
                       <button type="button" onClick={() => manejarCancelarOptimista(item)} disabled={estaProcesando} className="bg-white border border-red-200 text-red-700 px-3 py-1.5 min-h-10 rounded-lg text-xs sm:text-sm font-bold shadow-sm hover:bg-red-50 transition-colors disabled:opacity-50 active:scale-95">
                         🗑️ Cancelar
                       </button>
                     )}
+                    <button type="button" onClick={() => imprimirRecibo(item)} className="bg-white border border-gray-300 text-gray-800 px-3 py-1.5 min-h-10 rounded-lg text-xs sm:text-sm font-bold shadow-sm hover:bg-gray-50 transition-colors">
+                      🧾 Recibo
+                    </button>
+                    <button type="button" onClick={() => imprimirOrdenTrabajo(item)} className="bg-white border border-gray-300 text-gray-800 px-3 py-1.5 min-h-10 rounded-lg text-xs sm:text-sm font-bold shadow-sm hover:bg-gray-50 transition-colors">
+                      🖨️ Orden Lab
+                    </button>
                     <button type="button" onClick={() => abrirPedido(item)} disabled={estaProcesando} className="bg-indigo-600 text-white px-4 sm:px-5 py-1.5 min-h-10 rounded-lg text-xs sm:text-sm font-bold shadow hover:bg-indigo-700 transition-colors disabled:opacity-50">
                       ✏️ Ver / Editar
                     </button>

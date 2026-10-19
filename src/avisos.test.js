@@ -533,14 +533,19 @@ test('un corte de internet NO gasta los intentos de la operacion', () => {
   assert.ok(!bloque.includes('attempts'), 'y no debe contar un intento mas');
 });
 
-test('la barra da prioridad a "sin conexion" sobre los fallos', () => {
-  // El orden de los ternarios es lo que decide el color. Con `fallos` delante,
-  // un "Failed to fetch" sin clasificar tapaba el aviso de red.
+test('el estado se resume en un solo sitio y sin conexion se nombra antes que un rechazo', () => {
+  // El orden de los ternarios es lo que decide el color y el texto. Con `fallos`
+  // delante, un "Failed to fetch" sin clasificar tapaba el aviso de red.
+  //
+  // Antes esto se comprobaba en la barra flotante, que repetia el estado ya
+  // dicho por la pildora del encabezado. La barra se elimino por duplicada; la
+  // regla sigue viva donde ahora importa: el detalle de la pildora.
   const fuente = leer('../src/App.jsx');
+  assert.doesNotMatch(fuente, /const estiloContenedor/, 'la barra duplicada ya no debe existir');
   assert.match(
     fuente,
-    /const estiloContenedor[\s\S]*?esOffline[\s\S]*?fallos\.length/,
-    'sin conexion debe evaluarse antes que los fallos'
+    /const detalleCola = descartadas > 0[\s\S]*?: esOffline[\s\S]*?: fallos\.length > 0/,
+    'sin conexion debe nombrarse antes que el motivo de un rechazo'
   );
 });
 

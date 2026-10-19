@@ -106,7 +106,7 @@ export default function ListaTarjetas({
                       <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
                         <h3 className="font-extrabold text-lg sm:text-xl text-gray-900">{safeString(item?.nombre) || 'Sin Nombre'}</h3>
                         {tieneDeudaReal && (
-                          <span className="bg-red-100 text-red-800 px-2.5 py-0.5 rounded-full text-[11px] font-black border border-red-300 shadow-sm animate-pulse flex items-center gap-1">
+                          <span className="bg-red-100 text-red-800 px-2.5 py-0.5 rounded-full text-[11px] font-black border border-red-300 shadow-sm flex items-center gap-1">
                             ⚠️ SALDO PENDIENTE: ${saldoPendiente.toFixed(2)}
                           </span>
                         )}
@@ -311,7 +311,7 @@ export default function ListaTarjetas({
                               {esAnulado ? 'Venta Anulada' : tieneDeudaReal ? '⚠ Costo Final (Con Saldo Pendiente)' : 'Costo Final'}
                             </span>
                             <div className="flex items-baseline gap-2">
-                              <span className={`text-base sm:text-xl font-black ${esAnulado ? 'line-through text-gray-500' : tieneDeudaReal ? 'text-red-600 animate-pulse' : 'text-gray-900'}`}>
+                              <span className={`text-base sm:text-xl font-black ${esAnulado ? 'line-through text-gray-500' : tieneDeudaReal ? 'text-red-600' : 'text-gray-900'}`}>
                                 ${vFinal.toFixed(2)}
                               </span>
                               {!esAnulado && desc > 0 && <span className="text-xs text-green-700 font-bold">(-{desc}%)</span>}

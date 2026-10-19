@@ -205,8 +205,6 @@ function App() {
     );
   }
 
-  const tieneAvisoSuperior = esOffline || pendientes > 0 || conflictos > 0 || fallos.length > 0 || g.modoSinConexion;
-
   const textoFechaCompilacion = (() => {
     if (typeof __BUILD_ID__ === 'undefined') return 'Copia en desarrollo';
     try {
@@ -223,53 +221,11 @@ function App() {
   const totalAtascados = fallos.length + descartadas + conflictos + (esOffline ? 0 : pendientes);
 
   return (
-    <div className={`min-h-screen bg-gray-50 p-3 sm:p-6 relative touch-manipulation ${tieneAvisoSuperior ? 'pt-14 sm:pt-16' : ''}`}>
+    <div className="min-h-screen bg-gray-50 p-3 sm:p-6 relative touch-manipulation">
 
       <AvisoActualizacion hayTrabajoSinGuardar={pendientes > 0 || g.guardando} confirmar={g.confirmar} />
 
-      {/* 1. Aviso de estado: Cápsula translúcida */}
-      {tieneAvisoSuperior && (() => {
-        const estiloContenedor = g.modoSinConexion 
-          ? 'bg-purple-950/80 border-purple-500/50 text-purple-100 shadow-purple-900/30'
-          : esOffline 
-          ? 'bg-red-950/80 border-red-500/60 text-white shadow-red-950/40'
-          : fallos.length > 0 
-          ? 'bg-red-950/85 border-red-500/60 text-white shadow-red-950/40'
-          : conflictos > 0 
-          ? 'bg-amber-950/80 border-amber-500/60 text-amber-100 shadow-amber-950/40'
-          : 'bg-blue-950/80 border-blue-500/50 text-blue-100 shadow-blue-950/40';
-
-        const iconoBarra = g.modoSinConexion ? '🔓' : esOffline ? '📴' : fallos.length > 0 ? '⛔' : conflictos > 0 ? '⚠️' : '🔄';
-        const textoBarra = g.modoSinConexion
-          ? 'Modo sin conexión: PIN local activo. Los cambios se sincronizarán al iniciar sesión.'
-          : esOffline
-          ? 'Sin conexión a internet. Los datos se guardan localmente y se subirán al reconectar.'
-          : fallos.length > 0
-          ? `El servidor rechazó ${fallos.length} operación(es): ${String(fallos[0].motivo || '').slice(0, 140)}`
-          : conflictos > 0
-          ? `${conflictos} conflictos requieren revisión.`
-          : sincronizando
-          ? `Sincronizando ${pendientes} operación(es)…`
-          : `${pendientes} operaciones en cola, esperando envío.`;
-
-        return (
-          <aside aria-label="Estado de conexión y sincronización" className="fixed top-2 left-0 w-full flex justify-center z-50 px-3 pointer-events-none">
-            <div className={`pointer-events-auto backdrop-blur-md border rounded-full py-1.5 px-4 sm:px-6 shadow-xl flex items-center justify-center gap-2 sm:gap-3 text-xs md:text-sm font-bold tracking-wide transition-all ${estiloContenedor}`}>
-              <span className="text-sm shrink-0">{iconoBarra}</span>
-              <span className="truncate max-w-[80vw] text-red-100 font-semibold drop-shadow-xs">
-                {textoBarra}
-              </span>
-              {pendientes > 0 && !esOffline && !g.modoSinConexion && (
-                <button onClick={() => g.sincronizarAhora()} className="rounded-full bg-white/20 hover:bg-white/30 text-white px-2.5 py-0.5 text-xs font-bold shrink-0 transition-colors">
-                  Sincronizar
-                </button>
-              )}
-            </div>
-          </aside>
-        );
-      })()}
-
-      {/* 2. Etiqueta de versión ultra delgada vertical */}
+      {/* Etiqueta de versión ultra delgada vertical */}
       <aside 
         aria-label="Información de compilación" 
         className="fixed top-1/2 -translate-y-1/2 left-0 z-30 hidden sm:flex flex-col items-center py-2 px-0.5 bg-gray-900/80 hover:bg-gray-900 backdrop-blur-xs text-white rounded-r border-r border-t border-b border-gray-700/40 shadow-xs transition-all duration-300 cursor-pointer group"
