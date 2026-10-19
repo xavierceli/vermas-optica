@@ -185,8 +185,20 @@ test('datos raros dan ceros en vez de romper el panel', () => {
 });
 
 test('el prefijo del mes tiene el formato AAAA-MM', () => {
-  assert.equal(prefijoDelMesActual(new Date(2026, 9, 4)), '2026-10');
-  assert.equal(prefijoDelMesActual(new Date(2026, 0, 1)), '2026-01');
-  assert.equal(prefijoDelMesActual(new Date(2027, 11, 31)), '2027-12');
+  // Las fechas se escriben CON EL DESFASE DEL NEGOCIO (UTC-5). Antes se usaba
+  // `new Date(2026, 0, 1)`, que significa "medianoche en el equipo que ejecuta
+  // las pruebas": en un servidor en UTC eso cae el 31 de diciembre en Guayaquil
+  // y la prueba fallaba segun donde corriera, no por un fallo real.
+  assert.equal(prefijoDelMesActual(new Date('2026-10-04T12:00:00-05:00')), '2026-10');
+  assert.equal(prefijoDelMesActual(new Date('2026-01-01T00:00:00-05:00')), '2026-01');
+  assert.equal(prefijoDelMesActual(new Date('2027-12-31T23:59:00-05:00')), '2027-12');
   assert.match(prefijoDelMesActual(), /^\d{4}-\d{2}$/);
+});
+
+test('el mes se decide en la zona del negocio, no en la del equipo', () => {
+  // Una venta registrada a las 03:00 UTC del 1 de enero es, en Guayaquil,
+  // todavia 31 de diciembre: el panel debe contarla en diciembre.
+  assert.equal(prefijoDelMesActual(new Date('2026-01-01T03:00:00Z')), '2025-12');
+  // Y a partir de las 05:00 UTC ya es 1 de enero en Guayaquil.
+  assert.equal(prefijoDelMesActual(new Date('2026-01-01T05:00:00Z')), '2026-01');
 });

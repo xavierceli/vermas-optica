@@ -11,9 +11,9 @@ jobs:
   verificar:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -24,8 +24,28 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # `tee` guarda la salida para poder publicarla aunque las pruebas fallen.
       - name: Tests (lógica + render)
-        run: npm test
+        shell: bash
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee salida-pruebas.txt
+
+      # El registro completo del trabajo exige permisos de administrador en
+      # GitHub, así que cuando algo fallaba no había forma de leer el motivo
+      # desde fuera. Este resumen sí es público y queda en la pestaña "Checks"
+      # del commit, que es donde se mira para saber qué se rompió.
+      - name: Resumen de las pruebas
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          {
+            echo '### Últimas líneas de las pruebas'
+            echo '```'
+            tail -n 80 salida-pruebas.txt 2>/dev/null || echo 'sin salida'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Build
         run: npm run build
