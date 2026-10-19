@@ -3,6 +3,7 @@
 // ---------------------------------------------------------------------------
 import { useState, useEffect, useCallback, useRef } from 'react';
 import RespaldoDatos from './RespaldoDatos.jsx';
+import AccesoSinConexion from './AccesoSinConexion.jsx';
 
 const TIPOS = {
   GUARDAR_CONSULTA: 'Consulta clínica', CREAR_VENTA: 'Venta', EDITAR_VENTA: 'Edición de venta',
@@ -255,6 +256,10 @@ export default function PanelSincronizacion({ abierta, cerrar, gestor, soloProbl
               })}
             </ul>
           )}
+
+          {/* Va dentro del area que se desplaza (y no fija abajo) para no robarle
+              alto a la lista de la cola en pantallas bajas. */}
+          {!soloProblemas && <AccesoSinConexion gestor={gestor} />}
         </div>
 
         {/* Solo mostramos la sección de respaldo si NO se abrió en modo de resolver problemas */}

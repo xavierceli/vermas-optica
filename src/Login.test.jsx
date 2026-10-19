@@ -71,3 +71,24 @@ describe('Login — ver las contraseñas nuevas', () => {
     expect(confirmar.value).toBe('abcdef');
   });
 });
+
+// ---------------------------------------------------------------------------
+// ACCESO CON PIN SIN CONEXION
+// ---------------------------------------------------------------------------
+// Este recuadro solo sale si el equipo esta enrolado. Si ninguna pantalla
+// configura el PIN (era el caso: la seccion no existia en la app), el recuadro
+// no aparece nunca y el personal se queda sin poder abrir la app si se cae
+// internet antes de entrar.
+// ---------------------------------------------------------------------------
+describe('Login — entrar sin conexión con PIN', () => {
+  it('no ofrece PIN si el equipo no está configurado', () => {
+    render(<Login {...props} />);
+    expect(screen.queryByLabelText(/PIN de acceso sin conexión/i)).toBeNull();
+  });
+
+  it('ofrece entrar con PIN cuando el equipo sí está configurado', () => {
+    render(<Login {...props} dispositivo={{ enrolado: true }} />);
+    expect(screen.getByLabelText(/PIN de acceso sin conexión/i)).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Entrar sin conexión/i })).toBeTruthy();
+  });
+});

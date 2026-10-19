@@ -19,7 +19,8 @@ const ARCHIVOS_CON_FORMULARIOS = [
   'Clinica.jsx',
   'PedidosForm.jsx',
   'Inventario.jsx',
-  'Login.jsx'
+  'Login.jsx',
+  'AccesoSinConexion.jsx'
 ];
 
 /**
