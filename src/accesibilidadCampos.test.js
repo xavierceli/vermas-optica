@@ -69,3 +69,18 @@ test('cedula, telefono y medidas del armazon abren el teclado adecuado', () => {
     assert.equal((medidas.match(/name="param_(horizontal|puente|vertical|diagonal)" inputMode="decimal"/g) || []).length, 4);
   }
 });
+
+test('las coincidencias de pacientes se pueden elegir con el teclado', () => {
+  const fuente = readFileSync(join(raiz, 'Clinica.jsx'), 'utf8');
+  assert.match(fuente, /role="listbox"/);
+  const bloque = fuente.slice(fuente.indexOf('role="listbox"'), fuente.indexOf('role="listbox"') + 1800);
+  assert.match(bloque, /<button[\s\S]{0,300}role="option"/);
+  assert.doesNotMatch(bloque, /<div[^>]*onClick=\{\(\) => seleccionarPacienteSugerido/);
+});
+
+test('al escribir una cedula ya registrada se completan los datos de contacto', () => {
+  const fuente = readFileSync(join(raiz, 'Clinica.jsx'), 'utf8');
+  assert.match(fuente, /datosParaCompletarPaciente\(\{ paciente: exactos\[0\], actual: paciente \}\)/);
+  assert.match(fuente, /completarDesdeCedula\(val, pintarSugerencias\(val, sugerenciasNube\)\)/);
+  assert.match(fuente, /completarDesdeCedula\(val, pintarSugerencias\(val, nube\)\)/);
+});

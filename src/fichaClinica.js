@@ -78,6 +78,23 @@ export const buscarCoincidenciasPacientes = ({ locales = [], nube = [], texto = 
   return salida;
 };
 
+/**
+ * Datos que se pueden completar solos cuando la cedula escrita es exactamente
+ * la de un paciente ya registrado. Solo devuelve los campos que estan vacios:
+ * lo que el optometra ya escribio nunca se pisa. Devuelve null si no hay nada
+ * que completar.
+ */
+export const datosParaCompletarPaciente = ({ paciente = null, actual = {} } = {}) => {
+  if (!paciente) return null;
+  const completar = {};
+  for (const campo of ['nombre', 'telefono', 'correo', 'fecha_nacimiento']) {
+    if (aTexto(actual[campo]).trim()) continue;
+    const valor = aTexto(paciente[campo]).trim();
+    if (valor) completar[campo] = valor;
+  }
+  return Object.keys(completar).length > 0 ? completar : null;
+};
+
 export const CAMPOS_DE_VENTA = [
   'venta', 'abono', 'notas', 'notas_clinicas',
   'codigo_armazon', 'tipo_armazon',

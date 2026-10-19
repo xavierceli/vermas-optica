@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
   CAMPOS_DE_VENTA, CLAVES_ACEPTADAS, INV_INICIAL, PRECIO_INICIAL, TRATAMIENTOS,
-  aplicarCedula, buscarCoincidenciasPacientes, crearEstadoPaciente, hoyISO
+  aplicarCedula, buscarCoincidenciasPacientes, crearEstadoPaciente, datosParaCompletarPaciente, hoyISO
 } from './fichaClinica.js';
 
 const SRC = join(dirname(fileURLToPath(import.meta.url)));
@@ -226,4 +226,46 @@ test('una cedula con espacios de mas tambien encuentra al paciente', () => {
     hoy: HOY
   });
   assert.equal(encontro, true);
+});
+
+// Al escribir una cedula que ya existe, la app completa los datos de contacto
+// para que el guardado no falle por falta de nombre. La regla es: rellenar solo
+// lo vacio y no tocar nada si la cedula esta repetida (caso ambiguo).
+test('la cedula exacta completa nombre, telefono, correo y nacimiento', () => {
+  const paciente = {
+    id: 'p1', cedula: '1712345678', nombre: 'ANA LUCIA PEREZ',
+    telefono: '0991234567', correo: 'ana@correo.com', fecha_nacimiento: '1990-05-04'
+  };
+  const completar = datosParaCompletarPaciente({
+    paciente,
+    actual: { cedula: '1712345678', nombre: '', telefono: '' }
+  });
+  assert.deepEqual(completar, {
+    nombre: 'ANA LUCIA PEREZ',
+    telefono: '0991234567',
+    correo: 'ana@correo.com',
+    fecha_nacimiento: '1990-05-04'
+  });
+});
+
+test('lo que el optometra ya escribio no se pisa', () => {
+  const paciente = { cedula: '1712345678', nombre: 'ANA LUCIA PEREZ', telefono: '0991234567' };
+  const completar = datosParaCompletarPaciente({
+    paciente,
+    actual: { nombre: 'ANA L. PEREZ', telefono: '0987654321', correo: '', fecha_nacimiento: '' }
+  });
+  assert.equal(completar, null);
+});
+
+test('sin datos nuevos no hay nada que completar', () => {
+  assert.equal(datosParaCompletarPaciente({ paciente: null }), null);
+  assert.equal(datosParaCompletarPaciente({ paciente: { nombre: 'ANA' }, actual: { nombre: 'ANA' } }), null);
+});
+
+test('un campo con solo espacios cuenta como vacio', () => {
+  const completar = datosParaCompletarPaciente({
+    paciente: { nombre: 'ANA LUCIA PEREZ' },
+    actual: { nombre: '   ' }
+  });
+  assert.deepEqual(completar, { nombre: 'ANA LUCIA PEREZ' });
 });

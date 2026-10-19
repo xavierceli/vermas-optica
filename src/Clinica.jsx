@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, Fragment } from 'react';
 import { safeString, calcularCerca, buscarPacientesEnSupabase } from './utilidades';
 import { LIMITE_QUERATOMETRIA, esQueratometriaAlta } from './reglas';
-import { buscarCoincidenciasPacientes } from './fichaClinica';
+import { buscarCoincidenciasPacientes, datosParaCompletarPaciente } from './fichaClinica';
 import { normalizeCedula } from './localRepository';
 
 const claseQueratometria = alta => `w-14 p-1 border rounded outline-none text-center text-sm font-bold focus:ring-1 focus:ring-teal-500 ${alta ? 'border-red-500 bg-red-50 text-red-700' : 'border-gray-300 text-gray-900'}`;
@@ -174,13 +174,37 @@ export default function Clinica({
     });
     setSugerenciasCedula(encontradas);
     setMostrarSugerencias(encontradas.length > 0);
+    return encontradas;
+  };
+
+  // Si la cedula escrita es exactamente la de un paciente ya registrado, se
+  // completan los datos de contacto que esten vacios. Antes habia que pinchar
+  // la coincidencia; si el operador no la veia, al guardar le faltaba el nombre.
+  // Nunca pisa lo que ya se escribio y no hace nada si hay dos pacientes con la
+  // misma cedula (caso ambiguo).
+  const completarDesdeCedula = (texto, encontradas) => {
+    if (editandoId) return;
+    const clave = normalizeCedula(texto);
+    if (!clave) return;
+    const exactos = (encontradas || []).filter(h => normalizeCedula(h?.cedula) === clave);
+    if (exactos.length !== 1) return;
+    const extra = datosParaCompletarPaciente({ paciente: exactos[0], actual: paciente });
+    if (!extra) return;
+    setPaciente(prev => {
+      if (normalizeCedula(prev.cedula) !== clave) return prev;
+      const siguiente = { ...prev };
+      for (const [campo, valor] of Object.entries(extra)) {
+        if (!safeString(prev[campo]).trim()) siguiente[campo] = valor;
+      }
+      return siguiente;
+    });
   };
 
   const manejarEscrituraCedula = (e) => {
     manejarCambio(e); 
     const val = e.target.value.trim();
 
-    pintarSugerencias(val, sugerenciasNube);
+    completarDesdeCedula(val, pintarSugerencias(val, sugerenciasNube));
 
     if (timerNube.current) clearTimeout(timerNube.current);
     if (val.length >= 3 && navigator.onLine) {
@@ -195,7 +219,7 @@ export default function Clinica({
             .filter(r => !borradas.has(normalizeCedula(r?.cedula)))
             .slice(0, 5);
           setSugerenciasNube(nube);
-          pintarSugerencias(val, nube);
+          completarDesdeCedula(val, pintarSugerencias(val, nube));
         } catch { /* silencioso si falla la red */ }
       }, 400);
     } else {
@@ -308,18 +332,30 @@ export default function Clinica({
             value={safeString(paciente.cedula)} 
             onChange={manejarEscrituraCedula} 
             onFocus={() => { if(safeString(paciente.cedula).length >= 2) setMostrarSugerencias(true); }}
+            onKeyDown={(e) => { if (e.key === 'Escape') setMostrarSugerencias(false); }}
             type="text" 
             className="w-full p-2 bg-teal-50 border border-teal-300 rounded-lg outline-none focus:ring-2 focus:ring-teal-500 placeholder-teal-700/60 font-bold text-gray-900 text-sm" 
             placeholder="Escribe para buscar..." 
           />
           {mostrarSugerencias && sugerenciasCedula.length > 0 && (
-            <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-teal-200 rounded-lg shadow-xl z-50 max-h-48 overflow-y-auto">
-              <div className="p-1 bg-teal-100 text-[10px] font-bold text-teal-900 uppercase px-2">Pacientes Coincidentes:</div>
+            <div
+              role="listbox"
+              aria-label="Pacientes coincidentes"
+              className="absolute left-0 right-0 top-full mt-1 bg-white border border-teal-200 rounded-lg shadow-xl z-50 max-h-48 overflow-y-auto"
+            >
+              <div aria-hidden="true" className="p-1 bg-teal-100 text-[10px] font-bold text-teal-900 uppercase px-2">Pacientes Coincidentes:</div>
               {sugerenciasCedula.map(s => (
-                <div key={s.id} onClick={() => seleccionarPacienteSugerido(s)} className="p-2 hover:bg-teal-50 cursor-pointer border-b border-gray-100 text-xs flex justify-between items-center">
+                <button
+                  key={s.id}
+                  type="button"
+                  role="option"
+                  aria-selected={false}
+                  onClick={() => seleccionarPacienteSugerido(s)}
+                  className="w-full p-2 text-left hover:bg-teal-50 focus:bg-teal-50 focus:ring-2 focus:ring-teal-500 outline-none border-b border-gray-100 text-xs flex justify-between items-center gap-2"
+                >
                   <span className="font-bold text-gray-900">{s.nombre} {s.alias && <span className="text-gray-600 font-normal italic">({s.alias})</span>}</span>
-                  <span className="text-teal-700 font-mono font-bold">🆔 {s.cedula}</span>
-                </div>
+                  <span className="text-teal-700 font-mono font-bold shrink-0">🆔 {s.cedula}</span>
+                </button>
               ))}
             </div>
           )}
