@@ -76,6 +76,8 @@ export default function ListaTarjetas({
           placeholder="🔍 Escribe mínimo 2 letras de Cédula, Nombre o Alias..." 
           value={busquedaTexto} 
           onChange={(e) => { setVisibles(50); setBusquedaTexto(e.target.value); }} 
+          aria-label="Buscar paciente por cédula, nombre o alias"
+
           className="flex-1 p-2.5 sm:p-3 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-blue-500 shadow-sm text-sm font-medium bg-gray-50 focus:bg-white text-gray-900" 
         />
         {buscando && hayTermino && (

@@ -231,6 +231,7 @@ export default function Login({ dispositivo, entrarSinConexion }) {
               <input 
                 id="login-email"
                 type="email" 
+                autoComplete="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value.toLowerCase())}
                 className="w-full p-2.5 sm:p-3 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-teal-500 bg-gray-50 focus:bg-white transition-all font-semibold text-gray-900 text-sm"
@@ -255,6 +256,7 @@ export default function Login({ dispositivo, entrarSinConexion }) {
                   <input 
                     id="login-password"
                     type={verPassword ? 'text' : 'password'} 
+                    autoComplete="current-password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     className="w-full p-2.5 sm:p-3 pr-16 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-teal-500 bg-gray-50 focus:bg-white transition-all font-semibold text-gray-900 text-sm"

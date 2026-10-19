@@ -19,7 +19,7 @@ const FilaRefraccion = ({ ojo, label, paciente, manejarCambio, claseInputRef }) 
     <td className="border-r p-0"><input name={`adicion_${ojo}`} aria-label={etiqueta(ojo, 'Adición')} value={safeString(paciente[`adicion_${ojo}`])} onChange={manejarCambio} className={claseInputRef(`adicion_${ojo}`, 'focus:bg-blue-50 text-gray-900')} /></td>
     <td className="border-r p-0"><input name={`dnp_${ojo}`} aria-label={etiqueta(ojo, 'Distancia naso-pupilar')} value={safeString(paciente[`dnp_${ojo}`])} onChange={manejarCambio} className={claseInputRef(`dnp_${ojo}`, 'focus:bg-blue-50 text-gray-900')} /></td>
     <td className="border-r p-0"><input name={`altura_${ojo}`} aria-label={etiqueta(ojo, 'Altura pupilar')} value={safeString(paciente[`altura_${ojo}`])} onChange={manejarCambio} className={claseInputRef(`altura_${ojo}`, 'focus:bg-blue-50 text-gray-900')} /></td>
-    <td className="border-r p-0 bg-teal-50/20"><input readOnly aria-label={etiqueta(ojo, 'Cerca, suma de esfera y adición, calculado')} value={calcularCerca(paciente[`esfera_${ojo}`], paciente[`adicion_${ojo}`])} className="w-full p-2 bg-transparent outline-none font-bold text-center text-teal-900" title="Calculado automáticamente" /></td>
+    <td className="border-r p-0 bg-teal-50/20"><input readOnly aria-label={etiqueta(ojo, 'Cerca, suma de esfera y adición, calculado')} value={calcularCerca(paciente[`esfera_${ojo}`], paciente[`adicion_${ojo}`])} className="w-full p-2 bg-transparent outline-none focus:ring-2 focus:ring-teal-500 font-bold text-center text-teal-900" title="Calculado automáticamente" /></td>
     <td className="border-r p-0 bg-blue-50/30"><input name={`avcl_${ojo}`} aria-label={etiqueta(ojo, 'Agudeza visual de lejos con corrección')} value={safeString(paciente[`avcl_${ojo}`])} onChange={manejarCambio} className={claseInputRef(`avcl_${ojo}`, 'focus:bg-blue-100 bg-transparent font-semibold text-blue-900')} /></td>
     <td className="p-0 bg-blue-50/30"><input name={`avcc_${ojo}`} aria-label={etiqueta(ojo, 'Agudeza visual de cerca con corrección')} value={safeString(paciente[`avcc_${ojo}`])} onChange={manejarCambio} className={claseInputRef(`avcc_${ojo}`, 'focus:bg-blue-100 bg-transparent font-semibold text-blue-900')} /></td>
   </tr>
@@ -28,12 +28,12 @@ const FilaRefraccion = ({ ojo, label, paciente, manejarCambio, claseInputRef }) 
 const FilaLensometria = ({ ojo, label, paciente, manejarCambio }) => (
   <tr className={ojo === 'od' ? "border-b hover:bg-gray-50" : "hover:bg-gray-50"}>
     <td className="p-1.5 border-r font-extrabold bg-gray-50 text-gray-800">{label}</td>
-    <td className="border-r p-0"><input name={`lenso_esf_${ojo}`} aria-label={etiqueta(ojo, 'Lensometría esfera')} value={safeString(paciente[`lenso_esf_${ojo}`])} onChange={manejarCambio} className="w-full p-2 outline-none text-center focus:bg-teal-50 text-gray-900" /></td>
-    <td className="border-r p-0"><input name={`lenso_cil_${ojo}`} aria-label={etiqueta(ojo, 'Lensometría cilindro')} value={safeString(paciente[`lenso_cil_${ojo}`])} onChange={manejarCambio} className="w-full p-2 outline-none text-center focus:bg-teal-50 text-gray-900" /></td>
-    <td className="border-r p-0"><input name={`lenso_eje_${ojo}`} aria-label={etiqueta(ojo, 'Lensometría eje')} value={safeString(paciente[`lenso_eje_${ojo}`])} onChange={manejarCambio} className="w-full p-2 outline-none text-center focus:bg-teal-50 text-gray-900" /></td>
-    <td className="border-r p-0"><input name={`lenso_add_${ojo}`} aria-label={etiqueta(ojo, 'Lensometría adición')} value={safeString(paciente[`lenso_add_${ojo}`])} onChange={manejarCambio} className="w-full p-2 outline-none text-center focus:bg-teal-50 text-gray-900" /></td>
-    <td className="border-r p-0 bg-blue-50/30"><input name={`lenso_avl_${ojo}`} aria-label={etiqueta(ojo, 'Lensometría agudeza de lejos')} value={safeString(paciente[`lenso_avl_${ojo}`])} onChange={manejarCambio} className="w-full p-2 bg-transparent outline-none text-center focus:bg-blue-100 font-semibold text-blue-900" /></td>
-    <td className="p-0 bg-blue-50/30"><input name={`lenso_avc_${ojo}`} aria-label={etiqueta(ojo, 'Lensometría agudeza de cerca')} value={safeString(paciente[`lenso_avc_${ojo}`])} onChange={manejarCambio} className="w-full p-2 bg-transparent outline-none text-center focus:bg-blue-100 font-semibold text-blue-900" /></td>
+    <td className="border-r p-0"><input name={`lenso_esf_${ojo}`} aria-label={etiqueta(ojo, 'Lensometría esfera')} value={safeString(paciente[`lenso_esf_${ojo}`])} onChange={manejarCambio} className="w-full p-2 outline-none focus:ring-2 focus:ring-teal-500 text-center focus:bg-teal-50 text-gray-900" /></td>
+    <td className="border-r p-0"><input name={`lenso_cil_${ojo}`} aria-label={etiqueta(ojo, 'Lensometría cilindro')} value={safeString(paciente[`lenso_cil_${ojo}`])} onChange={manejarCambio} className="w-full p-2 outline-none focus:ring-2 focus:ring-teal-500 text-center focus:bg-teal-50 text-gray-900" /></td>
+    <td className="border-r p-0"><input name={`lenso_eje_${ojo}`} aria-label={etiqueta(ojo, 'Lensometría eje')} value={safeString(paciente[`lenso_eje_${ojo}`])} onChange={manejarCambio} className="w-full p-2 outline-none focus:ring-2 focus:ring-teal-500 text-center focus:bg-teal-50 text-gray-900" /></td>
+    <td className="border-r p-0"><input name={`lenso_add_${ojo}`} aria-label={etiqueta(ojo, 'Lensometría adición')} value={safeString(paciente[`lenso_add_${ojo}`])} onChange={manejarCambio} className="w-full p-2 outline-none focus:ring-2 focus:ring-teal-500 text-center focus:bg-teal-50 text-gray-900" /></td>
+    <td className="border-r p-0 bg-blue-50/30"><input name={`lenso_avl_${ojo}`} aria-label={etiqueta(ojo, 'Lensometría agudeza de lejos')} value={safeString(paciente[`lenso_avl_${ojo}`])} onChange={manejarCambio} className="w-full p-2 bg-transparent outline-none focus:ring-2 focus:ring-teal-500 text-center focus:bg-blue-100 font-semibold text-blue-900" /></td>
+    <td className="p-0 bg-blue-50/30"><input name={`lenso_avc_${ojo}`} aria-label={etiqueta(ojo, 'Lensometría agudeza de cerca')} value={safeString(paciente[`lenso_avc_${ojo}`])} onChange={manejarCambio} className="w-full p-2 bg-transparent outline-none focus:ring-2 focus:ring-teal-500 text-center focus:bg-blue-100 font-semibold text-blue-900" /></td>
   </tr>
 );
 
@@ -41,14 +41,14 @@ const BloqueAutoRef = ({ ojo, label, paciente, manejarCambio }) => (
   <Fragment>
     <tr className="border-b hover:bg-gray-50">
       <td className="p-1.5 border-r font-extrabold bg-gray-50 text-gray-800" rowSpan="2">{label}</td>
-      <td className="border-r p-0"><input name={`auto_esf_${ojo}`} aria-label={etiqueta(ojo, 'Autorrefractometría esfera')} value={safeString(paciente[`auto_esf_${ojo}`])} onChange={manejarCambio} className="w-full p-2 outline-none text-center focus:bg-teal-50 border-b border-gray-100 text-gray-900" /></td>
-      <td className="border-r p-0"><input name={`auto_cil_${ojo}`} aria-label={etiqueta(ojo, 'Autorrefractometría cilindro')} value={safeString(paciente[`auto_cil_${ojo}`])} onChange={manejarCambio} className="w-full p-2 outline-none text-center focus:bg-teal-50 border-b border-gray-100 text-gray-900" /></td>
-      <td className="p-0"><input name={`auto_eje_${ojo}`} aria-label={etiqueta(ojo, 'Autorrefractometría eje')} value={safeString(paciente[`auto_eje_${ojo}`])} onChange={manejarCambio} className="w-full p-2 outline-none text-center focus:bg-teal-50 border-b border-gray-100 text-gray-900" /></td>
+      <td className="border-r p-0"><input name={`auto_esf_${ojo}`} aria-label={etiqueta(ojo, 'Autorrefractometría esfera')} value={safeString(paciente[`auto_esf_${ojo}`])} onChange={manejarCambio} className="w-full p-2 outline-none focus:ring-2 focus:ring-teal-500 text-center focus:bg-teal-50 border-b border-gray-100 text-gray-900" /></td>
+      <td className="border-r p-0"><input name={`auto_cil_${ojo}`} aria-label={etiqueta(ojo, 'Autorrefractometría cilindro')} value={safeString(paciente[`auto_cil_${ojo}`])} onChange={manejarCambio} className="w-full p-2 outline-none focus:ring-2 focus:ring-teal-500 text-center focus:bg-teal-50 border-b border-gray-100 text-gray-900" /></td>
+      <td className="p-0"><input name={`auto_eje_${ojo}`} aria-label={etiqueta(ojo, 'Autorrefractometría eje')} value={safeString(paciente[`auto_eje_${ojo}`])} onChange={manejarCambio} className="w-full p-2 outline-none focus:ring-2 focus:ring-teal-500 text-center focus:bg-teal-50 border-b border-gray-100 text-gray-900" /></td>
     </tr>
     <tr className={ojo === 'od' ? "border-b hover:bg-gray-50" : "hover:bg-gray-50"}>
-      <td className="border-r p-0"><input name={`auto_esf_${ojo}_2`} aria-label={etiqueta(ojo, 'Autorrefractometría esfera, segunda medida')} value={safeString(paciente[`auto_esf_${ojo}_2`])} onChange={manejarCambio} className="w-full p-2 outline-none text-center focus:bg-teal-50 text-gray-900" /></td>
-      <td className="border-r p-0"><input name={`auto_cil_${ojo}_2`} aria-label={etiqueta(ojo, 'Autorrefractometría cilindro, segunda medida')} value={safeString(paciente[`auto_cil_${ojo}_2`])} onChange={manejarCambio} className="w-full p-2 outline-none text-center focus:bg-teal-50 text-gray-900" /></td>
-      <td className="p-0"><input name={`auto_eje_${ojo}_2`} aria-label={etiqueta(ojo, 'Autorrefractometría eje, segunda medida')} value={safeString(paciente[`auto_eje_${ojo}_2`])} onChange={manejarCambio} className="w-full p-2 outline-none text-center focus:bg-teal-50 text-gray-900" /></td>
+      <td className="border-r p-0"><input name={`auto_esf_${ojo}_2`} aria-label={etiqueta(ojo, 'Autorrefractometría esfera, segunda medida')} value={safeString(paciente[`auto_esf_${ojo}_2`])} onChange={manejarCambio} className="w-full p-2 outline-none focus:ring-2 focus:ring-teal-500 text-center focus:bg-teal-50 text-gray-900" /></td>
+      <td className="border-r p-0"><input name={`auto_cil_${ojo}_2`} aria-label={etiqueta(ojo, 'Autorrefractometría cilindro, segunda medida')} value={safeString(paciente[`auto_cil_${ojo}_2`])} onChange={manejarCambio} className="w-full p-2 outline-none focus:ring-2 focus:ring-teal-500 text-center focus:bg-teal-50 text-gray-900" /></td>
+      <td className="p-0"><input name={`auto_eje_${ojo}_2`} aria-label={etiqueta(ojo, 'Autorrefractometría eje, segunda medida')} value={safeString(paciente[`auto_eje_${ojo}_2`])} onChange={manejarCambio} className="w-full p-2 outline-none focus:ring-2 focus:ring-teal-500 text-center focus:bg-teal-50 text-gray-900" /></td>
     </tr>
   </Fragment>
 );
@@ -91,7 +91,7 @@ const BloqueQueratometria = ({ ojo, label, paciente, manejarCambio }) => {
         <td className="border-r border-b p-2 bg-gray-50">
           <div className="flex justify-between items-center gap-1">
             <span className="text-xs font-bold text-gray-700">K1</span>
-            <input readOnly aria-label={etiqueta(ojo, 'Radio de curvatura K1, calculado como 337.5 dividido para K1')} value={k1mm} className="w-14 p-1 bg-transparent outline-none font-black text-gray-900 text-center text-sm" title="Calculado: 337.5 / K1" />
+            <input readOnly aria-label={etiqueta(ojo, 'Radio de curvatura K1, calculado como 337.5 dividido para K1')} value={k1mm} className="w-14 p-1 bg-transparent outline-none focus:ring-2 focus:ring-teal-500 font-black text-gray-900 text-center text-sm" title="Calculado: 337.5 / K1" />
           </div>
         </td>
         <td className="border-r border-b p-2">
@@ -114,7 +114,7 @@ const BloqueQueratometria = ({ ojo, label, paciente, manejarCambio }) => {
         <td className="border-r border-b p-2 bg-gray-50">
           <div className="flex justify-between items-center gap-1">
             <span className="text-xs font-bold text-gray-700">K2</span>
-            <input readOnly aria-label={etiqueta(ojo, 'Radio de curvatura K2, calculado como 337.5 dividido para K2')} value={k2mm} className="w-14 p-1 bg-transparent outline-none font-black text-gray-900 text-center text-sm" title="Calculado: 337.5 / K2" />
+            <input readOnly aria-label={etiqueta(ojo, 'Radio de curvatura K2, calculado como 337.5 dividido para K2')} value={k2mm} className="w-14 p-1 bg-transparent outline-none focus:ring-2 focus:ring-teal-500 font-black text-gray-900 text-center text-sm" title="Calculado: 337.5 / K2" />
           </div>
         </td>
         <td className="border-r border-b p-2">
@@ -128,14 +128,14 @@ const BloqueQueratometria = ({ ojo, label, paciente, manejarCambio }) => {
         <td className="border-r p-2">
           <div className="flex justify-between items-center gap-1">
             <span className="text-xs font-black text-teal-900">Ast.Cor</span>
-            <input readOnly aria-label={etiqueta(ojo, 'Astigmatismo corneal, diferencia entre K2 y K1')} value={astig} className="w-14 p-1 bg-white border border-teal-400 rounded outline-none font-black text-teal-900 text-center text-sm shadow-sm" title="Calculado: |K2 - K1|" />
+            <input readOnly aria-label={etiqueta(ojo, 'Astigmatismo corneal, diferencia entre K2 y K1')} value={astig} className="w-14 p-1 bg-white border border-teal-400 rounded outline-none focus:ring-2 focus:ring-teal-500 font-black text-teal-900 text-center text-sm shadow-sm" title="Calculado: |K2 - K1|" />
           </div>
         </td>
         <td className="border-r p-2 bg-gray-50"></td>
         <td className="border-r p-2">
           <div className="flex justify-between items-center gap-1">
             <span className="text-xs font-bold text-gray-700">Eje</span>
-            <input readOnly aria-label={etiqueta(ojo, 'Eje del astigmatismo, meridiano más plano')} value={ejeAstig} className="w-14 p-1 bg-white border border-teal-400 rounded outline-none font-black text-teal-900 text-center text-sm shadow-sm" title="Calculado: eje del meridiano más plano" />
+            <input readOnly aria-label={etiqueta(ojo, 'Eje del astigmatismo, meridiano más plano')} value={ejeAstig} className="w-14 p-1 bg-white border border-teal-400 rounded outline-none focus:ring-2 focus:ring-teal-500 font-black text-teal-900 text-center text-sm shadow-sm" title="Calculado: eje del meridiano más plano" />
           </div>
         </td>
       </tr>
@@ -284,7 +284,7 @@ export default function Clinica({
             <p className="text-xs text-blue-800">Este paciente ya tiene {visitasAnteriores.length} consulta(s) previa(s) registrada(s).</p>
           </div>
           <div className="flex items-center gap-2 w-full md:w-auto">
-            <select aria-label="Ver medidas de consultas anteriores" value={visitaSeleccionadaId} onChange={cargarVisitaAnterior} className="p-2 bg-white border border-blue-300 rounded-lg text-xs font-semibold outline-none flex-1 md:w-64 text-gray-800">
+            <select aria-label="Ver medidas de consultas anteriores" value={visitaSeleccionadaId} onChange={cargarVisitaAnterior} className="p-2 bg-white border border-blue-300 rounded-lg text-xs font-semibold outline-none focus:ring-2 focus:ring-blue-500 flex-1 md:w-64 text-gray-800">
               <option value="">-- Ver medidas de fechas anteriores --</option>
               {visitasAnteriores.map(v => (
                 <option key={v.id} value={v.id}>📅 Fecha: {v.fecha} | Esf OD: {v.esfera_od || '0'} / OI: {v.esfera_oi || '0'}</option>
@@ -335,7 +335,7 @@ export default function Clinica({
         </div>
         <div>
           <label htmlFor="clin-telefono" className="block text-xs sm:text-sm font-bold text-gray-800 mb-1">Teléfono</label>
-          <input id="clin-telefono" name="telefono" value={safeString(paciente.telefono)} onChange={manejarCambio} type="text" className="w-full p-2 bg-gray-50 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-teal-500 text-gray-900 text-sm" />
+          <input id="clin-telefono" name="telefono" inputMode="tel" value={safeString(paciente.telefono)} onChange={manejarCambio} type="text" className="w-full p-2 bg-gray-50 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-teal-500 text-gray-900 text-sm" />
         </div>
       </div>
       

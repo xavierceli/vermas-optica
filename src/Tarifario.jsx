@@ -133,7 +133,7 @@ export default function Tarifario({
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 mb-3">
           <div>
             <label htmlFor="tf-tipo-lente" className="block text-xs font-bold text-gray-800 mb-1">Tipo de Lente</label>
-            <select id="tf-tipo-lente" name="tipo_lente" value={nuevoPrecio.tipo_lente} onChange={manejarCambioPrecio} className="w-full p-2 bg-white border border-emerald-300 rounded-lg outline-none text-xs sm:text-sm font-semibold text-gray-900">
+            <select id="tf-tipo-lente" name="tipo_lente" value={nuevoPrecio.tipo_lente} onChange={manejarCambioPrecio} className="w-full p-2 bg-white border border-emerald-300 rounded-lg outline-none focus:ring-2 focus:ring-teal-500 text-xs sm:text-sm font-semibold text-gray-900">
               <option value="Monofocal">Monofocal</option>
               <option value="Bifocal">Bifocal</option>
               <option value="Ocupacional">Ocupacional</option>
@@ -144,7 +144,7 @@ export default function Tarifario({
 
           <div>
             <label htmlFor="tf-material" className="block text-xs font-bold text-gray-800 mb-1">Material / Índice</label>
-            <select id="tf-material" name="material" value={nuevoPrecio.material} onChange={manejarCambioPrecio} className="w-full p-2 bg-white border border-emerald-300 rounded-lg outline-none text-xs sm:text-sm font-semibold text-gray-900">
+            <select id="tf-material" name="material" value={nuevoPrecio.material} onChange={manejarCambioPrecio} className="w-full p-2 bg-white border border-emerald-300 rounded-lg outline-none focus:ring-2 focus:ring-teal-500 text-xs sm:text-sm font-semibold text-gray-900">
               <option value="Plástico">Plástico (CR-39 / 1.49)</option>
               <option value="Policarbonato">Policarbonato (1.59)</option>
               <option value="Reducido (1.61/1.67)">Reducido (1.56 / 1.61 / 1.67)</option>
@@ -156,7 +156,7 @@ export default function Tarifario({
 
           <div>
             <label htmlFor="tf-tratamiento" className="block text-xs font-bold text-gray-800 mb-1">Tratamiento</label>
-            <select id="tf-tratamiento" name="tratamiento" value={nuevoPrecio.tratamiento} onChange={manejarCambioPrecio} className="w-full p-2 bg-white border border-emerald-300 rounded-lg outline-none text-xs sm:text-sm font-semibold text-gray-900">
+            <select id="tf-tratamiento" name="tratamiento" value={nuevoPrecio.tratamiento} onChange={manejarCambioPrecio} className="w-full p-2 bg-white border border-emerald-300 rounded-lg outline-none focus:ring-2 focus:ring-teal-500 text-xs sm:text-sm font-semibold text-gray-900">
               <option value="Ninguno / Blanco">Ninguno / Blanco</option>
               <option value="Antirreflejo Verde">Antirreflejo Verde</option>
               <option value="Antirreflejo Azul">Antirreflejo Azul</option>
@@ -177,7 +177,7 @@ export default function Tarifario({
               value={nuevoPrecio.rango_medida} 
               onChange={manejarCambioPrecio} 
               type="text" 
-              className="w-full p-2 bg-white border border-emerald-300 rounded-lg outline-none text-xs sm:text-sm text-gray-900 font-medium" 
+              className="w-full p-2 bg-white border border-emerald-300 rounded-lg outline-none focus:ring-2 focus:ring-teal-500 text-xs sm:text-sm text-gray-900 font-medium" 
               placeholder="Ej: 1.56 | Esf ±2 a ±3 | Cil hasta -3" 
             />
             <datalist id="sugerencias-rangos">
@@ -196,17 +196,17 @@ export default function Tarifario({
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 items-end">
           <div>
             <label htmlFor="tf-costo-lab" className="block text-xs font-bold text-red-800 mb-1">Costo Laboratorio ($)</label>
-            <input id="tf-costo-lab" name="costo_laboratorio" min="0" step="0.01" value={nuevoPrecio.costo_laboratorio} onChange={manejarCambioPrecio} type="number" className="w-full p-2 bg-white border border-red-300 rounded-lg outline-none text-xs sm:text-sm font-bold text-red-700" placeholder="Ej: 12.00" />
+            <input id="tf-costo-lab" name="costo_laboratorio" min="0" step="0.01" value={nuevoPrecio.costo_laboratorio} onChange={manejarCambioPrecio} type="number" className="w-full p-2 bg-white border border-red-300 rounded-lg outline-none focus:ring-2 focus:ring-teal-500 text-xs sm:text-sm font-bold text-red-700" placeholder="Ej: 12.00" />
           </div>
 
           <div>
             <label htmlFor="tf-precio-sug" className="block text-xs font-bold text-emerald-900 mb-1">Precio Venta Sugerido ($)</label>
-            <input id="tf-precio-sug" name="precio_sugerido" min="0" step="0.01" value={nuevoPrecio.precio_sugerido} onChange={manejarCambioPrecio} type="number" className="w-full p-2 bg-white border border-emerald-400 rounded-lg outline-none text-xs sm:text-sm font-bold text-emerald-800" placeholder="Ej: 45.00" />
+            <input id="tf-precio-sug" name="precio_sugerido" min="0" step="0.01" value={nuevoPrecio.precio_sugerido} onChange={manejarCambioPrecio} type="number" className="w-full p-2 bg-white border border-emerald-400 rounded-lg outline-none focus:ring-2 focus:ring-teal-500 text-xs sm:text-sm font-bold text-emerald-800" placeholder="Ej: 45.00" />
           </div>
 
           <div>
             <label htmlFor="tf-notas" className="block text-xs font-bold text-gray-800 mb-1">Notas / Laboratorio</label>
-            <input id="tf-notas" name="notas" value={nuevoPrecio.notas} onChange={manejarCambioPrecio} type="text" className="w-full p-2 bg-white border border-emerald-300 rounded-lg outline-none text-xs sm:text-sm text-gray-900" placeholder="Ej: Lab Servióptica / 3 días" />
+            <input id="tf-notas" name="notas" value={nuevoPrecio.notas} onChange={manejarCambioPrecio} type="text" className="w-full p-2 bg-white border border-emerald-300 rounded-lg outline-none focus:ring-2 focus:ring-teal-500 text-xs sm:text-sm text-gray-900" placeholder="Ej: Lab Servióptica / 3 días" />
           </div>
 
           <div>

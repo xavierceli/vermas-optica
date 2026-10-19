@@ -351,7 +351,7 @@ export default function PedidosLista({
                         value={safeString(item.estado) || 'Ninguno'} 
                         onChange={(e) => cambiarEstadoRapido(item, e.target.value)}
                         disabled={estaProcesando}
-                        className={`px-3 py-1 min-h-9 rounded-full text-xs font-bold uppercase cursor-pointer outline-none border shadow-sm transition-colors disabled:opacity-60 ${
+                        className={`px-3 py-1 min-h-9 rounded-full text-xs font-bold uppercase cursor-pointer outline-none focus:ring-2 focus:ring-teal-500 border shadow-sm transition-colors disabled:opacity-60 ${
                           item.estado === 'Entregado' ? 'bg-green-100 text-green-900 border-green-300' : 
                           item.estado === 'Listo para Entrega' ? 'bg-blue-100 text-blue-900 border-blue-300' : 
                           item.estado === 'En laboratorio' ? 'bg-yellow-100 text-yellow-900 border-yellow-300' : 
@@ -425,14 +425,14 @@ export default function PedidosLista({
                           disabled={estaProcesando}
                           value={abonosRapidos[item.id] || ''} 
                           onChange={(e) => manejarCambioAbono(item.id, e.target.value)}
-                          className="w-20 p-1.5 min-h-9 border border-gray-300 rounded outline-none text-sm text-center font-bold bg-white text-gray-900 disabled:opacity-60" 
+                          className="w-20 p-1.5 min-h-9 border border-gray-300 rounded outline-none focus:ring-2 focus:ring-teal-500 text-sm text-center font-bold bg-white text-gray-900 disabled:opacity-60" 
                         />
                         <select 
                           aria-label="Forma de pago"
                           value={metodoActual} 
                           disabled={estaProcesando}
                           onChange={(e) => manejarCambioFormaPago(item.id, e.target.value)}
-                          className="p-1.5 min-h-9 border border-gray-300 rounded outline-none text-xs bg-white font-semibold cursor-pointer text-gray-900 disabled:opacity-60" 
+                          className="p-1.5 min-h-9 border border-gray-300 rounded outline-none focus:ring-2 focus:ring-teal-500 text-xs bg-white font-semibold cursor-pointer text-gray-900 disabled:opacity-60" 
                         >
                           <option value="Efectivo">Efectivo</option>
                           <option value="Transferencia">Transferencia</option>
