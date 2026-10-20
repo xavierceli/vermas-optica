@@ -12,6 +12,7 @@ import { sinSesionActiva } from './syncEngine';
 import { textoComprobantePendiente } from './avisosSync';
 import { medidasOrdenFaltantes, CAMPOS_DE_LA_ORDEN } from './validacion';
 import BotonComprobante from './BotonComprobante';
+import CombosPromocionales from './CombosPromocionales';
 
 // Lleva la vista y el cursor a una medida de la orden por su `name`.
 const irACampoDeLaOrden = (nombre) => {
@@ -25,7 +26,7 @@ const irACampoDeLaOrden = (nombre) => {
 export default function PedidosForm({
   pedidoSeleccionado, setPedidoSeleccionado, setVistaActual, guardarPedido,
   manejarCambioPedido, cambiarMedicionPedido, medidasPaciente, inventario,
-  accesorioOriginalId, forzarRecalculo, confirmarAccion
+  accesorioOriginalId, forzarRecalculo, confirmarAccion, listaPrecios = []
 }) {
 
   const [nuevoAbonoMonto, setNuevoAbonoMonto] = useState('');
@@ -236,6 +237,14 @@ export default function PedidosForm({
           </button>
         </div>
       </div>
+
+      <CombosPromocionales
+        pedido={pedidoSeleccionado}
+        listaPrecios={listaPrecios}
+        inventario={inventario}
+        setPedidoSeleccionado={setPedidoSeleccionado}
+        bloqueado={bloqueado}
+      />
 
       {safeString(pedidoSeleccionado.nombre) === 'CONSUMIDOR FINAL' && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-amber-50 p-4 rounded-xl border border-amber-200">

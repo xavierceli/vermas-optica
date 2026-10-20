@@ -30,6 +30,7 @@ export const crearEstadoPaciente = (fecha = hoyISO()) => ({
   lenso_esf_od: '', lenso_cil_od: '', lenso_eje_od: '', lenso_add_od: '', lenso_avl_od: '', lenso_avc_od: '',
   lenso_esf_oi: '', lenso_cil_oi: '', lenso_eje_oi: '', lenso_add_oi: '', lenso_avl_oi: '', lenso_avc_oi: '',
   venta: '', abono: '', descuento: '0', forma_pago: 'Efectivo', pago_nota: '', estado: 'Ninguno', notas: '', comprobante_url: '',
+  combo_id: '', combo_nombre: '', combo_precio: '',
   codigo_armazon: '', tipo_armazon: '', param_horizontal: '', param_puente: '', param_vertical: '', param_diagonal: '',
   tipo_lente: '', material_lente: '', material_nota: '', accesorio_id: '',
   tratam_ninguno: 'NO', tratam_ar: 'NO', tratam_ar_azul: 'NO', tratam_azul: 'NO',
@@ -103,7 +104,7 @@ export const CAMPOS_DE_VENTA = [
   'tratam_tinturado_nota', 'tratam_foto_nota', 'tratam_trans_nota',
   'pago_nota', 'accesorio_id',
   'costo_armazon_int', 'costo_lunas_int', 'costo_accesorio_int', 'costo_tratamientos_int', 'costo_varios_int',
-  'comprobante_url'
+  'comprobante_url', 'combo_id', 'combo_nombre', 'combo_precio'
 ];
 
 export const TRATAMIENTOS = [

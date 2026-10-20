@@ -140,3 +140,27 @@ test('el logo recarga la pagina, pero nunca en silencio con un formulario a medi
   assert.match(recarga, /prepararVersionNueva\(registro/);
   assert.match(recarga, /SKIP_WAITING/);
 });
+
+test('el combo se guarda en la venta y no se pierde al reabrirla', () => {
+  // La trampa: agregar combo_id al formulario pero olvidarlo en las listas
+  // blancas de usePedidos. La venta se guardaria sin combo y al reabrirla
+  // volveria a sumar el armazon encima del precio del paquete.
+  const fuente = leer('hooks/usePedidos.js');
+  const bloques = fuente.match(/const (?:CAMPOS_DE_LA_VENTA|camposPedido) = \[[\s\S]*?\];/g) || [];
+  assert.equal(bloques.length, 2, 'deben existir las dos listas de campos de la venta');
+  for (const bloque of bloques) {
+    for (const campo of ['combo_id', 'combo_nombre', 'combo_precio']) {
+      assert.match(bloque, new RegExp(`'${campo}'`), campo + ' falta en una lista de guardado');
+    }
+  }
+});
+
+test('el combo viaja del Tarifario al formulario de pedidos', () => {
+  assert.match(leer('PedidosForm.jsx'), /<CombosPromocionales/);
+  assert.match(leer('PedidosForm.jsx'), /listaPrecios=\{listaPrecios\}/);
+  assert.match(leer('App.jsx'), /<PedidosForm[^>]*listaPrecios=\{g\.listaPrecios\}/);
+  const tarifario = leer('Tarifario.jsx');
+  assert.match(tarifario, /<CombosTarifario/);
+  assert.match(tarifario, /guardarCombo=\{guardarCombo\}/);
+  assert.match(leer('App.jsx'), /<Tarifario[^>]*guardarCombo=\{g\.guardarCombo\}/);
+});

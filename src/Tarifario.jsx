@@ -1,4 +1,6 @@
 import { safeString, safeNum } from './utilidades';
+import CombosTarifario from './CombosTarifario';
+import { esCombo } from './combos';
 
 // Plantillas preconfiguradas basadas en la tabla técnica de índices y gamas de progresivos
 const PLANTILLAS_RAPIDAS = [
@@ -72,8 +74,10 @@ export default function Tarifario({
   nuevoPrecio, setNuevoPrecio, precioInicial, editandoPrecioId, setEditandoPrecioId,
   manejarCambioPrecio, guardarPrecio, busquedaPrecio, setBusquedaPrecio,
   listaPreciosFiltrada = [], cargarParaEditarPrecio, eliminarPrecio,
-  esAdmin = false
+  listaPrecios = [], guardarCombo, esAdmin = false
 }) {
+
+  const filasDeTarifario = (listaPreciosFiltrada || []).filter(item => !esCombo(item));
 
   const aplicarPlantilla = (p) => {
     setNuevoPrecio(prev => ({
@@ -227,6 +231,13 @@ export default function Tarifario({
       </div>
       )}
 
+      <CombosTarifario
+        listaPrecios={listaPrecios}
+        guardarCombo={guardarCombo}
+        eliminarPrecio={eliminarPrecio}
+        esAdmin={esAdmin}
+      />
+
       <div className="flex gap-3">
         <input 
           type="text" 
@@ -254,7 +265,7 @@ export default function Tarifario({
             </tr>
           </thead>
           <tbody>
-            {listaPreciosFiltrada.map((item) => {
+            {filasDeTarifario.map((item) => {
               const cLab = safeNum(item.costo_laboratorio);
               const pSug = safeNum(item.precio_sugerido);
               const ganancia = pSug - cLab;
@@ -299,10 +310,10 @@ export default function Tarifario({
                 </tr>
               );
             })}
-            {listaPreciosFiltrada.length === 0 && (
+            {filasDeTarifario.length === 0 && (
               <tr>
                 <td colSpan="9" className="p-8 text-center text-gray-500 font-semibold">
-                  No hay tarifas registradas en la lista de precios. Usa las plantillas rápidas de arriba para empezar.
+                  No hay tarifas de lentes registradas. Los combos se administran en el bloque de arriba.
                 </td>
               </tr>
             )}

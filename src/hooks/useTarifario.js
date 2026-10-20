@@ -41,19 +41,41 @@ export function useTarifario({ precioInicial, listaPrecios, mostrarToast, obtene
     }
   };
 
+  const guardarCombo = async (fila) => {
+    try {
+      const nombre = String(fila?.rango_medida || '').replace(/^COMBO:\s*/i, '').trim();
+      if (!nombre) {
+        mostrarToast('Escribe el nombre del combo.', 'warning');
+        return false;
+      }
+      if (!(safeNum(fila?.precio_sugerido) > 0)) {
+        mostrarToast('El combo necesita un precio mayor que 0.', 'warning');
+        return false;
+      }
+      await guardarPrecioLocal({ ...fila, id: fila.id || undefined });
+      await obtenerDatos({ sync: false });
+      void sincronizarAhora({ pull: false });
+      mostrarToast('Combo guardado en este dispositivo.', 'success');
+      return true;
+    } catch (err) {
+      mostrarToast('Error al guardar el combo: ' + err.message, 'error');
+      return false;
+    }
+  };
+
   const cargarParaEditarPrecio = (item) => {
     setNuevoPrecio({ ...item });
     setEditandoPrecioId(item.id);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const eliminarPrecio = (id) => {
-    solicitarConfirmacion('¿Seguro que deseas eliminar esta tarifa?', async () => {
+  const eliminarPrecio = (id, mensaje = '¿Seguro que deseas eliminar esta tarifa?', avisoExito = 'Tarifa eliminada localmente.') => {
+    solicitarConfirmacion(mensaje, async () => {
       try {
         await eliminarPrecioLocal(id);
         await obtenerDatos({ sync: false });
         void sincronizarAhora({ pull: false });
-        mostrarToast('Tarifa eliminada localmente.', 'success');
+        mostrarToast(avisoExito, 'success');
       } catch (err) {
         mostrarToast('Error al eliminar: ' + err.message, 'error');
       }
@@ -69,7 +91,7 @@ export function useTarifario({ precioInicial, listaPrecios, mostrarToast, obtene
     nuevoPrecio, setNuevoPrecio,
     editandoPrecioId, setEditandoPrecioId,
     busquedaPrecio, setBusquedaPrecio,
-    manejarCambioPrecio, guardarPrecio, cargarParaEditarPrecio, eliminarPrecio,
+    manejarCambioPrecio, guardarPrecio, guardarCombo, cargarParaEditarPrecio, eliminarPrecio,
     listaPreciosFiltrada
   };
 }

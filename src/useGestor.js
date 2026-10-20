@@ -36,7 +36,7 @@ export function useGestor() {
   
   const {
     nuevoPrecio, setNuevoPrecio, editandoPrecioId, setEditandoPrecioId,
-    busquedaPrecio, setBusquedaPrecio, manejarCambioPrecio, guardarPrecio,
+    busquedaPrecio, setBusquedaPrecio, manejarCambioPrecio, guardarPrecio, guardarCombo,
     cargarParaEditarPrecio, eliminarPrecio, listaPreciosFiltrada
   } = useTarifario({ precioInicial, listaPrecios, mostrarToast, obtenerDatos, solicitarConfirmacion });
 
@@ -89,7 +89,7 @@ export function useGestor() {
     guardarPacienteClinico, manejarCambio, borrarHistoriaClinica, archivarConsultaPuntual, cargarParaEditarClinico, iniciarNuevaConsulta, crearNuevoPaciente, edadActual, claseInputRef, intentosGuardado,
     busqueda, setBusqueda, pedidosFiltrados, stats, enviarWhatsApp,
     nuevoPrecio, setNuevoPrecio, precioInicial, editandoPrecioId, setEditandoPrecioId,
-    manejarCambioPrecio, guardarPrecio, busquedaPrecio, setBusquedaPrecio, listaPreciosFiltrada, cargarParaEditarPrecio, eliminarPrecio,
+    manejarCambioPrecio, guardarPrecio, guardarCombo, busquedaPrecio, setBusquedaPrecio, listaPreciosFiltrada, cargarParaEditarPrecio, eliminarPrecio,
     nuevoItemInv, editandoInvId, cargandoImagen, manejarCambioInv, setImagenSeleccionada, guardarItemInventario, cancelarEdicionInventario, cargarParaEditarInventario, eliminarItemInventario,
     pedidoSeleccionado, setPedidoSeleccionado, medidasPaciente, accesorioOriginalId, crearVentaDirecta, abrirPedido, cambiarMedicionPedido, forzarRecalculo, manejarCambioPedido, guardarPedido, cancelarPedido
   };

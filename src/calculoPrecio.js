@@ -31,7 +31,18 @@ const safeString = valor => {
 };
 
 /**
+ * Precio cerrado del combo, o null si el pedido no lleva combo.
+ * Un combo con precio vacio vale 0: nunca cae a la suma desglosada.
+ */
+export const precioDeCombo = (pedidoActual) => {
+  if (!pedidoActual) return null;
+  if (safeString(pedidoActual.combo_id).trim() === '') return null;
+  return Number(safeNum(pedidoActual.combo_precio).toFixed(2));
+};
+
+/**
  * Precio total del pedido: armazon + accesorio + lentes + tratamientos.
+ * Si hay un combo aplicado, devuelve su precio cerrado (mas accesorios).
  * @param {object} pedidoActual   El pedido en edicion (con sus campos de venta)
  * @param {Array}  inventario     Catalogo de productos
  * @param {Array}  listaPrecios   Tarifario
@@ -39,23 +50,30 @@ const safeString = valor => {
  */
 export const autoCalcularPrecio = (pedidoActual, inventario, listaPrecios) => {
   if (!pedidoActual) return 0;
-  let total = 0;
+
+  const precioAccesorio = (() => {
+    if (!pedidoActual.accesorio_id) return 0;
+    const accesorioEncontrado = (inventario || []).find(
+      item => item && String(item.id) === String(pedidoActual.accesorio_id)
+    );
+    return accesorioEncontrado && accesorioEncontrado.precio
+      ? safeNum(accesorioEncontrado.precio)
+      : 0;
+  })();
+
+  // COMBO: precio cerrado (armazon + lunas + tratamientos incluidos). El
+  // accesorio si se cobra aparte porque es stock que sale del inventario.
+  const combo = precioDeCombo(pedidoActual);
+  if (combo !== null) return Number((combo + precioAccesorio).toFixed(2));
+
+  let total = precioAccesorio;
 
   if (pedidoActual.codigo_armazon) {
     const armazonEncontrado = (inventario || []).find(
-      item => String(item.codigo).trim().toUpperCase() === String(pedidoActual.codigo_armazon).trim().toUpperCase()
+      item => item && String(item.codigo).trim().toUpperCase() === String(pedidoActual.codigo_armazon).trim().toUpperCase()
     );
     if (armazonEncontrado && armazonEncontrado.precio) {
       total += safeNum(armazonEncontrado.precio);
-    }
-  }
-
-  if (pedidoActual.accesorio_id) {
-    const accesorioEncontrado = (inventario || []).find(
-      item => String(item.id) === String(pedidoActual.accesorio_id)
-    );
-    if (accesorioEncontrado && accesorioEncontrado.precio) {
-      total += safeNum(accesorioEncontrado.precio);
     }
   }
 

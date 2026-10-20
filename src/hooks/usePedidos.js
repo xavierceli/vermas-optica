@@ -49,7 +49,7 @@ export function usePedidos({
         'estado', 'notas', 'comprobante_url', 'costo_armazon_int',
         'costo_lunas_int', 'costo_accesorio_int', 'costo_tratamientos_int',
         'costo_varios_int', 'codigo_armazon_confirmado', 'tratam_tinturado_nota',
-        'tratam_foto_nota', 'tratam_trans_nota'
+        'tratam_foto_nota', 'tratam_trans_nota', 'combo_id', 'combo_nombre', 'combo_precio'
       ];
       CAMPOS_DE_LA_VENTA.forEach(k => { itemFormateado[k] = ''; });
       itemFormateado.descuento = '0';
@@ -185,7 +185,8 @@ export function usePedidos({
         'tratam_tinturado', 'tratam_tinturado_nota', 'tratam_foto', 
         'tratam_foto_nota', 'tratam_trans', 'tratam_trans_nota', 
         'costo_armazon_int', 'costo_lunas_int', 'costo_accesorio_int', 
-        'costo_tratamientos_int', 'costo_varios_int'
+        'costo_tratamientos_int', 'costo_varios_int',
+        'combo_id', 'combo_nombre', 'combo_precio'
       ];
       
       const venta = {};

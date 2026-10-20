@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { autoCalcularPrecio, fieldsQueAfectanPrecio } from './calculoPrecio.js';
+import { autoCalcularPrecio, fieldsQueAfectanPrecio, precioDeCombo } from './calculoPrecio.js';
 
 // Estas funciones no tenian pruebas: vivian dentro de useGestor.js, un archivo
 // de 1.000 lineas que necesita un navegador para probarse. Al sacarlas a un
@@ -89,4 +89,55 @@ test('se recognize que campos obligan a recalcular', () => {
   assert.equal(fieldsQueAfectanPrecio('tratam_ar'), true);
   assert.equal(fieldsQueAfectanPrecio('notas'), false);
   assert.equal(fieldsQueAfectanPrecio('venta'), false);
+});
+
+// --- COMBOS -----------------------------------------------------------------
+// El combo es un precio cerrado: por mas que se elija armazon, lunas o
+// tratamientos, el total no cambia. Si se quita, vuelve el desglose normal.
+
+test('un combo manda sobre el armazon, las lunas y los tratamientos', () => {
+  const total = autoCalcularPrecio({
+    combo_id: '7',
+    combo_precio: '40',
+    codigo_armazon: 'MIRA-4017', // 45
+    material_lente: 'Plastico',  // 30
+    tratam_ar: 'SI'              // 12
+  }, INVENTARIO, TARIFARIO);
+  assert.equal(total, 40, 'el combo NO debe sumar los articulos');
+});
+
+test('con combo, el accesorio se cobra aparte', () => {
+  const total = autoCalcularPrecio({
+    combo_id: '7',
+    combo_precio: '40',
+    accesorio_id: 2 // 8.50
+  }, INVENTARIO, TARIFARIO);
+  assert.equal(total, 48.5);
+});
+
+test('al quitar el combo vuelve el calculo desglosado', () => {
+  const total = autoCalcularPrecio({
+    combo_id: '',
+    combo_precio: '',
+    codigo_armazon: 'MIRA-4017',
+    tratam_ar: 'SI'
+  }, INVENTARIO, TARIFARIO);
+  assert.equal(total, 57);
+});
+
+test('un combo sin precio vale 0, nunca la suma desglosada', () => {
+  const total = autoCalcularPrecio({
+    combo_id: '7',
+    combo_precio: '',
+    codigo_armazon: 'MIRA-4017'
+  }, INVENTARIO, TARIFARIO);
+  assert.equal(total, 0);
+});
+
+test('precioDeCombo distingue "sin combo" de "combo en 0"', () => {
+  assert.equal(precioDeCombo({}), null);
+  assert.equal(precioDeCombo({ combo_id: '' }), null);
+  assert.equal(precioDeCombo({ combo_id: '7', combo_precio: '0' }), 0);
+  assert.equal(precioDeCombo({ combo_id: '7', combo_precio: '40.00' }), 40);
+  assert.equal(precioDeCombo(null), null);
 });
