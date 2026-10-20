@@ -20,7 +20,8 @@ const ARCHIVOS_CON_FORMULARIOS = [
   'PedidosForm.jsx',
   'Inventario.jsx',
   'Login.jsx',
-  'AccesoSinConexion.jsx'
+  'AccesoSinConexion.jsx',
+  'CombosTarifario.jsx'
 ];
 
 /**
