@@ -69,8 +69,21 @@ export const cacheServerHistorialImpl = async rows => {
     if (row.pedido_id) {
       const localSale = saleMap.get(row.pedido_id);
       if (!localSale || localSale.syncStatus !== 'pending') {
+        // FASE 1 de combos: el servidor todavia no tiene columnas combo_*.
+        // Si la venta nacio en este dispositivo y el precio no cambio en otro
+        // equipo, conservamos el snapshot para que el combo no desaparezca al
+        // sincronizar. Si el precio cambio, gana el servidor (edicion remota).
+        const conservarCombo = Boolean(localSale)
+          && safeString(localSale.combo_id).trim() !== ''
+          && safeNum(localSale.venta) === safeNum(row.venta);
         nextSales.push({
-          ...row, id: row.pedido_id, patientId, consultationId,
+          ...row,
+          ...(conservarCombo ? {
+            combo_id: localSale.combo_id,
+            combo_nombre: localSale.combo_nombre,
+            combo_precio: localSale.combo_precio
+          } : {}),
+          id: row.pedido_id, patientId, consultationId,
           fecha: row.fecha_venta || row.fecha, abono: row.abono || '0',
           version: localSale?.version || 0,
           syncStatus: 'synced', updatedAt: nowIso()

@@ -400,3 +400,62 @@ test('el vigilante libera el hueco si la tarea no termina', async () => {
   });
   assert.equal(await localDb.consultations.count(), 1, 'la escritura no quedo bloqueada para siempre');
 });
+test('FASE 1: el combo sobrevive a la vuelta del servidor si el precio no cambio', async () => {
+  await reset();
+  await localDb.inventory.put(product(2));
+  const base = sale('1');
+  await guardarVentaLocal({
+    patient: patient(),
+    consultationId: base.consultation_id,
+    sale: { ...base, venta: '40', combo_id: '7', combo_nombre: 'Armazón + AR', combo_precio: 40 }
+  });
+
+  // El motor ya subio la venta y ahora baja el historial. La nube todavia no
+  // tiene columnas combo_*: el snapshot debe quedarse en este equipo.
+  await localDb.sales.update(base.id, { syncStatus: 'synced' });
+  await cacheServerHistorial([{
+    id: 'consulta-remota-combo',
+    paciente_id: patient().id,
+    cedula: patient().cedula,
+    nombre: patient().nombre,
+    fecha: '2026-09-24',
+    fecha_venta: '2026-09-24',
+    pedido_id: base.id,
+    venta: '40', descuento: '0', abono: '0', estado: 'En laboratorio',
+    codigo_armazon: '', accesorio_id: '1'
+  }]);
+
+  const fila = await localDb.sales.get(base.id);
+  assert.equal(fila.combo_id, '7');
+  assert.equal(fila.combo_nombre, 'Armazón + AR');
+  assert.equal(Number(fila.combo_precio), 40);
+  assert.equal(fila.syncStatus, 'synced');
+});
+
+test('FASE 1: si el precio cambio en otro equipo, gana el servidor (sin combo)', async () => {
+  await reset();
+  await localDb.inventory.put(product(2));
+  const base = sale('1');
+  await guardarVentaLocal({
+    patient: patient(),
+    consultationId: base.consultation_id,
+    sale: { ...base, venta: '40', combo_id: '7', combo_nombre: 'Armazón + AR', combo_precio: 40 }
+  });
+
+  await localDb.sales.update(base.id, { syncStatus: 'synced' });
+  await cacheServerHistorial([{
+    id: 'consulta-remota-combo-2',
+    paciente_id: patient().id,
+    cedula: patient().cedula,
+    nombre: patient().nombre,
+    fecha: '2026-09-24',
+    fecha_venta: '2026-09-24',
+    pedido_id: base.id,
+    venta: '55', descuento: '0', abono: '0', estado: 'En laboratorio',
+    codigo_armazon: '', accesorio_id: '1'
+  }]);
+
+  const fila = await localDb.sales.get(base.id);
+  assert.equal(fila.combo_id, undefined, 'un precio editado en otro equipo no debe conservar el combo');
+  assert.equal(Number(fila.venta), 55);
+});
