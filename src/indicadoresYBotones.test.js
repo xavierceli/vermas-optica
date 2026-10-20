@@ -118,3 +118,25 @@ test('la venta avisa si la orden va a salir sin medidas, y no bloquea', () => {
     'el aviso no debe impedir guardar una venta sin receta'
   );
 });
+
+test('el logo recarga la pagina, pero nunca en silencio con un formulario a medias', () => {
+  // El optometra esta acostumbrado a Ctrl+Shift+R. Al pulsar VER+ OPTICA se hace
+  // lo mismo, pero preguntando si hay algo escrito: la app no guarda borradores
+  // en el disco y una recarga se lleva el formulario entero.
+  const app = leer('App.jsx');
+  assert.match(app, /aria-label="VER\+ ÓPTICA: actualizar la página"/);
+  assert.match(app, /onClick=\{actualizarLaPagina\}/);
+  assert.match(app, /actualizarPagina\(\{/);
+  assert.match(app, /Boolean\(borradorActivo\) \|\| tieneTrabajoSinGuardar/);
+
+  // Ctrl+Shift+R (o cerrar la pestaña) tambien avisa mientras haya trabajo.
+  assert.match(app, /addEventListener\('beforeunload'/);
+
+  // Y el flujo pregunta antes de recargar cuando hay datos escritos.
+  const recarga = leer('recarga.js');
+  assert.match(recarga, /if \(trabajoSinGuardar\)[\s\S]{0,400}?confirmar/);
+  assert.match(recarga, /if \(!ok\) return 'cancelado'/);
+  // Antes de recargar se busca la version nueva, para no reabrir la copia vieja.
+  assert.match(recarga, /prepararVersionNueva\(registro/);
+  assert.match(recarga, /SKIP_WAITING/);
+});

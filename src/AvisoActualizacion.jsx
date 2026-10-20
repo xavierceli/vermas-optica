@@ -13,7 +13,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { registerSW } from 'virtual:pwa-register';
 
-export default function AvisoActualizacion({ hayTrabajoSinGuardar = false, confirmar }) {
+export default function AvisoActualizacion({ hayTrabajoSinGuardar = false, confirmar, permitirSalida }) {
   const [hayNuevaVersion, setHayNuevaVersion] = useState(false);
   const [actualizando, setActualizando] = useState(false);
   // Si tras activar el worker la pagina no llega a recargarse, se avisa y se
@@ -63,6 +63,10 @@ export default function AvisoActualizacion({ hayTrabajoSinGuardar = false, confi
       if (!ok) return;
     }
 
+    // El usuario ya aceptó perder lo escrito: que el navegador no pregunte otra
+    // vez con su propio aviso al recargar (beforeunload).
+    if (typeof permitirSalida === 'function') permitirSalida();
+
     setActualizando(true);
     setFallo(false);
 
@@ -82,7 +86,7 @@ export default function AvisoActualizacion({ hayTrabajoSinGuardar = false, confi
     programar(() => window.location.reload(), 1500);
     // 3) Si aun asi no se recarga, se avisa y se deja recargar a mano.
     programar(() => setFallo(true), 8000);
-  }, [hayTrabajoSinGuardar, programar, confirmar]);
+  }, [hayTrabajoSinGuardar, programar, confirmar, permitirSalida]);
 
   // 4) Camino rapido: si el worker nuevo llega a tomar el control, se recarga ya.
   useEffect(() => {
@@ -121,7 +125,10 @@ export default function AvisoActualizacion({ hayTrabajoSinGuardar = false, confi
           // manual por si la recarga automatica no llega a ocurrir.
           <button
             type="button"
-            onClick={() => window.location.reload()}
+            onClick={() => {
+              if (typeof permitirSalida === 'function') permitirSalida();
+              window.location.reload();
+            }}
             className="flex-1 sm:flex-none px-3 py-2 rounded-lg bg-teal-700 hover:bg-teal-800 text-xs font-bold transition-colors"
           >
             {fallo ? 'Recargar ahora' : 'Actualizando…'}

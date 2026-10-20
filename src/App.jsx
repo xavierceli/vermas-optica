@@ -6,6 +6,7 @@ import PanelSincronizacion from './PanelSincronizacion';
 import ErrorBoundary from './ErrorBoundary.jsx';
 import { safeString } from './utilidades.js';
 import { textoColaPendiente } from './avisosSync.js';
+import { actualizarPagina, tieneTrabajoSinGuardar } from './recarga.js';
 
 // Importaciones estáticas directas para garantizar funcionamiento offline total
 import Login from './Login.jsx';
@@ -99,6 +100,10 @@ function App() {
   const [panelSync, setPanelSync] = useState(false);
   const [soloProblemasSync, setSoloProblemasSync] = useState(false);
 
+  // Recarga desde el logo (equivale a Ctrl+Shift+R)
+  const [recargando, setRecargando] = useState(false);
+  const recargaAutorizada = useRef(false);
+
   const dialogoVisible = g.confirmDialog.visible;
   const cancelarConfirmacion = g.cancelarConfirmacion;
   const refDialogo = useRef(null);
@@ -170,6 +175,50 @@ function App() {
 
   const mostrarPestanaClinica = g.vistaActual === 'nueva_medicion' || tieneClinicaBorrador;
 
+  // ¿Se perdería algo si se recarga ahora? Incluye el borrador minimizado y el
+  // formulario que esté abierto. La app no guarda borradores en el disco.
+  const trabajoSinGuardar = Boolean(borradorActivo) || tieneTrabajoSinGuardar({
+    vistaActual: g.vistaActual,
+    pedidoSeleccionado: g.pedidoSeleccionado,
+    paciente: g.paciente,
+    estadoInicial: g.estadoInicial,
+    nuevoItemInv: g.nuevoItemInv,
+    editandoInvId: g.editandoInvId,
+    nuevoPrecio: g.nuevoPrecio,
+    precioInicial: g.precioInicial,
+    editandoPrecioId: g.editandoPrecioId
+  });
+
+  // Ctrl+Shift+R, F5 o cerrar la pestaña con un formulario a medias: que el
+  // navegador avise antes de tirar lo escrito.
+  useEffect(() => {
+    if (!trabajoSinGuardar) return undefined;
+    const avisarAntesDeSalir = (evento) => {
+      if (recargaAutorizada.current) return;
+      evento.preventDefault();
+      evento.returnValue = '';
+    };
+    window.addEventListener('beforeunload', avisarAntesDeSalir);
+    return () => window.removeEventListener('beforeunload', avisarAntesDeSalir);
+  }, [trabajoSinGuardar]);
+
+  const actualizarLaPagina = async () => {
+    if (recargando) return;
+    setRecargando(true);
+    try {
+      const resultado = await actualizarPagina({
+        trabajoSinGuardar,
+        confirmar: g.confirmar,
+        marcarSalidaPermitida: () => { recargaAutorizada.current = true; }
+      });
+      if (resultado === 'cancelado') setRecargando(false);
+    } catch {
+      // Si algo falla, recargar es justo lo que se quería.
+      recargaAutorizada.current = true;
+      window.location.reload();
+    }
+  };
+
   useEffect(() => {
     const cerrarConEscape = (e) => {
       if (e.key === 'Escape') cancelarConfirmacion();
@@ -223,7 +272,11 @@ function App() {
   return (
     <div className="min-h-screen bg-gray-50 p-3 sm:p-6 relative touch-manipulation">
 
-      <AvisoActualizacion hayTrabajoSinGuardar={pendientes > 0 || g.guardando} confirmar={g.confirmar} />
+      <AvisoActualizacion
+        hayTrabajoSinGuardar={pendientes > 0 || g.guardando}
+        confirmar={g.confirmar}
+        permitirSalida={() => { recargaAutorizada.current = true; }}
+      />
 
       {/* Etiqueta de versión ultra delgada vertical */}
       <aside 
@@ -331,7 +384,18 @@ function App() {
         <header className="bg-white p-3 sm:p-4 rounded-xl shadow-sm flex flex-col md:flex-row md:flex-wrap justify-between items-center border border-gray-100 gap-3 sm:gap-4">
           <div className="flex flex-wrap items-center justify-between w-full md:w-auto gap-3">
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="font-extrabold text-teal-800 text-xl sm:text-2xl tracking-wider">VER+ ÓPTICA</h1>
+              <h1 className="font-extrabold text-teal-800 text-xl sm:text-2xl tracking-wider">
+                <button
+                  type="button"
+                  onClick={actualizarLaPagina}
+                  disabled={recargando}
+                  title="Actualizar la página (equivale a Ctrl+Shift+R). Si estás escribiendo algo, pregunta antes."
+                  aria-label="VER+ ÓPTICA: actualizar la página"
+                  className="font-extrabold tracking-wider rounded-md hover:text-teal-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 disabled:opacity-70 disabled:cursor-wait"
+                >
+                  {recargando ? 'Actualizando…' : 'VER+ ÓPTICA'}
+                </button>
+              </h1>
               <span
                 className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wide border ${g.esAdmin ? 'bg-amber-100 text-amber-900 border-amber-300' : 'bg-gray-100 text-gray-700 border-gray-300'}`}
                 title={g.esAdmin ? 'Administrador: puede gestionar inventario, precios, reembolsos y borrar pacientes.' : 'Personal: trabajo diario. Las acciones de administrador quedan bloqueadas.'}
