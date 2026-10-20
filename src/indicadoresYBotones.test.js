@@ -103,3 +103,18 @@ test('la consulta avisa en vivo que datos de refraccion faltan, y lleva al prime
   assert.match(leer('hooks/useClinica.js'), /if \(!validacion\.ok\)[\s\S]*?setIntentadoGuardar\(true\)/);
   assert.match(leer('validacion.js'), /const REFRACCION_OBLIGATORIA = Object\.keys\(ETIQUETAS_CAMPOS\)/);
 });
+
+test('la venta avisa si la orden va a salir sin medidas, y no bloquea', () => {
+  // Un armazon o un accesorio no llevan receta: la venta se guarda igual. Pero
+  // una orden para tallar un lente sin medidas es un pedido perdido.
+  const form = leer('PedidosForm.jsx');
+  assert.match(form, /const medidasFaltantes = medidasOrdenFaltantes\(pedidoSeleccionado\)/);
+  assert.match(form, /Sin medidas: la orden saldrá sin receta/);
+  assert.match(form, /Faltan \$\{medidasFaltantes\.length\}/);
+  assert.match(form, /onClick=\{\(\) => irACampoDeLaOrden\(medidasFaltantes\[0\]\?\.campo\)\}/);
+  assert.match(form, /type="button"/, 'el aviso no debe enviar el formulario');
+  assert.ok(
+    !/medidasFaltantes[\s\S]{0,80}return false/.test(form),
+    'el aviso no debe impedir guardar una venta sin receta'
+  );
+});

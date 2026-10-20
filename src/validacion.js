@@ -37,6 +37,29 @@ export const refraccionFaltante = (paciente = {}) =>
     .filter(campo => String(paciente?.[campo] ?? '').trim() === '')
     .map(campo => ({ campo, etiqueta: ETIQUETAS_CAMPOS[campo] }));
 
+/**
+ * Medidas que se imprimen en la orden de trabajo del lente, en el orden de la
+ * tabla de la venta. Van aparte de la refraccion clinica porque la orden no
+ * imprime agudezas visuales: lo que el laboratorio necesita es esto.
+ */
+export const CAMPOS_DE_LA_ORDEN = [
+  'esfera_od', 'cilindro_od', 'eje_od', 'adicion_od', 'dnp_od',
+  'esfera_oi', 'cilindro_oi', 'eje_oi', 'adicion_oi', 'dnp_oi'
+];
+
+/**
+ * Medidas de la orden que estan vacias. La venta NO se bloquea por esto (un
+ * armazon o un accesorio no llevan receta), pero la pantalla lo avisa antes de
+ * guardar: una orden sin medidas no sirve para tallar el lente.
+ *
+ * @param {Object} pedido
+ * @returns {Array<{campo: string, etiqueta: string}>}
+ */
+export const medidasOrdenFaltantes = (pedido = {}) =>
+  CAMPOS_DE_LA_ORDEN
+    .filter(campo => String(pedido?.[campo] ?? '').trim() === '')
+    .map(campo => ({ campo, etiqueta: ETIQUETAS_CAMPOS[campo] }));
+
 /** El documento admite cédula numérica (10 o 13 dígitos), pasaporte o 9999999999. */
 export const documentoValido = doc => {
   const str = String(doc ?? '').trim().toUpperCase();

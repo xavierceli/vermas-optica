@@ -10,7 +10,17 @@ import { guardarAdjuntoLocal } from './localRepository';
 import { createUuid as generarId } from './localDb';
 import { sinSesionActiva } from './syncEngine';
 import { textoComprobantePendiente } from './avisosSync';
+import { medidasOrdenFaltantes, CAMPOS_DE_LA_ORDEN } from './validacion';
 import BotonComprobante from './BotonComprobante';
+
+// Lleva la vista y el cursor a una medida de la orden por su `name`.
+const irACampoDeLaOrden = (nombre) => {
+  if (!nombre) return;
+  const campo = document.querySelector(`input[name="${nombre}"]`);
+  if (!campo) return;
+  campo.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  campo.focus({ preventScroll: true });
+};
 
 export default function PedidosForm({
   pedidoSeleccionado, setPedidoSeleccionado, setVistaActual, guardarPedido,
@@ -40,6 +50,11 @@ export default function PedidosForm({
   const pFinal = useMemo(() => calcularTotal(pVenta, pDesc), [pVenta, pDesc]);
   const pSaldo = useMemo(() => calcularSaldo(pVenta, pDesc, pAbono), [pVenta, pDesc, pAbono]);
   const pMontoDescuento = useMemo(() => calcularMontoDescuento(pVenta, pDesc), [pVenta, pDesc]);
+
+  // Medidas que faltan para la orden del lente. No bloquea el guardado (un
+  // armazon o un accesorio no llevan receta), pero se avisa antes de guardar.
+  const medidasFaltantes = medidasOrdenFaltantes(pedidoSeleccionado);
+  const sinNingunaMedida = medidasFaltantes.length === CAMPOS_DE_LA_ORDEN.length;
 
   // Deduplicación estricta de las mediciones del paciente
   const medidasPacienteUnicas = useMemo(() => {
@@ -250,7 +265,26 @@ export default function PedidosForm({
                 </select>
               </div>
 
-              <h3 className="font-bold text-indigo-950 mb-2 border-b border-indigo-200 pb-1 text-xs sm:text-sm">Medidas para la Orden (Edite DNP o Altura si es necesario)</h3>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 mb-2 border-b border-indigo-200 pb-1">
+                <h3 className="font-bold text-indigo-950 text-xs sm:text-sm">Medidas para la Orden (Edite DNP o Altura si es necesario)</h3>
+                {medidasFaltantes.length === 0 ? (
+                  <span className="sm:ml-auto text-center bg-emerald-50 border border-emerald-200 text-emerald-800 px-2 py-0.5 rounded-full text-[11px] font-bold">
+                    ✅ Medidas completas
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={bloqueado}
+                    onClick={() => irACampoDeLaOrden(medidasFaltantes[0]?.campo)}
+                    title={`Falta escribir: ${medidasFaltantes.map(m => m.etiqueta).join(', ')}. Pulsa para ir a la primera.${sinNingunaMedida ? ' Si el pedido es solo armazón o accesorio, ignóralo.' : ''}`}
+                    className="sm:ml-auto text-left bg-amber-100 border border-amber-300 text-amber-900 px-2 py-0.5 rounded-full text-[11px] font-bold hover:bg-amber-200 transition-colors disabled:opacity-60"
+                  >
+                    {sinNingunaMedida
+                      ? '⚠️ Sin medidas: la orden saldrá sin receta'
+                      : `⚠️ Faltan ${medidasFaltantes.length}: ${medidasFaltantes.slice(0, 2).map(m => m.etiqueta).join(', ')}${medidasFaltantes.length > 2 ? '…' : ''}`}
+                  </button>
+                )}
+              </div>
               <div className="overflow-x-auto bg-white rounded-lg border border-indigo-100 shadow-sm">
                 <table className="w-full text-center text-xs min-w-[340px]">
                   <thead className="bg-indigo-100/60 text-indigo-950">

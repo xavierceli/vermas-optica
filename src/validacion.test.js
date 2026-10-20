@@ -6,6 +6,8 @@ import {
   motivoDocumentoInvalido,
   construirMensajeFaltantes,
   refraccionFaltante,
+  medidasOrdenFaltantes,
+  CAMPOS_DE_LA_ORDEN,
   ETIQUETAS_CAMPOS
 } from './validacion.js';
 
@@ -143,4 +145,41 @@ test('el aviso y la validacion cuentan lo MISMO', () => {
   assert.equal(aviso.length, validacion.sinRefraccion.length);
   assert.deepEqual(aviso.map(f => f.etiqueta), validacion.sinRefraccion);
   assert.equal(validacion.ok, false, 'con datos de refraccion vacios no se guarda');
+});
+
+// --- Medidas de la ORDEN (lo que imprime el laboratorio) -------------------
+// La venta no se bloquea (un armazon no lleva receta), pero la pantalla avisa.
+// Lo que se imprime son las 5 medidas por ojo, no las agudezas visuales.
+test('una orden sin nada escrito tiene las 10 medidas pendientes', () => {
+  const faltan = medidasOrdenFaltantes({});
+  assert.equal(faltan.length, 10);
+  assert.equal(faltan[0].campo, 'esfera_od');
+  assert.equal(faltan[0].etiqueta, 'Esfera OD');
+  assert.equal(faltan[faltan.length - 1].campo, 'dnp_oi');
+  // Son las mismas etiquetas que ve el optometra en la consulta.
+  assert.ok(faltan.every(f => ETIQUETAS_CAMPOS[f.campo] === f.etiqueta));
+});
+
+test('la orden ignora lo que no imprime (agudezas visuales)', () => {
+  const campos = CAMPOS_DE_LA_ORDEN;
+  assert.ok(!campos.includes('avsl_od'), 'AVS Lejos no va en la orden');
+  assert.ok(!campos.includes('avcc_oi'));
+  assert.ok(!campos.includes('altura_od'), 'la altura se pide aparte, solo si hay adicion');
+});
+
+test('con la mitad escrita solo faltan las que quedan, y los espacios no cuentan', () => {
+  const pedido = {};
+  for (const campo of CAMPOS_DE_LA_ORDEN) pedido[campo] = '0';
+  pedido.eje_od = '';
+  pedido.dnp_oi = '   ';
+  assert.deepEqual(
+    medidasOrdenFaltantes(pedido).map(f => f.campo),
+    ['eje_od', 'dnp_oi']
+  );
+});
+
+test('medidas completas: ni un aviso', () => {
+  const pedido = {};
+  for (const campo of CAMPOS_DE_LA_ORDEN) pedido[campo] = '0.00';
+  assert.deepEqual(medidasOrdenFaltantes(pedido), []);
 });
