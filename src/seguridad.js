@@ -2,9 +2,11 @@
 // ACCESO SIN CONEXION (PIN local del dispositivo)
 // ---------------------------------------------------------------------------
 // El acceso offline NO es autenticación de servidor: no genera tokens de
-// Supabase ni otorga permisos sobre la API remota. Desbloquea de forma segura
-// los datos locales persistidos en este dispositivo bajo PBKDF2(sal + PIN)
-// con SHA-256 (210,000 iteraciones según recomendaciones OWASP).
+// Supabase ni otorga permisos sobre la API remota. Verifica el PIN del
+// dispositivo con PBKDF2(sal + PIN) SHA-256, 210.000 iteraciones (OWASP).
+// OJO: el PIN controla el acceso a la APP, no cifra IndexedDB. Los datos
+// locales (pacientes, consultas, ventas) siguen en texto plano en el
+// almacenamiento del navegador; el aislamiento real lo pone el dispositivo.
 // ---------------------------------------------------------------------------
 
 const ITERACIONES = 210000;

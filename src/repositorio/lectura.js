@@ -148,15 +148,50 @@ export const cacheServerCatalogImpl = async ({ inventory = [], prices = [] } = {
   }
 };
 
+// Lectura directa del almacen de la version anterior de la app: localforage
+// guardaba en IndexedDB 'VerMasOpticaDB' / 'datos_offline', el valor tal cual
+// bajo cada clave. Leyendolo con IndexedDB puro desaparece la dependencia
+// (peso del bundle) y no hay que mantener instalada una libreria solo para
+// una migracion que corre una vez y ya casi nunca encuentra nada.
+const leerBovedaLegacy = llave => new Promise(resolver => {
+  if (typeof indexedDB === 'undefined') return resolver(null);
+  let apertura;
+  try {
+    apertura = indexedDB.open('VerMasOpticaDB');
+  } catch {
+    return resolver(null);
+  }
+  apertura.onupgradeneeded = evento => {
+    // La base vieja NO existe: se aborta la creacion para no dejar girando
+    // una 'VerMasOpticaDB' vacia (el abort hace fallar el open y cae en
+    // onerror, que resuelve null).
+    evento.target.transaction?.abort();
+  };
+  apertura.onblocked = () => resolver(null);
+  apertura.onerror = () => resolver(null);
+  apertura.onsuccess = () => {
+    const db = apertura.result;
+    try {
+      if (!db.objectStoreNames.contains('datos_offline')) {
+        db.close();
+        return resolver(null);
+      }
+      const lectura = db.transaction('datos_offline', 'readonly').objectStore('datos_offline').get(llave);
+      lectura.onsuccess = () => { db.close(); resolver(lectura.result ?? null); };
+      lectura.onerror = () => { db.close(); resolver(null); };
+    } catch {
+      db.close();
+      resolver(null);
+    }
+  };
+});
+
 export const importLegacyCacheImpl = async () => {
   if (await getMeta('legacyCacheImported', false)) return;
-  // Import dinamico a proposito: motorOffline.js (y con el localforage que trae)
-  // solo se necesita la primera vez, para traer el cache de la version anterior.
-  const { leerBoveda } = await import('../motorOffline.js');
   const [legacyHistorial, legacyInventory, legacyPrices] = await Promise.all([
-    leerBoveda('backup_historial'),
-    leerBoveda('backup_inventario'),
-    leerBoveda('backup_precios')
+    leerBovedaLegacy('backup_historial'),
+    leerBovedaLegacy('backup_inventario'),
+    leerBovedaLegacy('backup_precios')
   ]);
 
   try {
