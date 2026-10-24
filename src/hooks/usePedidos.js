@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef, useCallback } from 'react';
 import { safeString, safeNum } from '../utilidades';
 import { createUuid as generarId } from '../localDb';
 import { guardarVentaLocal, anularVentaLocal, anularVentaConReembolso } from '../localRepository';
@@ -29,7 +29,10 @@ export function usePedidos({
   const [accesorioOriginalId, setAccesorioOriginalId] = useState('');
   const [medidasPaciente, setMedidasPaciente] = useState([]);
 
-  const abrirPedido = (item) => {
+  // abrirPedido y enviarWhatsApp llegan a las tarjetas memoizadas del
+  // Historial: sin useCallback su referencia cambiaria en cada render y el
+  // memo de las tarjetas no serviria de nada.
+  const abrirPedido = useCallback((item) => {
     let itemFormateado = { ...item };
     Object.keys(itemFormateado).forEach(key => { if (itemFormateado[key] === null) itemFormateado[key] = ''; });
     ['tratam_ar', 'tratam_ar_azul', 'tratam_azul', 'tratam_tinturado', 'tratam_foto', 'tratam_trans', 'tratam_ninguno'].forEach(k => { 
@@ -72,11 +75,11 @@ export function usePedidos({
         mapaUnico.set(fecha, v);
       }
     }
-    setMedidasPaciente(Array.from(mapaUnico.values())); 
-    setPedidoSeleccionado(itemFormateado); 
-    setAccesorioOriginalId(itemFormateado.accesorio_id || ''); 
+    setMedidasPaciente(Array.from(mapaUnico.values()));
+    setPedidoSeleccionado(itemFormateado);
+    setAccesorioOriginalId(itemFormateado.accesorio_id || '');
     setVistaActual('pedidos_form');
-  };
+  }, [historial, setMedidasPaciente, setPedidoSeleccionado, setAccesorioOriginalId, setVistaActual]);
 
   const crearVentaDirecta = () => {
     const ventaNueva = {
@@ -340,18 +343,21 @@ export function usePedidos({
           mostrarToast('Venta anulada localmente.', 'success');
         }
       } catch (err) {
+        // El estado React ya se pintó como "Anulado" de forma optimista: si el
+        // guardado local falló, se relee IndexedDB para volver a la verdad.
+        await obtenerDatos({ sync: false }).catch(() => {});
         mostrarToast('Error al anular: ' + err.message, 'error');
       }
     });
   };
 
-  const enviarWhatsApp = (item) => {
+  const enviarWhatsApp = useCallback((item) => {
     if (!item || !item.telefono) return mostrarToast("Sin teléfono.", "warning");
     const msj = `¡Hola, ${safeString(item.nombre).split(' ')[0]}! Tus lentes están listos en VER+ ÓPTICA.`;
-    let telf = safeString(item.telefono).replace(/\D/g, ''); 
+    let telf = safeString(item.telefono).replace(/\D/g, '');
     if (telf.startsWith('09')) telf = '593' + telf.substring(1);
     window.open(`https://wa.me/${telf}?text=${encodeURIComponent(msj)}`, '_blank');
-  };
+  }, [mostrarToast]);
 
   const queryGlobal = safeString(busqueda).toLowerCase();
 

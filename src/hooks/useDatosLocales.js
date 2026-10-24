@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { localDb } from '../localDb';
 import { obtenerSnapshotLocal, importLegacyCache } from '../localRepository';
 import { sincronizarAhora } from '../syncEngine';
@@ -20,6 +20,11 @@ export function useDatosLocales() {
   const [inventario, setInventario] = useState([]);
   const [listaPrecios, setListaPrecios] = useState([]);
 
+  // Marca cada obtención de datos: si dos `obtenerDatos` se solapan (p. ej. el
+  // pull post-guardado y un login), el snapshot tardío de la primera no debe
+  // pisar el estado que ya dejó la segunda.
+  const generacion = useRef(0);
+
   const aplicarSnapshotLocal = useCallback(snapshot => {
     if (!snapshot) return;
     setHistorial(snapshot.historial || []);
@@ -33,6 +38,7 @@ export function useDatosLocales() {
   }, []);
 
   const obtenerDatos = useCallback(async ({ sync = true } = {}) => {
+    const miGeneracion = ++generacion.current;
     try {
       await importLegacyCache();
     } catch (error) {
@@ -52,6 +58,9 @@ export function useDatosLocales() {
     aplicarSnapshotLocal(snapshot);
     if (sync) {
       void sincronizarAhora({ pull: true }).then(async () => {
+        // Si otro obtenerDatos arrancó mientras corría este pull, su snapshot
+        // será más nuevo: no lo pisemos con este.
+        if (miGeneracion !== generacion.current) return;
         const snapFresca = await obtenerSnapshotLocal();
         try {
           const vDirectas = await localDb.sales.toArray();

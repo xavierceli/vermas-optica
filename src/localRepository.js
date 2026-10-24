@@ -47,10 +47,21 @@ import { normalizeCedula } from './repositorio/base.js';
 // ---------------------------------------------------------------------------
 // COLA DE ESCRITURA LOCAL CON PRIORIDAD
 // ---------------------------------------------------------------------------
+// Escalera de degradacion, a proposito:
+//   1. Normal: UNA tarea a la vez. Es la garantia que protege el stock.
+//   2. Tarea de mas de 15 s: se libera el hueco para no bloquear al usuario
+//      (decision de disponibilidad, vigilada por test). La tarea lenta sigue
+//      en curso, asi que en este estado excepcional puede haber dos escrituras
+//      a la vez.
+//   3. Tres tareas colgadas: la cola se PAUSA con aviso. Correr decenas de
+//      escrituras en paralelo es peor que parar: es el escenario para el que
+//      la cola existe.
 const colaEscrituras = [];
 let procesandoCola = false;
 let tokenCola = 0;
+let liberacionesVigilante = 0;
 const LIBERAR_HUECO_MS = 15000;
+const MAX_LIBERACIONES_VIGILANTE = 3;
 
 const drenarCola = () => {
   if (procesandoCola || colaEscrituras.length === 0) return;
@@ -75,7 +86,22 @@ const drenarCola = () => {
   };
 
   const vigilante = setTimeout(() => {
-    console.error(`[cola] "${nombre}" no ha terminado en ${LIBERAR_HUECO_MS / 1000}s. Se libera el hueco.`);
+    liberacionesVigilante += 1;
+    if (liberacionesVigilante > MAX_LIBERACIONES_VIGILANTE) {
+      // Punto 3 de la escalera: mejor parar en seco que seguir lanzando
+      // escrituras en paralelo contra un IndexedDB que esta fallando.
+      console.error(
+        `[cola] PAUSADA: "${nombre}" no termina y ya hubo ${MAX_LIBERACIONES_VIGILANTE} ` +
+        'tareas colgadas. No se lanza nada mas para no correr escrituras en paralelo. Recarga la página.'
+      );
+      return;
+    }
+    // Punto 2: se libera el hueco (la escritura del usuario no puede quedar
+    // rehen de una tarea colgada), dejando claro el riesgo que se asume.
+    console.error(
+      `[cola] "${nombre}" no ha terminado en ${LIBERAR_HUECO_MS / 1000}s. Se libera el hueco, ` +
+      'pero la tarea sigue en curso: la serialización estricta queda en pausa.'
+    );
     liberar();
   }, LIBERAR_HUECO_MS);
 

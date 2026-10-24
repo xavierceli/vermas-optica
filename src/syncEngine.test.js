@@ -102,6 +102,24 @@ test('las operaciones enviadas son las unicas reintentables', () => {
   assert.match(cuerpo, /aplicarBackoff/);
 });
 
+test('un error de la RPC ya no bloquea toda la cola', () => {
+  // Incidente: si aplicar_operaciones LANZABA (en vez de devolver rechazos por
+  // operacion), el ciclo abortaba sin marcar el lote como fallido. Sin intentos
+  // no hay backoff, y la misma operacion venenosa volvia a encabezar la cola
+  // para siempre, arrastrando a todas las posteriores ("N pendientes" que no
+  // bajaban nunca).
+  const bloque = fuente.slice(fuente.indexOf('const enviarLote'));
+  const cuerpo = bloque.slice(0, bloque.indexOf('for (let index'));
+  assert.ok(cuerpo.length > 0, 'debe existir el envio de lote con captura');
+  assert.match(cuerpo, /catch\s*\(error\)/, 'el envio del lote debe capturar errores de la RPC');
+  assert.match(cuerpo, /esFalloDeRed\(error\)\s*\|\|\s*esFalloDeSesion\(error\)\s*\)\s*throw error/,
+    'los fallos de red/sesion se reintentan en la proxima pasada, no se clasifican');
+  assert.match(cuerpo, /status:\s*'rejected'/,
+    'la operacion aislada que rompe la RPC debe pasar por applyResults como rechazo');
+  assert.match(cuerpo, /enviarLote\(batch\.slice/,
+    'un lote que falla entero se parte en mitades para aislar al culpable');
+});
+
 // --- Bucle infinito de migración (visto en consola) ------------------------
 // Symptoms: "[cola] falla importLegacyCache" repetido sin parar, y la app
 // cargando los datos una y otra vez.

@@ -128,13 +128,16 @@ const marcarPendientePorRed = async operation => {
 };
 
 const refreshCounts = async () => {
-  const operations = await localDb.outbox.toArray();
-  status.pending = operations.filter(row => row.status === 'pending' || row.status === 'failed').length;
-  status.conflicts = operations.filter(row => row.status === 'conflict').length;
-  status.fallos = operations
-    .filter(row => row.status === 'failed' || row.status === 'conflict')
+  // Solo se leen las filas de cada estado por su indice: esto corre varias
+  // veces por ciclo de sync y antes leia TODO el outbox en memoria.
+  const conflictos = await localDb.outbox.where('status').equals('conflict').count();
+  const descartadas = await localDb.outbox.where('status').equals('descartada').count();
+  const conFallos = await localDb.outbox.where('status').anyOf(['failed', 'conflict']).toArray();
+  status.pending = await localDb.outbox.where('status').anyOf(['pending', 'failed']).count();
+  status.conflicts = conflictos;
+  status.fallos = conFallos
     .map(row => ({ tipo: row.type, motivo: row.lastError || 'Sin detalle del servidor', estado: row.status }));
-  status.descartadas = operations.filter(row => row.status === 'descartada').length;
+  status.descartadas = descartadas;
 };
 
 const subscribe = listener => {
@@ -191,15 +194,15 @@ const markOperation = async (operation, nextStatus, error = null) => {
   });
 };
 
-const reconciliarStockVenta = async serverResult => {
-  const ids = (serverResult?.items || [])
-    .map(item => Number(item.inventario_id ?? item.inventory_id))
-    .filter(Number.isFinite);
-  if (ids.length === 0) return;
+// Recibe TODOS los ids de inventario que aparecieron en ventas confirmadas del
+// lote y los reconcilia con UNA sola consulta al servidor: antes eran una
+// query por venta (patron N+1 dentro de applyResults).
+const reconciliarStockVenta = async idsVentas => {
+  if (!idsVentas || idsVentas.size === 0) return;
   const { data, error } = await supabase
     .from('inventario')
     .select('id,stock')
-    .in('id', [...new Set(ids)]);
+    .in('id', [...idsVentas]);
   if (error) return;
 
   await enColaEscritura(async () => {
@@ -224,6 +227,7 @@ const aplicarBackoff = async operation => {
 
 const applyResults = async results => {
   const fallos = [];
+  const inventarioPorVerificar = new Set();
   for (const result of results || []) {
     const operation = await localDb.outbox.get(result.id);
     if (!operation) continue;
@@ -231,7 +235,10 @@ const applyResults = async results => {
     if (result.status === 'applied' || result.status === 'synced') {
       const serverResult = result.result || {};
       if (operation.type === 'CREAR_VENTA' || operation.type === 'EDITAR_VENTA') {
-        await reconciliarStockVenta(serverResult);
+        for (const item of serverResult.items || []) {
+          const id = Number(item.inventario_id ?? item.inventory_id);
+          if (Number.isFinite(id)) inventarioPorVerificar.add(id);
+        }
       }
       if (operation.type === 'UPSERT_INVENTARIO' && serverResult.inventario) {
         const serverId = Number(serverResult.servidor_id);
@@ -297,6 +304,7 @@ const applyResults = async results => {
       }
     }
   }
+  if (inventarioPorVerificar.size > 0) await reconciliarStockVenta(inventarioPorVerificar);
   status.fallos = fallos;
   return fallos;
 };
@@ -351,6 +359,21 @@ const descargarHistorialPaginado = async () => {
 
 const leerCedulasArchivadasDelServidor = async () => {
   try {
+    // Migracion 023: la vista pacientes_archivados deja la deduccion en el
+    // servidor. Antes habia que bajar DOS veces la tabla completa de consultas
+    // (vivas y archivadas) en cada sincronizacion para calcular lo mismo.
+    const { data: desdeVista, error: errorVista } = await supabase
+      .from('pacientes_archivados')
+      .select('cedula');
+    if (!errorVista) {
+      const lista = [...new Set((desdeVista || [])
+        .map(row => String(row?.cedula ?? '').trim().toUpperCase())
+        .filter(Boolean))];
+      await localDb.meta.put({ key: 'cedulasArchivadasServidor', value: lista, updatedAt: nowIso() });
+      return;
+    }
+
+    // Sin la vista (migracion 023 todavia sin aplicar): el camino antiguo.
     const soloVivas = await supabase
       .from('consultas_clinicas')
       .select('paciente_id')
@@ -367,7 +390,7 @@ const leerCedulasArchivadasDelServidor = async () => {
     const idsArchivados = [...new Set((archivadas || [])
       .map(r => String(r.paciente_id ?? ''))
       .filter(id => id && !conConsultaViva.has(id)))];
-    
+
     if (idsArchivados.length === 0) {
       await localDb.meta.put({ key: 'cedulasArchivadasServidor', value: [], updatedAt: nowIso() });
       return;
@@ -472,16 +495,41 @@ export const sincronizarAhora = async ({ pull = true } = {}) => {
       if (await aplicarBackoff(row)) operations.push(await refrescarItemsDeVenta(row));
     }
 
+    // Envia un lote y, si la RPC falla ENTERA (excepcion, no rechazos por
+    // operacion), lo parte en mitades hasta aislar la operacion que rompe la
+    // llamada. Sin esto, una operacion venenosa a la cabeza de la cola abortaba
+    // el ciclo sin marcarse como fallida: como no contaba intentos, el backoff
+    // nunca empezaba y bloqueaba para siempre a todas las posteriores.
+    const enviarLote = async batch => {
+      try {
+        const { data, error } = await conTimeout(
+          supabase.rpc('aplicar_operaciones', { p_operaciones: batch }),
+          TIEMPO_LIMITE_MS,
+          'aplicar_operaciones'
+        );
+        if (error) throw error;
+        await applyResults(data?.results || []);
+      } catch (error) {
+        // Cortes de red, timeouts y sesion caducada afectan a todo el lote:
+        // que el ciclo entero se reintente en la proxima pasada.
+        if (esFalloDeRed(error) || esFalloDeSesion(error)) throw error;
+        if (batch.length === 1) {
+          // Operacion aislada que rompe la RPC: se clasifica como cualquier
+          // rechazo del servidor, para que cuente intentos, aplique backoff y
+          // la cola siga avanzando con el resto.
+          await applyResults([{ id: batch[0].id, status: 'rejected', error: error?.message || String(error) }]);
+          return;
+        }
+        const mitad = Math.ceil(batch.length / 2);
+        await enviarLote(batch.slice(0, mitad));
+        await enviarLote(batch.slice(mitad));
+      }
+    };
+
     for (let index = 0; index < operations.length; index += 20) {
       const batch = operations.slice(index, index + 20);
       if (batch.length === 0) continue;
-      const { data, error } = await conTimeout(
-        supabase.rpc('aplicar_operaciones', { p_operaciones: batch }),
-        TIEMPO_LIMITE_MS,
-        'aplicar_operaciones'
-      );
-      if (error) throw error;
-      await applyResults(data?.results || []);
+      await enviarLote(batch);
       await refreshCounts();
     }
 
@@ -546,4 +594,3 @@ export const detenerMotorSync = () => {
 };
 
 export const suscribirSync = subscribe;
-export { pullServerCache };
