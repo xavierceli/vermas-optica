@@ -455,8 +455,9 @@ test('eliminar un paciente pide confirmacion y dice lo que hace', () => {
   // Antes era un boton sin confirmar: un toque de más y sin aviso. Ahora la pantalla
   // muestra que se va a borrar con numeros reales y exige escribir la cedula.
   // La tarjeta se pinto en src/componentes/ListaTarjetas.jsx al separar las vistas
-  // de Historial.jsx; el boton y sus comprobaciones viven ahi.
-  const vista = leer('componentes/ListaTarjetas.jsx');
+  // de Historial.jsx; al memoizar, el contenido de cada tarjeta (incluido el
+  // boton de borrado) paso a src/componentes/TarjetaPaciente.jsx.
+  const vista = leer('componentes/TarjetaPaciente.jsx');
   assert.match(vista, /<BotonEliminarPaciente/, 'eliminar un paciente debe pasar por la ventana de confirmacion');
   const boton = leer('BotonEliminarPaciente.jsx');
   assert.match(boton, /Se borrará para siempre/, 'el aviso debe explicar claramente el alcance');

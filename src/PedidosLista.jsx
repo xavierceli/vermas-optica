@@ -228,9 +228,9 @@ export default function PedidosLista({
     return { pendientes, laboratorio, listos, completados };
   }, [pedidosFiltrados, anulandoIds]);
 
-  const pedidosParaMostrar = (pedidosFiltrados || []).filter(item => {
+  const pedidosParaMostrar = useMemo(() => (pedidosFiltrados || []).filter(item => {
     if (!item) return false;
-    
+
     // Filtro optimista inmediato
     if (anulandoIds.has(item.id) || anulandoIds.has(item.pedido_id)) return false;
 
@@ -238,7 +238,7 @@ export default function PedidosLista({
     const pFinal = calcularTotal(pVenta, item.descuento);
     const pAbono = safeNum(item.abono);
     const pSaldo = calcularSaldo(pVenta, item.descuento, pAbono);
-    
+
     const estado = safeString(item.estado);
     if (estado === 'Anulado') return false;
 
@@ -259,9 +259,9 @@ export default function PedidosLista({
     if (filtroTab === 'Completados') return estado === 'Entregado' && estaPagado;
 
     return true;
-  });
+  }), [pedidosFiltrados, anulandoIds, filtroTab, busqueda]);
 
-  const { total: soloLocales } = contarSoloLocales(pedidosFiltrados);
+  const soloLocales = useMemo(() => contarSoloLocales(pedidosFiltrados).total, [pedidosFiltrados]);
 
   return (
     <div className="bg-white rounded-xl shadow-lg p-4 sm:p-6 border-t-4 border-indigo-600">

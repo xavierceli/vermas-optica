@@ -7,6 +7,8 @@ import { useState, useCallback } from 'react';
 // aplicacion. `solicitarConfirmacion` se dispara y olvida (fire and forget),
 // mientras que `confirmar` devuelve una promesa con la decision del usuario.
 // Se aisla aqui para que useGestor sea solo el orquestador.
+// solicitarConfirmacion y confirmar son estables (deps vacias): viajan como
+// props hasta componentes memoizados y no deben cambiar de referencia.
 // ---------------------------------------------------------------------------
 export function useConfirmacion() {
   const [confirmDialog, setConfirmDialog] = useState({
@@ -19,17 +21,17 @@ export function useConfirmacion() {
     if (typeof pendiente === 'function') pendiente();
   }, [confirmDialog]);
 
-  const aceptarConfirmacion = () => {
+  const aceptarConfirmacion = useCallback(() => {
     const pendiente = confirmDialog.onConfirm;
     setConfirmDialog({ visible: false, mensaje: '', onConfirm: null, onCancel: null });
     if (typeof pendiente === 'function') pendiente();
-  };
+  }, [confirmDialog]);
 
-  const solicitarConfirmacion = (mensaje, onConfirmCallback) => {
+  const solicitarConfirmacion = useCallback((mensaje, onConfirmCallback) => {
     setConfirmDialog({ visible: true, mensaje, onConfirm: onConfirmCallback, onCancel: null });
-  };
+  }, []);
 
-  const confirmar = (mensaje, textoSi = 'Sí, Continuar') => new Promise(resolve => {
+  const confirmar = useCallback((mensaje, textoSi = 'Sí, Continuar') => new Promise(resolve => {
     let respondido = false;
     const responder = valor => {
       if (respondido) return;
@@ -41,7 +43,7 @@ export function useConfirmacion() {
       visible: true, mensaje, textoSi,
       onConfirm: () => responder(true), onCancel: () => responder(false)
     });
-  });
+  }), []);
 
   return {
     confirmDialog, setConfirmDialog,

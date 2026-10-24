@@ -16,6 +16,22 @@ const MARGEN_SEGURIDAD_MS = 60 * 1000; // 1 minuto antes de expirar
 
 const cacheFirmas = new Map();
 const cacheBlobsLocales = new Map();
+// Tope de URLs de blob en memoria: cada una retiene el archivo entero hasta
+// que se revoca, asi que sin limite una jornada consultando comprobantes iba
+// acumulando imagenes que ya nadie mira.
+const MAX_BLOBS_LOCALES = 30;
+
+const recordarBlobLocal = (clave, blob) => {
+  while (cacheBlobsLocales.size >= MAX_BLOBS_LOCALES) {
+    const masVieja = cacheBlobsLocales.keys().next().value;
+    if (masVieja === undefined) break;
+    URL.revokeObjectURL(cacheBlobsLocales.get(masVieja));
+    cacheBlobsLocales.delete(masVieja);
+  }
+  const url = URL.createObjectURL(blob);
+  if (clave) cacheBlobsLocales.set(clave, url);
+  return url;
+};
 
 // createSignedUrl() recibe el bucket por separado; se normaliza la ruta sin prefijo
 const extraerRuta = valor => extraerRutaArchivo(valor, 'comprobantes_pagos');
@@ -94,11 +110,7 @@ export const resolverUrlComprobante = async (valor, refId = null) => {
 
   const adjunto = await buscarBlobLocal(refId, ruta);
   if (adjunto?.blob) {
-    const blobUrl = URL.createObjectURL(adjunto.blob);
-    if (claveBlob) {
-      cacheBlobsLocales.set(claveBlob, blobUrl);
-    }
-    return blobUrl;
+    return recordarBlobLocal(claveBlob, adjunto.blob);
   }
 
   return null;

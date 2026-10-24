@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from './supabaseClient';
 import { safeString, buscarPacientesEnSupabase } from './utilidades';
 import { normalizeCedula } from './localRepository';
@@ -75,7 +75,12 @@ export default function Historial({
     }).lista;
   }, [busquedaTexto, resultadosBusqueda, historialReciente]);
 
-  const filasVisibles = pacientesAgrupados.slice(0, filasPorMostrar);
+  // Slice memoizado: un array nuevo en cada render romperia el memo de la
+  // lista y de cada tarjeta, que es justo lo que se quiere evitar.
+  const filasVisibles = useMemo(
+    () => pacientesAgrupados.slice(0, filasPorMostrar),
+    [pacientesAgrupados, filasPorMostrar]
+  );
 
   // Helper para generar una clave única y evitar duplicados en la evolución
   const generarClaveConsulta = (r) => {
@@ -167,13 +172,16 @@ export default function Historial({
     }
   };
 
-  const toggleExpandir = (id) => {
+  // Handlers estables: viajan como props hasta cada TarjetaPaciente (memo) y
+  // sin useCallback serian referencias nuevas en cada render, inutilizando el
+  // memo de las 50 tarjetas visibles.
+  const toggleExpandir = useCallback((id) => {
     setFilasExpandidas(prev => ({ ...prev, [id]: !prev[id] }));
-  };
+  }, []);
 
-  const toggleAlias = (id) => {
+  const toggleAlias = useCallback((id) => {
     setAliasVisibles(prev => ({ ...prev, [id]: !prev[id] }));
-  };
+  }, []);
 
   const eliminarRegistroDeExpediente = async (reg) => {
     confirmarAccion(
@@ -187,7 +195,7 @@ export default function Historial({
     );
   };
 
-  const manejarBorradoCompleto = async (item, opciones) => {
+  const manejarBorradoCompleto = useCallback(async (item, opciones) => {
     const cedula = normalizeCedula(item?.cedula);
     const eliminado = await borrarHistoriaClinica(item, opciones);
     if (eliminado) {
@@ -197,7 +205,7 @@ export default function Historial({
       }));
     }
     return eliminado;
-  };
+  }, [borrarHistoriaClinica]);
 
   const claveExpediente = safeString(expedienteActivo?.id) || safeString(expedienteActivo?.cedula);
 

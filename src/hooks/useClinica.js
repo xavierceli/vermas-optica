@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { safeString, calcularEdad } from '../utilidades';
 import { createUuid as generarId } from '../localDb';
 import { guardarConsultaLocal, archivarConsultaIndividualLocal } from '../localRepository';
@@ -8,7 +8,7 @@ import { eliminarPacienteDefinitivo } from '../eliminacionPaciente';
 import { limpiarHtml } from '../escape';
 import { validarFichaClinica } from '../validacion';
 import { aplicarAvisoQueratometria } from '../reglas';
-import { aplicarCedula, crearEstadoPaciente, CAMPOS_DE_VENTA, TRATAMIENTOS } from '../fichaClinica';
+import { aplicarCedula, crearEstadoPaciente, hoyISO, CAMPOS_DE_VENTA, TRATAMIENTOS } from '../fichaClinica';
 
 // ---------------------------------------------------------------------------
 // FICHA CLINICA
@@ -162,7 +162,9 @@ export function useClinica({
     }
   };
 
-  const borrarHistoriaClinica = async (item, { descargarCopia = false } = {}) => {
+  // borrarHistoriaClinica viaja hasta las tarjetas memoizadas del Historial:
+  // sin useCallback su referencia cambiaria en cada render y el memo no serviria.
+  const borrarHistoriaClinica = useCallback(async (item, { descargarCopia = false } = {}) => {
     const cedula = safeString(item?.cedula).trim();
     if (!cedula) return false;
 
@@ -197,19 +199,22 @@ export function useClinica({
       mostrarToast('No se eliminó nada: ' + err.message, 'error', 8000);
       return false;
     }
-  };
+  }, [obtenerDatos, mostrarToast, setHistorial, setVentasLocales, setVentasArchivadas]);
 
-  const cargarParaEditarClinico = (item) => { 
+  // Estos tres handlers llegan a las tarjetas memoizadas del Historial: se
+  // estabilizan con deps vacias leyendo la fecha en el momento de la llamada
+  // (hoyISO()) en vez de cerrar sobre el `hoy` del render, que cambia siempre.
+  const cargarParaEditarClinico = useCallback((item) => {
     let itemFormateado = { ...item };
     Object.keys(itemFormateado).forEach(key => { if (itemFormateado[key] === null) itemFormateado[key] = ''; });
-    setPaciente({ ...estadoInicial, ...itemFormateado }); 
-    setEditandoId(item.id); 
-    setVistaActual('nueva_medicion'); 
-    window.scrollTo({ top: 0, behavior: 'smooth' }); 
-  };
+    setPaciente({ ...crearEstadoPaciente(hoyISO()), ...itemFormateado });
+    setEditandoId(item.id);
+    setVistaActual('nueva_medicion');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [setVistaActual]);
 
-  const iniciarNuevaConsulta = (item) => {
-    const estadoLimpio = crearEstadoPaciente(hoy);
+  const iniciarNuevaConsulta = useCallback((item) => {
+    const estadoLimpio = crearEstadoPaciente(hoyISO());
     const nuevaFicha = {
       ...estadoLimpio,
       cedula: safeString(item?.cedula),
@@ -227,23 +232,23 @@ export function useClinica({
     TRATAMIENTOS.forEach(campo => { nuevaFicha[campo] = 'NO'; });
     setPaciente(nuevaFicha);
     setEditandoId(null);
-    setVistaActual('nueva_medicion'); 
-    window.scrollTo({ top: 0, behavior: 'smooth' }); 
-  };
+    setVistaActual('nueva_medicion');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [setVistaActual]);
 
-  const crearNuevoPaciente = (sugerenciaTexto = '') => {
+  const crearNuevoPaciente = useCallback((sugerenciaTexto = '') => {
     const limpio = safeString(sugerenciaTexto).trim();
     const esNumero = /^\d+$/.test(limpio);
     const nuevaFicha = {
-      ...estadoInicial,
+      ...crearEstadoPaciente(hoyISO()),
       cedula: esNumero ? limpio : '',
       nombre: !esNumero ? limpio.toUpperCase() : ''
     };
     setPaciente(nuevaFicha);
     setEditandoId(null);
-    setVistaActual('nueva_medicion'); 
-    window.scrollTo({ top: 0, behavior: 'smooth' }); 
-  };
+    setVistaActual('nueva_medicion');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [setVistaActual]);
 
   const edadActual = calcularEdad(paciente?.fecha_nacimiento);
   const claseInputRef = (campo, clasesExtra) => {

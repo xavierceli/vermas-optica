@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, Fragment } from 'react';
+import { useState, useEffect, useRef, useMemo, Fragment } from 'react';
 import { safeString, calcularCerca, buscarPacientesEnSupabase } from './utilidades';
 import { LIMITE_QUERATOMETRIA, esQueratometriaAlta } from './reglas';
 import { buscarCoincidenciasPacientes, datosParaCompletarPaciente } from './fichaClinica';
@@ -285,10 +285,11 @@ export default function Clinica({
   };
 
   const [visitaSeleccionadaId, setVisitaSeleccionadaId] = useState('');
-  
-  const visitasAnteriores = (historial || []).filter(h => 
-    safeString(h?.cedula) === safeString(paciente?.cedula) && safeString(h?.cedula) !== '' && safeString(h?.nombre) !== 'CONSUMIDOR FINAL'
-  );
+
+  const cedulaActual = safeString(paciente?.cedula);
+  const visitasAnteriores = useMemo(() => (historial || []).filter(h =>
+    safeString(h?.cedula) === cedulaActual && cedulaActual !== '' && safeString(h?.nombre) !== 'CONSUMIDOR FINAL'
+  ), [historial, cedulaActual]);
 
   const cargarVisitaAnterior = (e) => {
     const id = e.target.value;

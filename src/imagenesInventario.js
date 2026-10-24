@@ -19,6 +19,21 @@ const MARGEN_SEGURIDAD_MS = 60 * 1000; // 1 minuto antes de expirar
 const cacheFirmas = new Map();
 const cacheBlobsLocales = new Map();
 const peticionesEnCurso = new Map();
+// Tope de URLs de blob en memoria: cada una retiene la foto entera hasta que
+// se revoca, asi que sin limite el catalogo completo acababa retenido.
+const MAX_BLOBS_LOCALES = 60;
+
+const recordarBlobLocal = (clave, blob) => {
+  while (cacheBlobsLocales.size >= MAX_BLOBS_LOCALES) {
+    const masVieja = cacheBlobsLocales.keys().next().value;
+    if (masVieja === undefined) break;
+    URL.revokeObjectURL(cacheBlobsLocales.get(masVieja));
+    cacheBlobsLocales.delete(masVieja);
+  }
+  const url = URL.createObjectURL(blob);
+  cacheBlobsLocales.set(clave, url);
+  return url;
+};
 
 const limpiarCacheExpirada = () => {
   if (cacheFirmas.size < 60) return;
@@ -109,9 +124,7 @@ export const resolverUrlImagenInventario = async (valor) => {
   // 5. Contingencia sin red o foto pendiente de subida: buscar en IndexedDB
   const blobLocal = await buscarBlobLocalInventario(ruta);
   if (blobLocal) {
-    const blobUrl = URL.createObjectURL(blobLocal);
-    cacheBlobsLocales.set(ruta, blobUrl);
-    return blobUrl;
+    return recordarBlobLocal(ruta, blobLocal);
   }
 
   return null;

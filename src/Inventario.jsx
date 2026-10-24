@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { safeString, safeNum } from './utilidades';
 import { resolverUrlImagenInventario } from './imagenesInventario';
 import { imprimirEtiqueta } from './impresiones';
@@ -94,24 +94,30 @@ export default function Inventario({
     }
   };
 
-  const itemsFiltrados = (inventario || []).filter(item => {
+  const itemsFiltrados = useMemo(() => (inventario || []).filter(item => {
     if (!item) return false;
     const term = busqueda.toLowerCase();
     return safeString(item.codigo).toLowerCase().includes(term) ||
            safeString(item.tipo_armazon).toLowerCase().includes(term) ||
            safeString(item.nombre_accesorio).toLowerCase().includes(term) ||
            safeString(item.descripcion).toLowerCase().includes(term);
-  });
+  }), [inventario, busqueda]);
 
-  const modelosArmazones = (inventario || []).filter(i => safeString(i?.categoria) === 'Armazon');
-  const totalModelosArmazones = modelosArmazones.length;
-  const stockArmazones = modelosArmazones.reduce((acc, curr) => acc + safeNum(curr?.stock), 0);
-
-  const modelosAccesorios = (inventario || []).filter(i => safeString(i?.categoria) === 'Accesorio');
-  const totalModelosAccesorios = modelosAccesorios.length;
-  const stockAccesorios = modelosAccesorios.reduce((acc, curr) => acc + safeNum(curr?.stock), 0);
-  const armazonesConStock = modelosArmazones.filter(i => safeNum(i?.stock) > 0).length;
-  const accesoriosConStock = modelosAccesorios.filter(i => safeNum(i?.stock) > 0).length;
+  const {
+    totalModelosArmazones, stockArmazones, armazonesConStock,
+    totalModelosAccesorios, stockAccesorios, accesoriosConStock
+  } = useMemo(() => {
+    const modelosArmazones = (inventario || []).filter(i => safeString(i?.categoria) === 'Armazon');
+    const modelosAccesorios = (inventario || []).filter(i => safeString(i?.categoria) === 'Accesorio');
+    return {
+      totalModelosArmazones: modelosArmazones.length,
+      stockArmazones: modelosArmazones.reduce((acc, curr) => acc + safeNum(curr?.stock), 0),
+      armazonesConStock: modelosArmazones.filter(i => safeNum(i?.stock) > 0).length,
+      totalModelosAccesorios: modelosAccesorios.length,
+      stockAccesorios: modelosAccesorios.reduce((acc, curr) => acc + safeNum(curr?.stock), 0),
+      accesoriosConStock: modelosAccesorios.filter(i => safeNum(i?.stock) > 0).length
+    };
+  }, [inventario]);
 
   const totalStockGeneral = stockArmazones + stockAccesorios;
 
