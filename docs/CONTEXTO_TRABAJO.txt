@@ -1,7 +1,7 @@
 ===============================================================================
 VER+ OPTICA - CONTEXTO DE TRABAJO
 Registro de lo realizado y de lo que queda pendiente
-Ultima actualizacion: tareas 1, 2, 3, 4, 5 y 6 completadas
+Ultima actualizacion: tareas 1 a 7 completadas
 ===============================================================================
 
 Como usar este archivo:
@@ -501,7 +501,68 @@ ACCION MANUAL PENDIENTE
 
 
 ===============================================================================
-7. CHECKLIST DE MIGRACIONES
+7. TAREA COMPLETADA: SIMULACRO AUTOMATICO DE RESTAURACION (#7)
+===============================================================================
+
+PROBLEMA QUE RESOLVIA
+------------------------------------------------------------------------------
+  - El respaldo ya se generaba y verificaba, pero nadie lo habia restaurado.
+    Un respaldo sin simulacro es solo una promesa.
+  - Hacerlo a mano exigia Docker o psql y varios pasos que un usuario sin
+    conocimientos tecnicos no puede ejecutar.
+
+QUE SE HIZO
+------------------------------------------------------------------------------
+  1. .github/workflows/simulacro-restauracion.yml
+     - Levanta un PostgreSQL 17 temporal SOLO durante la ejecucion.
+     - Trae el ultimo respaldo de la rama respaldo-automatico (o el indicado).
+     - Lo verifica, lo restaura con ON_ERROR_STOP y compara los conteos.
+     - No usa secretos ni toca Supabase. Se lanza a mano (workflow_dispatch).
+
+  2. scripts/restauracion/preludio.sql
+     - Crea los roles anon/authenticated/service_role y el esquema auth minimo
+       (auth.users, auth.uid(), auth.role()) que un Postgres limpio no tiene.
+
+  3. scripts/preparar-restauracion.mjs + src/pruebas/restauracion.js
+     - Extrae de public.perfiles los user_id y los recrea en auth.users antes
+       de restaurar. Sin esto, la clave foranea de perfiles rompe la
+       restauracion porque el volcado solo trae el esquema public.
+
+  4. scripts/comprobar-restauracion.mjs
+     - Compara fila por fila el volcado con la base restaurada, y comprueba
+       que esten las 9 funciones criticas y las politicas RLS.
+     - Falla si falta una tabla, una funcion o una sola fila.
+
+ARCHIVOS TOCADOS
+------------------------------------------------------------------------------
+  Nuevos:
+    .github/workflows/simulacro-restauracion.yml
+    scripts/restauracion/preludio.sql
+    scripts/preparar-restauracion.mjs
+    scripts/comprobar-restauracion.mjs
+    src/pruebas/restauracion.js
+    src/pruebas/restauracion.test.js
+  Modificados:
+    docs/RESPALDO_SERVIDOR.md (opcion C y checklist)
+
+COMO SE VERIFICO
+------------------------------------------------------------------------------
+  - 8 pruebas nuevas de la logica (extraccion de usuarios, comparacion de
+    conteos, tablas faltantes). Total: 598 de logica + 38 de UI, 0 fallos.
+  - YAML de los dos workflows validado.
+  - npm run lint limpio; build 189,1 kB inicial / 244,2 kB total.
+  - El workflow en si NO se pudo ejecutar desde aqui (requiere lanzarlo en
+    GitHub); la primera ejecucion real es la que lo confirma.
+
+ACCION MANUAL PENDIENTE
+------------------------------------------------------------------------------
+  - Actions -> Simulacro de restauracion -> Run workflow. Debe salir verde y
+    mostrar los conteos tabla por tabla.
+  - Si falla, el paso rojo indica la tabla o funcion exacta; con eso se corrige.
+
+
+===============================================================================
+8. CHECKLIST DE MIGRACIONES
 ===============================================================================
   [x] 202609240024_versionado_consultas.sql    -> aplicada (vista verificada)
   [x] 202609240025_realtime_publicacion.sql    -> aplicada (5 tablas publicadas)
@@ -512,17 +573,15 @@ ACCION MANUAL PENDIENTE
 
 
 ===============================================================================
-8. QUE FALTA POR HACER
+9. QUE FALTA POR HACER
 ===============================================================================
 
 PRIORIDAD ALTA (siguiente tarea recomendada)
 ------------------------------------------------------------------------------
-  [ ] Ejecutar el simulacro real de restauracion
-      - La automatizacion y el verificador ya estan (tarea 6); falta probarlo
-        con datos de verdad.
-      - Seguir docs/RESPALDO_SERVIDOR.md seccion 5 (Docker o proyecto de
-        prueba), comparar conteos y recorrer la app contra la copia.
-      - Anotar el tiempo total: es el dato que importa si hay que restaurar.
+  [ ] Ejecutar el simulacro automático de restauración
+      - Workflow listo (tarea 7). Solo falta pulsar Run workflow y verlo verde.
+      - Despues, opcional: simulacro manual con la app contra la copia
+        (docs/RESPALDO_SERVIDOR.md seccion 5.2-5.5) y anotar el tiempo.
 
   [ ] Alerta visible si Realtime lleva mucho caido
       - Hoy solo se registra un warning en consola y el sondeo de 30 s sigue.
@@ -546,7 +605,7 @@ PRIORIDAD BAJA / NO RECOMENDADO AHORA
 
 
 ===============================================================================
-9. ESTADO ACTUAL DEL PROYECTO (resumen)
+10. ESTADO ACTUAL DEL PROYECTO (resumen)
 ===============================================================================
   - App: PWA React 19 + Vite 8, offline-first con Dexie/IndexedDB.
   - Backend: Supabase (23 + 2 migraciones), escritura solo por RPC.
@@ -563,10 +622,10 @@ PRIORIDAD BAJA / NO RECOMENDADO AHORA
     presupuesto de bundle en CI (tarea 3).
   - Almacenamiento: limpieza diaria de adjuntos subidos y cache redundante,
     aviso de cuota al 80 % y uso visible en el panel (tarea 4).
-  - Pruebas: 590 de logica + 38 de UI + 4 E2E de dos equipos.
+  - Pruebas: 598 de logica + 38 de UI + 4 E2E de dos equipos.
   - Bundle: 189 kB gzip inicial / 244 kB total.
-  - Respaldo: workflow diario + verificador listos; falta el secreto y el
-    simulacro de restauracion (tarea 6).
+  - Respaldo: diario, verificado y con simulacro automatico de restauracion
+    (tareas 6 y 7).
   - Despliegue: Vercel + Supabase.
 
 ===============================================================================

@@ -1,8 +1,8 @@
 # Respaldo del servidor (Supabase)
 
-> **Estado:** la automatización y el verificador ya están en el repositorio.
-> Falta lo que solo se puede hacer con acceso a Supabase: registrar el secreto
-> `DATABASE_URL` y ejecutar una restauración de prueba.
+> **Estado:** la automatización, el verificador y el simulacro automático de
+> restauración ya están en el repositorio. Falta registrar el secreto
+> `DATABASE_URL` (hecho) y ejecutar el simulacro al menos una vez.
 >
 > Un respaldo que nunca se restauró **no es un respaldo**: es la ilusión de
 > tenerlo. Por eso la última sección es un simulacro paso a paso.
@@ -133,10 +133,35 @@ usa `--no-privileges`), porque sin ellos la app restaurada no podría leer nada.
 
 ---
 
-## 5. Simulacro de restauración (lo que falta)
+## 5. Simulacro de restauración
 
-Se puede hacer en local con Docker (recomendado para el primer ensayo) o en un
-proyecto de prueba de Supabase. **Nunca sobre producción.**
+Hay dos formas. La **automática** es la recomendada para el día a día: no
+instala nada y no puede tocar producción. La manual sirve para probar además la
+app contra la copia.
+
+### 5.0 Opción C (recomendada) — simulacro automático en GitHub
+
+El workflow `.github/workflows/simulacro-restauracion.yml` levanta un
+PostgreSQL 17 temporal dentro de la ejecución, restaura el último respaldo y
+compara los conteos con los del volcado. No usa secretos ni toca Supabase.
+
+1. GitHub → **Actions** → **Simulacro de restauracion** → **Run workflow**.
+2. Espera 2–3 minutos.
+3. En el resumen verás una tabla `tabla: filas del respaldo -> filas restauradas`
+   y `OK: la restauracion coincide con el respaldo`.
+
+Qué comprueba de verdad:
+
+- que el volcado restaure sin errores (roles, `auth`, claves foráneas, triggers);
+- que los conteos coincidan tabla por tabla;
+- que estén las 9 funciones críticas y las políticas RLS.
+
+Qué **no** comprueba: que la app funcione contra esa copia (para eso, 5.2–5.5)
+ni los archivos de Storage.
+
+> Si algún día falla, el paso rojo dice exactamente qué tabla o función falta.
+> Eso es precisamente lo que se quiere descubrir **antes** de necesitar el
+> respaldo de verdad.
 
 ### 5.1 Descargar el respaldo
 
@@ -283,7 +308,9 @@ uno por error desde la app?**
 - [x] Crear `.github/workflows/respaldo-diario.yml`
 - [x] Verificar el volcado antes de publicarlo (`scripts/verificar-respaldo.mjs`)
 - [ ] Lanzar la primera ejecución a mano y ver el `.sql` en la rama
-- [ ] Hacer el simulacro de restauración (sección 5) y anotar el tiempo
+- [x] Simulacro automático de restauración (`simulacro-restauracion.yml`)
+- [ ] Ejecutar el simulacro una vez y ver el resumen en verde
+- [ ] Hacer el simulacro manual con la app (sección 5.2–5.5) y anotar el tiempo
 - [ ] Decidir qué hacer con las fotos (`comprobantes_pagos` en especial)
 
 ---

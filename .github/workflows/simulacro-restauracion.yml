@@ -1,0 +1,100 @@
+name: Simulacro de restauracion
+
+# ---------------------------------------------------------------------------
+# Restaura el ultimo respaldo (o el que se indique) en un PostgreSQL 17
+# temporal que vive solo durante la ejecucion, y compara fila por fila con lo
+# que dice el volcado.
+#
+# No toca Supabase ni la app. No necesita secretos: el PostgreSQL es desechable.
+#
+# Prueba lo que de verdad importa de un respaldo:
+#   - que restaure sin errores (roles, auth, claves foraneas, triggers),
+#   - que los conteos coincidan,
+#   - que esten las funciones y las politicas RLS.
+# ---------------------------------------------------------------------------
+
+on:
+  workflow_dispatch:
+    inputs:
+      archivo:
+        description: 'Archivo de respaldos/ (vacio = el mas reciente)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  simulacro:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: prueba
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Traer el respaldo de la rama respaldo-automatico
+        env:
+          ARCHIVO_PEDIDO: ${{ inputs.archivo }}
+        run: |
+          set -euo pipefail
+          git fetch origin respaldo-automatico --depth=1
+          git checkout origin/respaldo-automatico -- respaldos
+
+          if [ -n "$ARCHIVO_PEDIDO" ]; then
+            archivo="respaldos/$ARCHIVO_PEDIDO"
+          else
+            archivo=$(ls -1t respaldos/*.sql | head -1)
+          fi
+
+          test -f "$archivo" || { echo "::error::No existe $archivo"; exit 1; }
+          echo "ARCHIVO=$archivo" >> "$GITHUB_ENV"
+          echo "Restaurando: $archivo"
+
+      - name: Verificar el volcado antes de restaurar
+        run: node scripts/verificar-respaldo.mjs "$ARCHIVO"
+
+      - name: Instalar el cliente de PostgreSQL
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq postgresql-client
+
+      - name: Restaurar en PostgreSQL temporal
+        env:
+          PGURL: postgresql://postgres:prueba@localhost:5432/postgres
+        run: |
+          set -euo pipefail
+          psql "$PGURL" -v ON_ERROR_STOP=1 -q -f scripts/restauracion/preludio.sql
+          node scripts/preparar-restauracion.mjs "$ARCHIVO" > /tmp/usuarios.sql
+          psql "$PGURL" -v ON_ERROR_STOP=1 -q -f /tmp/usuarios.sql
+          psql "$PGURL" -v ON_ERROR_STOP=1 -q -f "$ARCHIVO"
+
+      - name: Comparar los datos restaurados con el respaldo
+        env:
+          DATABASE_URL: postgresql://postgres:prueba@localhost:5432/postgres
+        run: |
+          set -o pipefail
+          node scripts/comprobar-restauracion.mjs --respaldo "$ARCHIVO" \
+            | tee salida-restauracion.txt
+
+      - name: Resumen del simulacro
+        if: always()
+        run: |
+          {
+            echo '### Simulacro de restauracion'
+            echo '```'
+            cat salida-restauracion.txt 2>/dev/null || echo 'sin salida'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
