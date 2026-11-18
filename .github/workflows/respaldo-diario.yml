@@ -100,8 +100,7 @@ jobs:
           fi
 
           mkdir -p respaldos
-          cp "$ARCHIVO" respaldos/
-          git add respaldos
+          git add "$ARCHIVO"
           git commit -m "Respaldo $(date -u +%Y-%m-%d\ %H:%M) UTC"
           git push origin respaldo-automatico
 
