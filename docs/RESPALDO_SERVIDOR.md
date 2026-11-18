@@ -205,6 +205,10 @@ create or replace function auth.uid() returns uuid
   language sql stable as $$ select null::uuid $$;
 create or replace function auth.role() returns text
   language sql stable as $$ select 'authenticated'::text $$;
+create or replace function auth.jwt() returns jsonb
+  language sql stable as $$ select '{}'::jsonb $$;
+create or replace function auth.email() returns text
+  language sql stable as $$ select null::text $$;
 
 do $$
 begin

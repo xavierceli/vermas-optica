@@ -34,6 +34,12 @@ create or replace function auth.uid() returns uuid
 create or replace function auth.role() returns text
   language sql stable as $$ select 'authenticated'::text $$;
 
+create or replace function auth.jwt() returns jsonb
+  language sql stable as $$ select '{}'::jsonb $$;
+
+create or replace function auth.email() returns text
+  language sql stable as $$ select null::text $$;
+
 do $$
 begin
   if not exists (select 1 from pg_roles where rolname = 'anon') then
