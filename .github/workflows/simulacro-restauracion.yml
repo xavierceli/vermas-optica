@@ -14,6 +14,9 @@ name: Simulacro de restauracion
 # ---------------------------------------------------------------------------
 
 on:
+  # El dia 1 de cada mes se prueba solo; ademas se puede lanzar a mano.
+  schedule:
+    - cron: '0 4 1 * *'
   workflow_dispatch:
     inputs:
       archivo:

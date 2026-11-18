@@ -146,6 +146,7 @@ PostgreSQL 17 temporal dentro de la ejecución, restaura el último respaldo y
 compara los conteos con los del volcado. No usa secretos ni toca Supabase.
 
 1. GitHub → **Actions** → **Simulacro de restauracion** → **Run workflow**.
+   (También se ejecuta solo el **día 1 de cada mes**.)
 2. Espera 2–3 minutos.
 3. En el resumen verás una tabla `tabla: filas del respaldo -> filas restauradas`
    y `OK: la restauracion coincide con el respaldo`.
