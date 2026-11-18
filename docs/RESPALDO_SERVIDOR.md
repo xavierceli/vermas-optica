@@ -169,6 +169,9 @@ ni los archivos de Storage.
 git fetch origin respaldo-automatico
 git show origin/respaldo-automatico:respaldos/20261004_030000_datos.sql > respaldo.sql
 node scripts/verificar-respaldo.mjs respaldo.sql   # debe decir OK
+
+# pg_dump incluye "CREATE SCHEMA public;", que ya existe: se quita esa linea.
+sed -E '/^CREATE SCHEMA (IF NOT EXISTS )?"?public"?;?[[:space:]]*$/d'   respaldo.sql > respaldo-sin-schema.sql
 ```
 
 ### 5.2 Opción A — PostgreSQL local con Docker
@@ -217,14 +220,14 @@ Restaurar con `ON_ERROR_STOP=1` (si algo falla, se ve en el acto):
 
 ```bash
 docker exec -i vermas-restore psql -U postgres -d postgres \
-  -v ON_ERROR_STOP=1 < respaldo.sql
+  -v ON_ERROR_STOP=1 < respaldo-sin-schema.sql
 ```
 
 ### 5.3 Opción B — Proyecto de prueba de Supabase
 
 1. Crear un proyecto gratuito **aparte** del de producción.
 2. Copiar su cadena del **Session pooler**.
-3. `psql "$DATABASE_URL_PRUEBA" -v ON_ERROR_STOP=1 -f respaldo.sql`
+3. `psql "$DATABASE_URL_PRUEBA" -v ON_ERROR_STOP=1 -f respaldo-sin-schema.sql`
 4. Crear un usuario de prueba en Authentication → Users (los usuarios no vienen
    en el respaldo).
 

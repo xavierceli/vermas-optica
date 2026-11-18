@@ -79,7 +79,10 @@ jobs:
           psql "$PGURL" -v ON_ERROR_STOP=1 -q -f scripts/restauracion/preludio.sql
           node scripts/preparar-restauracion.mjs "$ARCHIVO" > /tmp/usuarios.sql
           psql "$PGURL" -v ON_ERROR_STOP=1 -q -f /tmp/usuarios.sql
-          psql "$PGURL" -v ON_ERROR_STOP=1 -q -f "$ARCHIVO"
+          # pg_dump incluye "CREATE SCHEMA public;", pero ese esquema ya existe
+          # en cualquier PostgreSQL (y en Supabase). Se quita solo esa linea.
+          sed -E '/^CREATE SCHEMA (IF NOT EXISTS )?"?public"?;?[[:space:]]*$/d' "$ARCHIVO" > /tmp/respaldo.sql
+          psql "$PGURL" -v ON_ERROR_STOP=1 -q -f /tmp/respaldo.sql
 
       - name: Comparar los datos restaurados con el respaldo
         env:
