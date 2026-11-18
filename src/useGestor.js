@@ -75,7 +75,7 @@ export function useGestor() {
     rol, esAdmin
   } = useAutenticacion({ mostrarToast, solicitarConfirmacion, obtenerDatos, limpiarDatos });
 
-  const { syncEstado } = useSincronizacion(estaAutenticado);
+  const { syncEstado } = useSincronizacion(estaAutenticado, obtenerDatos, modoSinConexion);
 
   return {
     guardando,

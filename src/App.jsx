@@ -1,6 +1,5 @@
-import { useEffect, useState, useRef } from 'react';
+import { lazy, Suspense, useEffect, useState, useRef } from 'react';
 import { useGestor } from './useGestor';
-import { imprimirOrdenTrabajo, imprimirRecibo } from './impresiones';
 import AvisoActualizacion from './AvisoActualizacion';
 import PanelSincronizacion from './PanelSincronizacion';
 import ErrorBoundary from './ErrorBoundary.jsx';
@@ -8,15 +7,44 @@ import { safeString } from './utilidades.js';
 import { textoColaPendiente } from './avisosSync.js';
 import { actualizarPagina, tieneTrabajoSinGuardar } from './recarga.js';
 
-// Importaciones estáticas directas para garantizar funcionamiento offline total
+// Las vistas se cargan por demanda. Es seguro para el offline: Workbox
+// precachea TODOS los chunks del build (vite.config.js incluye **/*.js), asi
+// que al instalar la PWA quedan guardados aunque el usuario no los haya
+// abierto. Ademas el service worker esta en modo "prompt": un despliegue
+// nuevo no borra los chunks de la version que se esta ejecutando.
+//
+// Login se queda estatico a proposito: es lo primero que se pinta.
 import Login from './Login.jsx';
-import Historial from './Historial.jsx';
-import Clinica from './Clinica.jsx';
-import Inventario from './Inventario.jsx';
-import Tarifario from './Tarifario.jsx';
-import Dashboard from './Dashboard.jsx';
-import PedidosLista from './PedidosLista.jsx';
-import PedidosForm from './PedidosForm.jsx';
+
+const Historial = lazy(() => import('./Historial.jsx'));
+const Clinica = lazy(() => import('./Clinica.jsx'));
+const Inventario = lazy(() => import('./Inventario.jsx'));
+const Tarifario = lazy(() => import('./Tarifario.jsx'));
+const Dashboard = lazy(() => import('./Dashboard.jsx'));
+const PedidosLista = lazy(() => import('./PedidosLista.jsx'));
+const PedidosForm = lazy(() => import('./PedidosForm.jsx'));
+
+// impresiones.js son ~620 lineas de plantillas HTML. Solo se necesitan al
+// pulsar "Imprimir", asi que se cargan en ese momento. El primer uso tarda
+// unos milisegundos; despues queda en cache del navegador y del service worker.
+const imprimirOrdenTrabajo = (...args) =>
+  import('./impresiones').then(modulo => modulo.imprimirOrdenTrabajo(...args));
+
+const imprimirRecibo = (...args) =>
+  import('./impresiones').then(modulo => modulo.imprimirRecibo(...args));
+
+/** Mientras se descarga el chunk de una vista. No cambia el layout. */
+function CargandoVista() {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="bg-white rounded-xl shadow-sm border border-gray-100 p-8 text-center text-sm font-bold text-gray-500"
+    >
+      Cargando…
+    </div>
+  );
+}
 
 const ETIQUETAS = {
   dashboard: 'Estadísticas',
@@ -455,6 +483,7 @@ function App() {
         </header>
 
         <ErrorBoundary etiqueta={ETIQUETAS[g.vistaActual] || g.vistaActual} clave={g.vistaActual}>
+          <Suspense fallback={<CargandoVista />}>
           {g.vistaActual === 'dashboard' && <Dashboard stats={g.stats} historial={g.historial} inventario={g.inventario} />}
           {g.vistaActual === 'precios' && <Tarifario nuevoPrecio={g.nuevoPrecio} setNuevoPrecio={g.setNuevoPrecio} precioInicial={g.precioInicial} editandoPrecioId={g.editandoPrecioId} setEditandoPrecioId={g.setEditandoPrecioId} manejarCambioPrecio={g.manejarCambioPrecio} guardarPrecio={g.guardarPrecio} guardarCombo={g.guardarCombo} busquedaPrecio={g.busquedaPrecio} setBusquedaPrecio={g.setBusquedaPrecio} listaPreciosFiltrada={g.listaPreciosFiltrada} listaPrecios={g.listaPrecios} cargarParaEditarPrecio={g.cargarParaEditarPrecio} eliminarPrecio={g.eliminarPrecio} esAdmin={g.esAdmin} />}
           {g.vistaActual === 'inventario' && <Inventario inventario={g.inventario} nuevoItemInv={g.nuevoItemInv} editandoInvId={g.editandoInvId} cargandoImagen={g.cargandoImagen} manejarCambioInv={g.manejarCambioInv} setImagenSeleccionada={g.setImagenSeleccionada} guardarItemInventario={g.guardarItemInventario} cancelarEdicionInventario={g.cancelarEdicionInventario} cargarParaEditarInventario={g.cargarParaEditarInventario} eliminarItemInventario={g.eliminarItemInventario} esAdmin={g.esAdmin} />}
@@ -475,6 +504,7 @@ function App() {
           {g.vistaActual === 'nueva_medicion' && <Clinica paciente={g.paciente} setPaciente={g.setPaciente} estadoInicial={g.estadoInicial} editandoId={g.editandoId} setEditandoId={g.setEditandoId} guardarPacienteClinico={g.guardarPacienteClinico} manejarCambio={g.manejarCambio} edadActual={g.edadActual} claseInputRef={g.claseInputRef} historial={g.historial} cedulasArchivadas={g.cedulasArchivadas} guardando={g.guardando} intentosGuardado={g.intentosGuardado} />}
           {g.vistaActual === 'pedidos_lista' && <PedidosLista crearVentaDirecta={g.crearVentaDirecta} busqueda={g.busqueda} setBusqueda={g.setBusqueda} pedidosFiltrados={g.pedidosFiltrados} imprimirRecibo={imprimirRecibo} imprimirOrdenTrabajo={imprimirOrdenTrabajo} cancelarPedido={g.cancelarPedido} abrirPedido={g.abrirPedido} refrescarDatos={g.obtenerDatos} esAdmin={g.esAdmin} sinSesion={sinSesion} confirmar={g.confirmar} />}
           {g.vistaActual === 'pedidos_form' && g.pedidoSeleccionado && <PedidosForm pedidoSeleccionado={g.pedidoSeleccionado} setPedidoSeleccionado={g.setPedidoSeleccionado} setVistaActual={g.setVistaActual} guardarPedido={g.guardarPedido} manejarCambioPedido={g.manejarCambioPedido} cambiarMedicionPedido={g.cambiarMedicionPedido} medidasPaciente={g.medidasPaciente} inventario={g.inventario} listaPrecios={g.listaPrecios} accesorioOriginalId={g.accesorioOriginalId} forzarRecalculo={g.forzarRecalculo} confirmarAccion={g.solicitarConfirmacion} />}
+          </Suspense>
         </ErrorBoundary>
 
       </main>

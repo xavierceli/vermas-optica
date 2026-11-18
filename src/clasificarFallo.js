@@ -48,6 +48,14 @@ const esFalloDeRed = motivo => /failed to fetch|network|load failed|timeout|abor
   .test(String(motivo || ''));
 
 /**
+ * Choque de version: otro equipo guardo antes sobre la misma ficha o venta.
+ * El dato es VALIDO, solo esta desactualizado. Nunca se descarta: se deja en
+ * conflicto para que el usuario decida (reintentar o descartar a mano).
+ */
+const esConflictoDeVersion = motivo => /modificad[ao] en otro dispositivo|otro equipo|\b40001\b|could not serialize access|version conflict/i
+  .test(String(motivo || ''));
+
+/**
  * Que hay que hacer con una operacion que el servidor rechazo.
  *
  * @param {string} motivo Texto del error que devolvio el servidor.
@@ -74,20 +82,25 @@ export const clasificarFallo = (motivo, { intentos = 0, maxIntentos = 5, tipo = 
   //    tambien el examen del paciente. Se deja esperando a que se resuelva.
   if (CONFLICTO_STOCK.some(marca => texto.includes(marca))) return 'conflict';
 
-  // 3. Archivar una consulta que nunca llego al servidor: no hay nada que
+  // 3. Otro equipo edito la misma ficha o venta: no se pisa en silencio ni se
+  //    descarta el trabajo local. Queda en conflicto hasta que el usuario lo
+  //    resuelva; el servidor conserva la version anterior en revisiones.
+  if (esConflictoDeVersion(texto)) return 'conflict';
+
+  // 4. Archivar una consulta que nunca llego al servidor: no hay nada que
   //    archivar. Es el unico caso de "no existe" que si se puede descartar.
   if (tipo === 'ARCHIVAR_CONSULTA' && /no existe/i.test(texto)) return 'descartada';
 
-  // 4. Falta de permiso por rol: lo decide un administrador, no el tiempo.
+  // 5. Falta de permiso por rol: lo decide un administrador, no el tiempo.
   //    Reintentar no cambia nada, asi que no se deja la cola dando vueltas.
   //    OJO: NO se aplica a "Autenticación requerida." (sesion expirada), que si
   //    debe reintentarse cuando la sesion vuelva.
   if (/solo un administrador/.test(texto)) return 'descartada';
 
-  // 5. Datos invalidos de verdad: descartar es lo correcto.
+  // 6. Datos invalidos de verdad: descartar es lo correcto.
   if (RECHAZO_PERMANENTE.some(marca => texto.includes(marca))) return 'descartada';
 
-  // 6. Agotamos los reintentos.
+  // 7. Agotamos los reintentos.
   if (intentos >= maxIntentos) return 'descartada';
 
   return 'reintentable';
@@ -101,6 +114,11 @@ export const clasificarFallo = (motivo, { intentos = 0, maxIntentos = 5, tipo = 
 export const mensajeDeFallo = (motivo, clasificacion) => {
   const base = String(motivo || '').trim() || 'La operación fue rechazada por el servidor.';
   if (clasificacion === 'conflict') {
+    if (esConflictoDeVersion(base)) {
+      return `${base}. No se perdió nada: tu versión sigue guardada en este equipo. `
+        + 'Abre la ficha de nuevo para ver lo último que guardó el otro equipo y vuelve a guardar. '
+        + 'La versión anterior del servidor queda en el historial de revisiones.';
+    }
     return `${base}. No se perdió nada: la venta y la evaluación clínica siguen guardadas `
       + 'esperando. Cambia el armazón o el producto en conflicto y vuelve a guardar.';
   }

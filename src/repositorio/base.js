@@ -71,7 +71,12 @@ export const patientPayload = patient => ({
 /** La consulta clinica sin los campos que son solo internos del dispositivo. */
 export const consultationPayload = consultation => {
   const payload = { ...consultation };
-  ['id', 'patientId', 'syncStatus', 'updatedAt', 'archivedAt', 'archived_at'].forEach(key => delete payload[key]);
+  [
+    'id', 'patientId', 'syncStatus', 'updatedAt', 'archivedAt', 'archived_at',
+    // La version la decide SIEMPRE el servidor. Si viajara en el payload, un
+    // cliente podria adelantarla y desactivar el control de concurrencia.
+    'sync_version', 'syncVersion', 'sync_version_consulta', 'server_updated_at'
+  ].forEach(key => delete payload[key]);
   return payload;
 };
 

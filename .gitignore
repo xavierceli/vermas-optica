@@ -31,3 +31,8 @@ dist-ssr
 .vercel
 .codex-backups/
 supabase/backups/
+
+# Informes de Playwright (se regeneran en cada ejecucion)
+playwright-report/
+test-results/
+blob-report/

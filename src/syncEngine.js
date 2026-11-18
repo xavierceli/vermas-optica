@@ -1,10 +1,12 @@
 import { supabase } from './supabaseClient';
-import { localDb, nowIso, requestPersistentStorage } from './localDb';
-import { cacheServerCatalog, cacheServerHistorial, enColaEscritura, markLocalOperationSynced } from './localRepository';
+import { localDb, nowIso, requestPersistentStorage, getMeta, setMeta } from './localDb';
+import { cacheServerCatalog, cacheServerHistorial, enColaEscritura, markLocalOperationSynced, ejecutarMantenimiento, revisarEspacio } from './localRepository';
+import { mostrarAviso } from './avisos';
 import { paginarConsulta } from './paginacion';
 import { esFalloDeRed } from './reglas';
 import { clasificarFallo, mensajeDeFallo } from './clasificarFallo';
 import { aplicarEliminacionesRemotas, reconciliarConServidor } from './eliminacionPaciente';
+import { consultarHistorial } from './repositorio/vistaHistorial';
 
 // Topes de paginación declarados al inicio para evitar valores indefinidos
 const TAMPAGINA_HISTORIAL = 200;
@@ -36,7 +38,9 @@ const initialStatus = {
   lastError: null,
   historialParcial: false,
   historialDescargadas: 0,
-  historialTope: TAMPAGINA_HISTORIAL * MAX_PAGINAS_HISTORIAL
+  historialTope: TAMPAGINA_HISTORIAL * MAX_PAGINAS_HISTORIAL,
+  // Uso del almacenamiento del navegador (null si no se puede medir).
+  almacenamiento: null
 };
 
 let status = { ...initialStatus };
@@ -160,9 +164,24 @@ export const obtenerDetalleCola = async () => {
 };
 
 export const reintentarOperacion = async (operationId) => {
-  await localDb.outbox.update(operationId, {
-    status: 'pending', lastError: null, attempts: 0, updatedAt: nowIso()
-  });
+  const operacion = await localDb.outbox.get(operationId);
+  const cambios = { status: 'pending', lastError: null, attempts: 0, updatedAt: nowIso() };
+
+  // Un conflicto de version se queda atascado para siempre si se reenvia con la
+  // misma base: el servidor lo rechazaria una y otra vez. El reintento manual es
+  // una decision del usuario ("guardar mi version"), asi que se quita la base.
+  // La version que se pisa queda guardada en consultas_clinicas_revisiones, de
+  // modo que sigue siendo recuperable.
+  if (operacion?.type === 'GUARDAR_CONSULTA') {
+    cambios.baseVersion = null;
+    cambios.payload = {
+      ...operacion.payload,
+      p_payload: { ...operacion.payload?.p_payload, base_version: null }
+    };
+  }
+  if (operacion?.type === 'EDITAR_VENTA') cambios.baseVersion = null;
+
+  await localDb.outbox.update(operationId, cambios);
   await refreshCounts();
   emit();
   return sincronizarAhora({ pull: false });
@@ -225,6 +244,77 @@ const aplicarBackoff = async operation => {
   return transcurrido >= espera;
 };
 
+// --- Mantenimiento del almacenamiento local ---------------------------------
+// Corre como maximo una vez al dia. Libera blobs ya subidos y copias de cache
+// redundantes, y avisa si el equipo se esta quedando sin espacio. Un fallo aqui
+// no puede romper la sincronizacion: todo va envuelto y solo deja un aviso.
+const UMBRAL_AVISO_CUOTA = 80;
+const AVISO_CUOTA_CADA_MS = 24 * 60 * 60 * 1000;
+
+const mantenimientoDiario = async () => {
+  try {
+    // La cola de escritura puede pausarse si hay tareas colgadas. El
+    // mantenimiento no puede bloquear el ciclo de sincronizacion: si tarda
+    // demasiado, se reintenta en la proxima pasada.
+    const resultado = await conTimeout(ejecutarMantenimiento(), 15000, 'mantenimiento');
+    if (!resultado.omitido && (resultado.adjuntos || resultado.cache)) {
+      console.info(
+        `[mantenimiento] liberados ${resultado.adjuntos} adjunto(s) y ${resultado.cache} copia(s) de cache.`
+      );
+    }
+  } catch (error) {
+    console.warn('[mantenimiento] fallo la limpieza:', error?.message || error);
+  }
+
+  try {
+    const espacio = await conTimeout(revisarEspacio(), 5000, 'revisar almacenamiento');
+    if (!espacio) {
+      status.almacenamiento = null;
+      return;
+    }
+
+    status.almacenamiento = {
+      usado: espacio.usado,
+      cuota: espacio.cuota,
+      porcentaje: espacio.porcentaje,
+      nivel: espacio.nivel
+    };
+
+    if (espacio.porcentaje < UMBRAL_AVISO_CUOTA) return;
+
+    // Un aviso al dia como maximo: si se repitiera en cada sincronizacion
+    // (cada 30 s) el usuario lo ignoraria.
+    const ultimo = Number(await getMeta('avisoCuotaUltimo', 0)) || 0;
+    if (Date.now() - ultimo < AVISO_CUOTA_CADA_MS) return;
+    await setMeta('avisoCuotaUltimo', Date.now());
+
+    mostrarAviso(
+      `El almacenamiento de este equipo está al ${espacio.porcentaje} %. `
+      + 'Libera espacio desde el panel de sincronización (Respaldo y espacio) para que la app siga guardando sin conexión.',
+      'warning',
+      9000
+    );
+  } catch (error) {
+    console.warn('[mantenimiento] no se pudo revisar el espacio:', error?.message || error);
+  }
+};
+
+const guardarVersionDeConsulta = async (operation, serverResult) => {
+  if (operation.type !== 'GUARDAR_CONSULTA') return;
+  const bruto = serverResult?.sync_version;
+  if (bruto === null || bruto === undefined || bruto === '') return;
+  const version = Number(bruto);
+  if (!Number.isFinite(version)) return;
+
+  const fila = await localDb.consultations.get(operation.entityId);
+  if (!fila) return;
+  await localDb.consultations.put({
+    ...fila,
+    syncVersion: version,
+    updatedAt: nowIso()
+  });
+};
+
 const applyResults = async results => {
   const fallos = [];
   const inventarioPorVerificar = new Set();
@@ -262,6 +352,9 @@ const applyResults = async results => {
           await localDb.prices.put({ ...serverResult.precio, syncStatus: 'synced', updatedAt: nowIso() });
         }, 'bajo');
       } else {
+        // Guardar la version que devolvio el servidor permite que la proxima
+        // edicion detecte si otro equipo se adelanto.
+        await guardarVersionDeConsulta(operation, serverResult);
         await markLocalOperationSynced(operation);
         if (operation.type === 'EDITAR_VENTA' && serverResult.version) {
           const sale = await localDb.sales.get(operation.entityId);
@@ -340,19 +433,25 @@ const subirAdjuntosPendientes = async () => {
 };
 
 const descargarHistorialPaginado = async () => {
+  const leerPagina = async (desde, limite) => {
+    // consultarHistorial elige la vista (versionada o clasica) y reintenta solo
+    // si la versionada todavia no existe en el servidor.
+    const { data, error } = await consultarHistorial(nombre => supabase
+      .from(nombre)
+      .select('*')
+      .order('fecha', { ascending: false })
+      .order('id', { ascending: false })
+      .range(desde, desde + limite - 1)
+    );
+
+    if (error) throw error;
+    return data || [];
+  };
+
   const { filas, paginasDescargadas } = await paginarConsulta({
     pageSize: TAMPAGINA_HISTORIAL,
     maxPaginas: MAX_PAGINAS_HISTORIAL,
-    fetchPagina: async (desde, limite) => {
-      const { data, error } = await supabase
-        .from('vista_pacientes')
-        .select('*')
-        .order('fecha', { ascending: false })
-        .order('id', { ascending: false })
-        .range(desde, desde + limite - 1);
-      if (error) throw error;
-      return data || [];
-    }
+    fetchPagina: leerPagina
   });
   return { filas, paginasDescargadas };
 };
@@ -534,6 +633,7 @@ export const sincronizarAhora = async ({ pull = true } = {}) => {
     }
 
     if (pull) await pullServerCache();
+    await mantenimientoDiario();
     status.lastSync = nowIso();
     if (!sesionAusente) status.online = true;
     status.phase = status.pending > 0 ? 'pending' : 'synced';

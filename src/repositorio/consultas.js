@@ -8,6 +8,27 @@
 import { localDb, createUuid, nowIso, pendingRecord, createOutboxOperation, getMeta, setMeta } from '../localDb.js';
 import { safeString, archivada, normalizeCedula, fechaHoraActual, patientPayload, consultationPayload, findPatient } from './base.js';
 
+/**
+ * Version de la consulta que este equipo conoce del servidor.
+ *
+ * Se busca primero en la fila local y, si no existe, en la copia "remote:" del
+ * historial. Devuelve null cuando no hay version conocida: en ese caso el
+ * servidor no puede comparar, pero igualmente guarda la revision anterior, asi
+ * que nunca se pierde informacion.
+ */
+const leerVersionConocida = async consultationId => {
+  const local = await localDb.consultations.get(consultationId);
+  const cache = local ? null : await localDb.cache.get(`remote:${consultationId}`);
+  const bruto = local?.syncVersion
+    ?? cache?.syncVersion
+    ?? cache?.sync_version_consulta
+    ?? cache?.sync_version;
+
+  if (bruto === null || bruto === undefined || bruto === '') return null;
+  const numero = Number(bruto);
+  return Number.isFinite(numero) ? numero : null;
+};
+
 export const guardarConsultaLocalImpl = async ({ patient, consultation }) => {
   const consultationId = consultation.id || createUuid();
   const cedula = normalizeCedula(patient.cedula);
@@ -39,15 +60,22 @@ export const guardarConsultaLocalImpl = async ({ patient, consultation }) => {
     fecha: fechaCompleta
   });
 
+  // Control de concurrencia entre equipos: si el servidor ya tiene esta
+  // consulta y otro equipo la edito despues, la version no coincidira y la
+  // operacion se rechaza como conflicto (40001) en vez de pisar el trabajo
+  // ajeno en silencio.
+  const baseVersion = await leerVersionConocida(consultationId);
+
   const operation = createOutboxOperation({
     type: 'GUARDAR_CONSULTA',
     entityId: consultationId,
-    baseVersion: existingPatient?.version || 0,
+    baseVersion,
     payload: {
       p_consulta_id: consultationId,
-      p_payload: { 
-        paciente: patientPayload(normalizedPatient), 
-        consulta: consultationPayload(normalizedConsultation) 
+      p_payload: {
+        base_version: baseVersion,
+        paciente: patientPayload(normalizedPatient),
+        consulta: consultationPayload(normalizedConsultation)
       }
     }
   });

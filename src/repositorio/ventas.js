@@ -74,7 +74,12 @@ export const guardarVentaLocalImpl = async ({ patient, consultationId, sale, ini
     localDb.payments, localDb.inventory, localDb.inventoryMovements, localDb.outbox,
     async () => {
       await localDb.patients.put(normalizedPatient);
-      if (!previousSale) {
+      // Solo se crea la consulta si de verdad no existe. Antes se hacia un put
+      // siempre y, al vender desde una historia clinica ya guardada, se
+      // reemplazaba por una fila minima: se perdian la evaluacion y las
+      // medidas en el dispositivo. Ademas quedaba marcada como pendiente sin
+      // ninguna operacion que la subiera, asi que el pull tampoco la recuperaba.
+      if (!previousSale && !(await localDb.consultations.get(normalizedSale.consultationId))) {
         await localDb.consultations.put(pendingRecord({
           id: normalizedSale.consultationId, patientId, fecha: normalizedSale.fecha
         }));

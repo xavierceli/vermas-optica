@@ -1,0 +1,572 @@
+===============================================================================
+VER+ OPTICA - CONTEXTO DE TRABAJO
+Registro de lo realizado y de lo que queda pendiente
+Ultima actualizacion: tareas 1, 2, 3, 4, 5 y 6 completadas
+===============================================================================
+
+Como usar este archivo:
+  - Cada tarea terminada deja aqui: que se hizo, en que archivos, como se
+    verifico y que accion manual hace falta.
+  - Al final esta la lista de lo que falta, en orden de prioridad.
+  - Los pendientes manuales (SQL en Supabase) estan en la seccion 7.
+
+
+===============================================================================
+1. TAREA COMPLETADA: VERSIONADO OPTIMISTA EN CONSULTAS CLINICAS
+===============================================================================
+
+PROBLEMA QUE RESOLVIA
+------------------------------------------------------------------------------
+guardar_consulta_clinica hacia UPDATE de las columnas del payload SIN comprobar
+la version. Si dos equipos abrian la misma ficha y ambos guardaban, el ultimo
+borraba lo del primero EN SILENCIO. En datos clinicos eso no es aceptable.
+
+QUE SE HIZO
+------------------------------------------------------------------------------
+Servidor (nueva migracion):
+  supabase/migrations/202609240024_versionado_consultas.sql
+
+  - guardar_consulta_clinica_v2(uuid, jsonb, bigint):
+      * SELECT ... FOR UPDATE sobre la consulta: serializa dos equipos.
+      * Si p_base_version no coincide con sync_version -> error SQLSTATE 40001.
+        El despachador aplicar_operaciones ya traduce 40001 a status 'conflict'.
+      * Antes de cada edicion inserta la fila anterior completa en
+        consultas_clinicas_revisiones. Aunque el cliente no sepa la version,
+        lo pisado queda recuperable: NUNCA hay perdida silenciosa.
+      * La version nueva la calcula el servidor. Si el payload trae
+        sync_version/server_updated_at, se ignoran.
+      * Corrige un fallo latente: jsonb_populate_record no aplica DEFAULT, asi
+        que el INSERT inyecta sync_version=0, server_updated_at=now() y
+        created_at=now() para que una consulta NUEVA no falle por NOT NULL.
+
+  - guardar_consulta_clinica(uuid, jsonb) se conserva como envoltorio que lee
+    base_version del payload. Asi crear_venta y aplicar_operaciones NO se
+    tocaron (cero riesgo para ventas).
+
+  - Vista public.vista_pacientes_versionada:
+      vista_pacientes + sync_version_consulta, con LEFT JOIN y
+      security_invoker=on. Si algo no coincide, la fila sigue saliendo sin
+      version; jamas oculta historial.
+
+Cliente:
+  src/repositorio/consultas.js
+      - lee la version conocida de la consulta (fila local o copia
+        "remote:<id>" de la cache) y envia base_version en el payload.
+      - si no la conoce, envia null: el servidor no compara, pero guarda la
+        revision anterior igualmente.
+
+  src/repositorio/base.js
+      - consultationPayload elimina sync_version, syncVersion,
+        sync_version_consulta y server_updated_at del payload clinico.
+
+  src/repositorio/lectura.js
+      - guarda syncVersion al bajar el historial (fila local y cache).
+
+  src/syncEngine.js
+      - usa la vista versionada con caida automatica a vista_pacientes.
+      - guarda la sync_version que devuelve el servidor tras guardar.
+      - reintentarOperacion quita base_version en un conflicto: el reintento
+        manual es "guardar mi version" y ya no se queda en bucle. La version
+        pisada queda en revisiones.
+
+  src/clasificarFallo.js
+      - choque de version -> 'conflict' (nunca 'descartada').
+      - mensaje especifico: "no se perdio nada", como recuperar, etc.
+
+Pruebas nuevas:
+  src/repositorio/consultasVersion.test.js  (6 casos)
+  src/auditoriaSql.test.js                  (bloque 024)
+  src/clasificarFallo.test.js               (choque de version)
+
+VERIFICACION
+------------------------------------------------------------------------------
+  npm test          -> 544 pruebas de logica + 38 de UI, 0 fallos
+  npm run lint      -> limpio
+  npm run build     -> correcto
+
+ACCION MANUAL PENDIENTE
+------------------------------------------------------------------------------
+Aplicar en Supabase (SQL Editor -> New query -> Run):
+
+  supabase/migrations/202609240024_versionado_consultas.sql
+
+Es idempotente. El cliente es retrocompatible: si no se aplica, cae a
+vista_pacientes y todo sigue funcionando como antes (sin la proteccion).
+
+
+===============================================================================
+2. TAREA COMPLETADA: TIEMPO REAL (SUPABASE REALTIME)
+===============================================================================
+
+PROBLEMA QUE RESOLVIA
+------------------------------------------------------------------------------
+Los equipos veian los cambios con hasta 30 segundos de retraso (intervalo del
+motor de sync). En el mostrador eso significa vender una montura que el
+companero ya vendio.
+
+QUE SE HIZO
+------------------------------------------------------------------------------
+Servidor (nueva migracion):
+  supabase/migrations/202609240025_realtime_publicacion.sql
+
+  - Anade a la publicacion supabase_realtime:
+      inventario, lista_precios, consultas_clinicas, pedidos_ventas, pagos.
+  - Idempotente: comprueba pg_publication_tables antes de anadir.
+  - Si el entorno no tiene la publicacion, avisa y sale sin abortar.
+  - NO toca datos, RLS ni funciones.
+  - No activa replica identity full: solo se usan INSERT/UPDATE. Los DELETE
+    siguen cubiertos por el sondeo de 30 s.
+
+Cliente:
+  src/tiempoReal.js  (nuevo)
+      - Canal 'vermas-cambios' con postgres_changes sobre las 5 tablas.
+      - Agrupa rafagas ~350 ms: una venta emite pedido + pago + consulta y no
+        se hacen tres descargas.
+      - inventario/lista_precios: se aplican con cacheServerCatalog (mismas
+        reglas que la sincronizacion normal).
+      - consultas/ventas/pagos: trae UNA fila de la vista y la aplica con
+        aplicarFilaHistorialRemota. No descarga el historial completo.
+      - Los DELETE no inventan borrados locales.
+      - Cualquier fallo se registra y se ignora: el sondeo de 30 s corrige.
+      - El canal se cierra en detenerTiempoReal (logout / desmontaje).
+
+  src/repositorio/vistaHistorial.js  (nuevo)
+      - Centraliza el acceso a la vista de historial con caida automatica
+        versionada -> clasica. Lo usan syncEngine y tiempoReal.
+
+  src/repositorio/lectura.js
+      - aplicarFilaHistorialImpl(row): aplica UNA fila del historial.
+        Garantias:
+          * no pisa filas locales con syncStatus 'pending';
+          * no retrocede a una version anterior (eventos desordenados);
+          * respeta cedulas archivadas y no revive consultas archivadas;
+          * actualiza paciente, consulta, venta y copia remota.
+
+  src/localRepository.js
+      - aplicarFilaHistorialRemota: pasa por la cola de escritura (prioridad
+        baja) para no adelantarse a un guardado local a medio terminar.
+
+  src/hooks/useSincronizacion.js
+      - abre el canal al iniciar sesion y lo cierra al salir.
+      - NO lo abre en modo PIN local (sin token de Supabase).
+      - alCambiar -> obtenerDatos({ sync: false }): relee IndexedDB y repinta.
+
+  src/useGestor.js
+      - pasa obtenerDatos y modoSinConexion al hook de sincronizacion.
+
+Pruebas nuevas:
+  src/repositorio/tiempoRealDatos.test.js  (8 casos reales sobre IndexedDB)
+  src/tiempoReal.test.js                   (contrato del modulo)
+  src/auditoriaSql.test.js                 (bloque 025)
+
+VERIFICACION
+------------------------------------------------------------------------------
+  npm test          -> 544 pruebas de logica + 38 de UI, 0 fallos
+  npm run lint      -> limpio
+  npm run build     -> correcto (236.07 kB gzip)
+
+ACCION MANUAL PENDIENTE
+------------------------------------------------------------------------------
+Aplicar en Supabase (SQL Editor -> New query -> Run):
+
+  supabase/migrations/202609240025_realtime_publicacion.sql
+
+Despues comprobar en Supabase -> Database -> Replication -> supabase_realtime
+que las 5 tablas aparecen activas y que Realtime esta habilitado.
+
+COMO PROBARLO CON DOS EQUIPOS (5 minutos)
+------------------------------------------------------------------------------
+  1. Abrir la app en dos navegadores (o dos equipos) con usuarios distintos.
+  2. Equipo A: editar el stock de un producto.
+     Equipo B: debe ver el stock nuevo en 1-3 segundos, sin recargar.
+  3. Equipo A: guardar una consulta de un paciente.
+     Equipo B: el historial debe reflejarla sin esperar 30 s.
+  4. Equipo A: vender la ultima unidad.
+     Equipo B: al intentar venderla, el servidor rechaza por stock (correcto).
+  5. Desconectar la red del equipo B y guardar una consulta:
+     debe guardarse en local y subir al reconectar. Realtime no interviene.
+
+
+===============================================================================
+3. TAREA COMPLETADA: RENDIMIENTO Y ARRANQUE DEL BUNDLE (#3)
+===============================================================================
+
+PROBLEMA QUE RESOLVIA
+------------------------------------------------------------------------------
+Todo el codigo viajaba en un unico chunk de 236 kB gzip. Cada funcion nueva
+engordaba el arranque, y en una tablet modesta eso se nota. Vite ya avisaba:
+"Some chunks are larger than 500 kB".
+
+QUE SE HIZO
+------------------------------------------------------------------------------
+- src/App.jsx
+    * Historial, Clinica, Inventario, Tarifario, Dashboard, PedidosLista y
+      PedidosForm pasan a React.lazy + Suspense con un aviso "Cargando…".
+    * Login se queda estatico: es lo primero que se pinta.
+    * impresiones.js (~620 lineas de plantillas) ya no viaja en el arranque:
+      se importa al pulsar Imprimir.
+    * Se elimino la nota de "importaciones estaticas a proposito".
+
+- POR QUE SIGUE FUNCIONANDO SIN INTERNET
+    Workbox ya precacheaba TODOS los chunks del build
+    (globPatterns: '**/*.{js,css,html,ico,svg}'). Al instalar la PWA se
+    descargan tambien las vistas que el usuario no abrio. Ademas el service
+    worker esta en modo "prompt": un despliegue nuevo no borra los chunks de
+    la version que se esta ejecutando, asi que un lazy() no puede quedar roto
+    a mitad de sesion.
+
+- scripts/verificar-tamano.mjs (nuevo)
+    * Mide gzip real del build y distingue:
+        - INICIAL: entry + modulepreload de index.html.
+        - TOTAL: todos los chunks JS.
+    * Presupuesto: inicial <= 220 kB, total <= 400 kB. Si se pasa, exit 1.
+
+- package.json
+    * npm run verificar:tamano
+
+- .github/workflows/ci.yml
+    * Ejecuta el presupuesto DESPUES del build. Un crecimiento sin control
+      pone la CI en rojo.
+
+- README.md
+    * Actualizada la explicacion de lazy + precache (antes decia lo contrario).
+
+Pruebas nuevas:
+  src/rendimiento.test.js  (6 casos: lazy por vista, Suspense, impresiones
+                            fuera del inicial, precache, script y CI)
+  src/errores.test.js      (ajustado a import() dinamico de Historial)
+
+MEDICION ANTES / DESPUES
+------------------------------------------------------------------------------
+  Antes:  1 chunk de 236.07 kB gzip.
+  Ahora:  188.0 kB gzip inicial + chunks bajo demanda.
+          Total de JS: 243.1 kB gzip (todo precacheado).
+  Ganancia de arranque: ~20 % menos JS inicial, y las vistas nuevas ya no
+  engordan el arranque.
+
+VERIFICACION
+------------------------------------------------------------------------------
+  npm run build              -> correcto
+  npm run verificar:tamano   -> OK (188.0 / 220 kB y 243.1 / 400 kB)
+  npm test                   -> 550 de logica + 38 de UI, 0 fallos
+  npm run lint               -> limpio
+
+ACCION MANUAL PENDIENTE
+------------------------------------------------------------------------------
+  Ninguna. El cambio es solo de codigo.
+
+
+===============================================================================
+4. TAREA COMPLETADA: MANTENIMIENTO DEL ALMACENAMIENTO (#4)
+===============================================================================
+
+PROBLEMA QUE RESOLVIA
+------------------------------------------------------------------------------
+La app guarda todo en IndexedDB. Con el uso diario crece sin limite:
+  - los comprobantes y fotos quedaban para siempre, aunque ya estuvieran
+    subidos a Supabase Storage;
+  - el historial se guardaba DOS veces: en `consultations` y en
+    `cache` ("remote:<id>").
+Si IndexedDB se llena, el navegador empieza a rechazar escrituras (sobre todo
+en iOS) y la app deja de guardar sin conexion. Es el fallo mas grave posible
+en una app offline-first.
+
+QUE SE HIZO
+------------------------------------------------------------------------------
+- src/repositorio/mantenimiento.js (nuevo)
+    * purgarAdjuntosSubidosImpl: libera el Blob de los adjuntos con
+      status 'uploaded' y mas viejos que 30 dias. Conserva la fila (ruta,
+      estado, refId): el binario ya esta en el servidor.
+      NUNCA toca 'pending' ni 'failed': pueden ser la unica copia.
+    * purgarCacheRedundanteImpl: borra filas de cache de historial con mas de
+      90 dias SOLO si la consulta existe en `consultations` como 'synced'.
+      Si el dato solo vive en la cache, se conserva.
+    * ejecutarMantenimientoImpl: corre como maximo una vez al dia y guarda
+      un resumen en meta (mantenimientoUltimo / mantenimientoUltimoResumen).
+    * revisarEspacioImpl: uso/cuota/porcentaje reales del navegador.
+    * No borra pacientes, consultas, ventas, pagos, inventario ni la cola.
+
+- src/localRepository.js
+    * ejecutarMantenimiento (por la cola de escritura, prioridad baja)
+      y revisarEspacio.
+
+- src/syncEngine.js
+    * Tras el pull: mantenimientoDiario(), siempre protegido con try/catch.
+      Un fallo de limpieza no puede tumbar la sincronizacion.
+    * status.almacenamiento = { usado, cuota, porcentaje, nivel }.
+    * Aviso al 80 % de cuota, como maximo UNA vez al dia (meta
+      avisoCuotaUltimo) para que no se convierta en ruido.
+
+- src/PanelSincronizacion.jsx
+    * Muestra "Almacenamiento del equipo: X % usado" y, si pasa del 80 %,
+      indica donde liberar espacio.
+
+Pruebas nuevas:
+  src/repositorio/mantenimiento.test.js  (6 casos reales sobre IndexedDB)
+  src/almacenamiento.test.js             (8 casos de contrato)
+
+VERIFICACION
+------------------------------------------------------------------------------
+  npm test                   -> 566 de logica + 38 de UI, 0 fallos
+  npm run lint               -> limpio
+  npm run build              -> correcto
+  npm run verificar:tamano   -> OK (189.1 / 220 kB y 244.1 / 400 kB)
+
+ACCION MANUAL PENDIENTE
+------------------------------------------------------------------------------
+  Ninguna. En el primer sync tras desplegar, cada equipo liberara lo que ya
+  supere la retencion. No hace falta tocar Supabase.
+
+NOTAS
+------------------------------------------------------------------------------
+  - Las retenciones se pueden ajustar en mantenimiento.js:
+      DIAS_ADJUNTOS_SUBIDOS = 30
+      DIAS_CACHE_REDUNDANTE = 90
+    Subirlas consume mas espacio; bajarlas libera antes pero reduce lo
+    disponible sin conexion.
+  - Los adjuntos liberados siguen viendose online (URL firmada de Supabase).
+    Sin internet y con mas de 30 dias, el comprobante no estara en el equipo.
+    Es el compromiso razonable para no llenar el disco.
+  - El respaldo manual (RespaldoDatos) ya soporta adjuntos sin blob: no
+    incluye el binario y no falla.
+
+
+===============================================================================
+5. TAREA COMPLETADA: PRUEBAS E2E DE DOS EQUIPOS (#5)
+===============================================================================
+
+PROBLEMA QUE RESOLVIA
+------------------------------------------------------------------------------
+  Todo lo anterior estaba probado con una sola sesion. Faltaba comprobar el
+  comportamiento REAL cuando dos equipos trabajan a la vez: quedarse sin
+  internet, reconectar, editar la misma ficha y vender la misma unidad de
+  stock. Es justo donde una app multi-equipo falla en produccion.
+
+QUE SE HIZO
+------------------------------------------------------------------------------
+  1. Servidor falso de Supabase (src/pruebas/servidorFalso.js)
+     - Vive en el proceso de Node y lo comparten los dos navegadores.
+     - Implementa auth, PostgREST (vistas, filtros, orden, paginacion) y las
+       RPC que usa la app.
+     - Reproduce las reglas que importan:
+         * guardar_consulta_clinica con comparacion de version -> 40001.
+         * crear_venta con comprobacion y descuento de stock -> 23514.
+         * aplicar_operaciones idempotente por id de operacion.
+         * vista_pacientes y vista_pacientes_versionada.
+     - No reproduce RLS, triggers, storage real ni Realtime: no hacen falta
+       para estos escenarios.
+
+  2. Apoyo de las pruebas (e2e/apoyo.js)
+     - abrirEquipo(): contexto de navegador aislado (localStorage + IndexedDB
+       propios) con una sesion ya inyectada, para no repetir el login.
+     - Intercepta todas las llamadas a *.supabase.co y las manda al servidor
+       falso. El canal de Realtime se cierra: sin servidor solo reintentaria.
+     - Helpers que usan el repositorio y el motor de sync REALES:
+       guardarConsulta, guardarVenta, sincronizar, leerOutbox, leerConsulta,
+       leerInventario, leerVenta.
+
+  3. Escenarios (e2e/dos-equipos.spec.js)
+     - Sin internet: guardar una consulta, verla en la cola como pending,
+       reconectar y comprobar que sube y queda synced.
+     - Misma consulta: A edita y sube (version 2); B edita sobre la version 1.
+       B recibe conflict con el mensaje "modificada en otro dispositivo",
+       conserva su edicion local y el servidor mantiene la de A.
+     - Mismo stock: A vende la unica unidad; B vende la misma. El servidor
+       rechaza a B con "stock insuficiente" (conflict), el stock no queda
+       negativo y la venta/consulta de B siguen en el dispositivo.
+     - Frescura: A guarda y B solo sincroniza; B ve el cambio sin recargar.
+
+  4. CI (.github/workflows/ci.yml)
+     - Job `e2e` aparte: npm ci, instala Chromium y ejecuta `npm run test:e2e`.
+     - Si falla, publica playwright-report como artefacto (7 dias).
+
+  5. Bug real encontrado y corregido (src/repositorio/ventas.js)
+     - Al vender desde una consulta ya existente, guardarVentaLocal hacia un
+       put de una fila minima: borraba del dispositivo la evaluacion clinica y
+       las medidas, y la dejaba marcada como pending sin ninguna operacion que
+       la volviera a subir. El pull tampoco la recuperaba.
+     - Ahora solo crea la consulta si de verdad no existe; si existe, no la
+       toca. Regresion cubierta en src/repositorio/ventas.test.js.
+
+ARCHIVOS TOCADOS
+------------------------------------------------------------------------------
+  Nuevos:
+    src/pruebas/servidorFalso.js
+    src/pruebas/servidorFalso.test.js
+    e2e/apoyo.js
+    e2e/dos-equipos.spec.js
+    playwright.config.js
+  Modificados:
+    package.json (devDependency @playwright/test y script test:e2e)
+    package-lock.json
+    eslint.config.js (globals de Node para e2e/ y el servidor falso)
+    .github/workflows/ci.yml (job e2e)
+    .gitignore (playwright-report/, test-results/, blob-report/)
+    src/repositorio/ventas.js (no borrar la consulta existente)
+    src/repositorio/ventas.test.js (prueba de regresion)
+
+COMO SE VERIFICO
+------------------------------------------------------------------------------
+  - npm run lint                         -> limpio.
+  - npm test                             -> 578 de logica + 38 de UI, 0 fallos.
+  - npm run build + verificar:tamano     -> 189,1 kB inicial / 244,2 kB total.
+  - 4 escenarios E2E ejecutados y aprobados en esta maquina usando el Edge
+    instalado:
+        PLAYWRIGHT_CANAL=msedge npm run test:e2e
+  - El servidor falso tiene sus propias 11 pruebas unitarias: si mintiera
+    (por ejemplo, aceptando una segunda venta sin stock), las E2E no valdrian.
+
+ACCION MANUAL PENDIENTE
+------------------------------------------------------------------------------
+  - Instalar una vez el navegador de Playwright en los equipos de desarrollo:
+        npx playwright install chromium
+    En esta sesion la descarga estaba bloqueada por el entorno, por eso se
+    verifico con el Edge del sistema (PLAYWRIGHT_CANAL=msedge). La CI lo
+    instala sola; no hay que hacer nada alli.
+  - No hace falta tocar Supabase: todo el backend de estas pruebas es falso.
+
+
+===============================================================================
+6. TAREA COMPLETADA: RESPALDO DEL SERVIDOR (#6)
+===============================================================================
+
+PROBLEMA QUE RESOLVIA
+------------------------------------------------------------------------------
+  - El respaldo automatico de Supabase caduca a los ~7 dias y no incluye
+    Storage. No habia respaldo propio ni historial largo.
+  - No habia forma de saber si un .sql servia: un pg_dump cortado por red
+    pesa, tiene CREATE TABLE y parece valido hasta que se intenta restaurar.
+
+QUE SE HIZO
+------------------------------------------------------------------------------
+  1. .github/workflows/respaldo-diario.yml
+     - Cron 03:00 UTC + workflow_dispatch, concurrency y contents:write.
+     - Si falta el secreto DATABASE_URL: avisa y termina bien, para no llenar
+       la bandeja de errores mientras se configura.
+     - pg_dump con la imagen postgres:17-alpine: evita el error
+       "server version mismatch" de un cliente mas viejo que el servidor.
+     - Solo el esquema public, --no-owner y conservando GRANT (sin
+       --no-privileges), porque sin permisos la app restaurada no lee nada.
+     - Verifica el volcado ANTES de publicarlo en la rama huerfana
+       respaldo-automatico, partiendo de la rama existente para no perder los
+       respaldos anteriores.
+
+  2. src/pruebas/verificarRespaldo.js + scripts/verificar-respaldo.mjs
+     - Exige las 10 tablas y 9 funciones criticas.
+     - Exige bloque COPY por tabla: esquema sin datos no es respaldo.
+     - Exige la marca final de pg_dump y detecta ERROR/FATAL mezclados.
+     - Detecta un COPY sin terminador (corte dentro de los datos).
+     - Coherencia basica: consultas sin pacientes es un fallo.
+     - Cuenta filas por tabla para compararlas despues de restaurar.
+
+  3. docs/RESPALDO_SERVIDOR.md reescrito con el simulacro completo:
+     - Opcion A: PostgreSQL local en Docker, con los roles y auth.uid()
+       minimos que el volcado necesita.
+     - Opcion B: proyecto de prueba de Supabase.
+     - Consultas de verificacion de conteos, smoke test de la app y limpieza.
+
+ARCHIVOS TOCADOS
+------------------------------------------------------------------------------
+  Nuevos:
+    .github/workflows/respaldo-diario.yml
+    src/pruebas/verificarRespaldo.js
+    src/pruebas/verificarRespaldo.test.js
+    scripts/verificar-respaldo.mjs
+  Modificados:
+    package.json (script verificar:respaldo)
+    docs/RESPALDO_SERVIDOR.md
+
+COMO SE VERIFICO
+------------------------------------------------------------------------------
+  - 12 pruebas del verificador: volcado bueno, cortado, tabla faltante,
+    funcion faltante, tabla sin COPY, COPY sin terminador, ERROR mezclado,
+    base vacia, conteo de filas e informe final.
+  - CLI probado con un volcado sintetico: exit 0 si sirve, exit 1 si esta
+    cortado.
+  - YAML del workflow validado.
+  - npm run lint limpio; npm test 590 de logica + 38 de UI; build 189,1 kB
+    inicial / 244,2 kB total.
+
+ACCION MANUAL PENDIENTE
+------------------------------------------------------------------------------
+  - Registrar el secreto DATABASE_URL con la cadena del Session pooler
+    (puerto 5432; el Transaction pooler 6543 no admite pg_dump).
+  - Actions -> Respaldo diario -> Run workflow y comprobar que aparece el
+    archivo en la rama respaldo-automatico.
+  - Ejecutar el simulacro de restauracion (seccion 5 del documento) y anotar
+    el tiempo. NO se pudo ejecutar en esta sesion: no hay credenciales de
+    Supabase ni Docker/psql en el entorno.
+  - Decidir que se hara con los comprobantes de pago, que no entran en el
+    respaldo de la base.
+
+
+===============================================================================
+7. CHECKLIST DE MIGRACIONES
+===============================================================================
+  [x] 202609240024_versionado_consultas.sql    -> aplicada (vista verificada)
+  [x] 202609240025_realtime_publicacion.sql    -> aplicada (5 tablas publicadas)
+
+  Las anteriores (001 a 023) ya estan aplicadas en produccion.
+  Ambas nuevas son idempotentes: se pueden ejecutar dos veces sin efecto.
+  Si algun dia se recrea el proyecto de Supabase, aplicar en ese orden.
+
+
+===============================================================================
+8. QUE FALTA POR HACER
+===============================================================================
+
+PRIORIDAD ALTA (siguiente tarea recomendada)
+------------------------------------------------------------------------------
+  [ ] Ejecutar el simulacro real de restauracion
+      - La automatizacion y el verificador ya estan (tarea 6); falta probarlo
+        con datos de verdad.
+      - Seguir docs/RESPALDO_SERVIDOR.md seccion 5 (Docker o proyecto de
+        prueba), comparar conteos y recorrer la app contra la copia.
+      - Anotar el tiempo total: es el dato que importa si hay que restaurar.
+
+  [ ] Alerta visible si Realtime lleva mucho caido
+      - Hoy solo se registra un warning en consola y el sondeo de 30 s sigue.
+      - Opcional: mostrar el estado del canal en PanelSincronizacion.
+
+  [ ] Observabilidad de conflictos
+      - PanelSincronizacion ya cuenta conflictos. Valorar registrar cuantos
+        son de version, por usuario/dispositivo, para detectar patrones.
+
+PRIORIDAD BAJA / NO RECOMENDADO AHORA
+------------------------------------------------------------------------------
+  [ ] No migrar la app a Rust.
+      - Analisis completo en docs/PASO_A_RUST.txt.
+      - Resumen: la logica critica ya vive en PostgreSQL; el 80 % del codigo es
+        UI y APIs del navegador. Un rewrite cuesta 4-8 meses, invalida las
+        pruebas y no mejora offline ni multi-equipo.
+      - Rust solo tendria sentido para un cliente nativo Tauri (SQLite + BLE
+        nativo + impresion nativa), que es otro producto.
+      - Si algun dia se quiere introducir Rust sin riesgo: crate WASM solo con
+        reglas puras (precio, fechas, clasificacion) y los mismos tests.
+
+
+===============================================================================
+9. ESTADO ACTUAL DEL PROYECTO (resumen)
+===============================================================================
+  - App: PWA React 19 + Vite 8, offline-first con Dexie/IndexedDB.
+  - Backend: Supabase (23 + 2 migraciones), escritura solo por RPC.
+  - Sin internet: funciona todo (PIN local incluido).
+  - Multi-equipo:
+      * stock y pagos: ya era seguro en el servidor (FOR UPDATE, idempotencia,
+        ledgers append-only);
+      * fichas clinicas: versionado + revisiones (tarea 1);
+      * frescura entre equipos: segundos, con sondeo de 30 s como respaldo
+        (tarea 2);
+      * garantia automatica con dos navegadores y un backend compartido
+        (tarea 5).
+  - Rendimiento: vistas por demanda, impresion fuera del arranque,
+    presupuesto de bundle en CI (tarea 3).
+  - Almacenamiento: limpieza diaria de adjuntos subidos y cache redundante,
+    aviso de cuota al 80 % y uso visible en el panel (tarea 4).
+  - Pruebas: 590 de logica + 38 de UI + 4 E2E de dos equipos.
+  - Bundle: 189 kB gzip inicial / 244 kB total.
+  - Respaldo: workflow diario + verificador listos; falta el secreto y el
+    simulacro de restauracion (tarea 6).
+  - Despliegue: Vercel + Supabase.
+
+===============================================================================

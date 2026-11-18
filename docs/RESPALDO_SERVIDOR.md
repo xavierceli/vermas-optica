@@ -1,9 +1,13 @@
 # Respaldo del servidor (Supabase)
 
-> Documento de plan. **Nada de lo que se describe aquí está configurado todavía.**
-> El propósito es que puedas activarlo cuando quieras, sin tener que averiguarlo todo otra vez.
+> **Estado:** la automatización y el verificador ya están en el repositorio.
+> Falta lo que solo se puede hacer con acceso a Supabase: registrar el secreto
+> `DATABASE_URL` y ejecutar una restauración de prueba.
+>
+> Un respaldo que nunca se restauró **no es un respaldo**: es la ilusión de
+> tenerlo. Por eso la última sección es un simulacro paso a paso.
 
-Auditado el 4 de octubre de 2026.
+Auditado el 4 de octubre de 2026. Actualizado con la automatización.
 
 ---
 
@@ -13,7 +17,7 @@ Auditado el 4 de octubre de 2026.
 |---|---|---|
 | Respaldo del dispositivo (IndexedDB) | ✅ Funciona | Lo que el equipo tiene sin sincronizar |
 | Respaldo automático de Supabase | ✅ Activo (gratis) | Hasta ~7 días de historial |
-| **Respaldo diario propio del servidor** | ❌ **No existe** | El histórico largo |
+| **Respaldo diario propio del servidor** | 🟡 Automatización lista, secreto pendiente | El histórico largo |
 | **Fotos de comprobantes e inventario** | ❌ **No se respaldan** | Evidencia de pagos y del inventario |
 
 El único rastro de un respaldo manual es
@@ -33,25 +37,36 @@ paciente pagó. `pg_dump` copia **datos de tablas**, nunca los archivos de Stora
 
 ---
 
-## 2. Qué se propone
-
-Una tarea programada en **GitHub Actions** que se ejecuta sola cada noche:
+## 2. Qué hace la automatización
 
 ```
 Cada noche 03:00 (UTC)
-   └─ pg_dump de la base de Supabase
-        └─ se guarda en el repositorio, en la rama respaldo-automatico
-             └─ GitHub guarda el historial de cada ejecución
+   └─ GitHub Actions levanta PostgreSQL 17 y hace pg_dump del esquema public
+        └─ scripts/verificar-respaldo.mjs comprueba que el volcado sirva
+             └─ se publica en la rama `respaldo-automatico`
+                  └─ GitHub guarda el historial de cada ejecución
 ```
-
-### Por qué esta opción
 
 | Ventaja | Detalle |
 |---|---|
-| **Costo $0** | 2.000 min/mes incluidos en repos privados, una ejecución de ~1 min |
+| **Costo $0** | Una ejecución de ~1 min; entra en los minutos incluidos |
 | **Historial largo** | Los respaldos se acumulan; no caducan a los 7 días |
-| **Sin mantenimiento** | No hay servidor, ni cron, ni alertas que revisar |
-| **Auditable** | Cada noche queda registrado en el historial de GitHub |
+| **Falla cerrado** | Un volcado cortado no se publica: el verificador corta el job |
+| **Sin mantenimiento** | No hay servidor, ni cron propio, ni alertas que revisar |
+
+### Por qué se verifica antes de publicar
+
+`pg_dump` que se corta por red, timeout o credencial vencida deja un `.sql` que
+pesa y tiene `CREATE TABLE`: parece válido. El verificador exige:
+
+- las 10 tablas críticas y las 9 funciones críticas;
+- que **cada tabla traiga bloque `COPY`** (esquema sin datos no sirve);
+- la marca final `PostgreSQL database dump complete`;
+- que no haya líneas `ERROR`/`FATAL` mezcladas;
+- coherencia mínima (no puede haber consultas con 0 pacientes).
+
+Además informa el número de filas por tabla, que es lo que se compara después
+de restaurar.
 
 ### Alternativas descartadas
 
@@ -63,94 +78,177 @@ Cada noche 03:00 (UTC)
 
 ---
 
-## 3. Cómo activarlo
+## 3. Cómo activarlo (4 pasos)
 
-Son cuatro pasos. **El paso 2 es el único que requiere algo que solo puedes hacer tú.**
+### Paso 1 — Copiar la cadena de conexión
 
-### Paso 1 — Crear el secreto
+En Supabase: **Project Settings → Database → Connection string → Session pooler**.
 
-En Supabase ve a **Project Settings → Database → Connection string** y copia la
-cadena con el usuario `postgres`.
-
-> ⚠️ Esta contraseña **no** es la `anon key` del código. Es la contraseña real de la
-> base de datos. Trátala como una tarjeta: si se filtra, hay que cambiarla.
+> ⚠️ Usa el **Session pooler** (puerto `5432`), no el Transaction pooler
+> (`6543`): el segundo no admite `pg_dump`.
+>
+> ⚠️ Esta contraseña **no** es la `anon key` del código. Es la contraseña real de
+> la base de datos. Trátala como una tarjeta: si se filtra, hay que cambiarla.
 
 ### Paso 2 — Registrarla en GitHub (nunca en el código)
 
 1. Repo → **Settings** → **Secrets and variables** → **Actions**
 2. **New repository secret**
 3. Nombre: `DATABASE_URL`
-4. Valor: la cadena de conexión del paso 1
+4. Valor: la cadena completa del paso 1
 
-> 🔒 **Esto es lo importante:** un secreto de GitHub no se muestra después de
-> guardarlo, no aparece en el código y no se sube al repositorio. Por eso lo
-> escribes tú: si lo pusiera yo en un archivo, quedaría guardado en el historial
-> de Git para siempre.
+> 🔒 Un secreto de GitHub no se muestra después de guardarlo, no aparece en el
+> código y no se sube al repositorio. Por eso lo escribes tú.
 
-### Paso 3 — Crear el archivo de la tarea
+### Paso 3 — El archivo ya está creado
 
-Crear `.github/workflows/respaldo-diario.yml` con el contenido que aparece en la
-sección 4 de este documento.
+No hay que pegar nada: `.github/workflows/respaldo-diario.yml` ya existe y está
+versionado. Si el secreto falta, el trabajo termina con un aviso y **no falla**,
+para no llenar la bandeja de errores mientras se configura.
 
 ### Paso 4 — Lanzar la primera vez a mano
 
-Actions → **Respaldo diario** → **Run workflow**. Verifica que el archivo
-`supabase/backups/YYYYMMDD_datos.sql` aparece en la rama `respaldo-automatico`.
+Actions → **Respaldo diario** → **Run workflow**.
+
+Comprueba:
+
+1. El resumen del job muestra el informe del verificador (tablas, filas, OK).
+2. En la rama `respaldo-automatico` aparece `respaldos/YYYYMMDD_HHMMSS_datos.sql`.
+3. `Activity` de esa rama tiene exactamente un commit, sin código de la app.
 
 ---
 
-## 4. El archivo de la tarea
+## 4. Qué contiene (y qué no) el respaldo
 
-```yaml
-name: Respaldo diario
+| Incluye | No incluye |
+|---|---|
+| Tablas del esquema `public` | Usuarios de `auth` (se recrean: hay 3 como máximo) |
+| Funciones, RLS, políticas y permisos | Archivos de Storage (fotos y comprobantes) |
+| Datos de pacientes, consultas, ventas, pagos, inventario | Configuración del proyecto (URLs, claves, buckets) |
+| Revisiones de consultas y operaciones aplicadas | Extensiones gestionadas por Supabase |
 
-on:
-  schedule:
-    - cron: '0 3 * * *'   # cada noche a las 03:00 UTC
-  workflow_dispatch:      # además, se puede lanzar a mano
-
-jobs:
-  respaldo:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Crear el respaldo
-        env:
-          PGPASSWORD: ${{ secrets.DATABASE_URL }}
-        run: |
-          mkdir -p respaldos
-          pg_dump "$DATABASE_URL" --no-owner --no-privileges \
-            > "respaldos/$(date +%Y%m%d)_datos.sql"
-
-      - name: Subirlo a la rama de respaldos
-        run: |
-          git config user.name  "respaldo automatico"
-          git config user.email "respaldo@localhost"
-          git checkout --orphan respaldo-automatico
-          git add -A
-          git commit -m "Respaldo $(date +%Y%m%d %H:%M)"
-          git push origin respaldo-automatico
-```
-
-`--orphan` crea una rama sin historia: los respaldos **no se mezclan** con el
-código de la app ni generan conflictos.
+Se usa `--no-owner --schema=public`: el dueño lo pone el proyecto destino y no se
+arrastran esquemas internos de Supabase. **Los `GRANT` sí se conservan** (no se
+usa `--no-privileges`), porque sin ellos la app restaurada no podría leer nada.
 
 ---
 
-## 5. Cómo restaurar (para cuando haga falta)
+## 5. Simulacro de restauración (lo que falta)
+
+Se puede hacer en local con Docker (recomendado para el primer ensayo) o en un
+proyecto de prueba de Supabase. **Nunca sobre producción.**
+
+### 5.1 Descargar el respaldo
 
 ```bash
-# Descargar el respaldo de la fecha que necesites de la rama respaldo-automatico
-git show respaldo-automatico:respaldos/20261004_datos.sql > respaldo.sql
-
-# Aplicarlo a la base
-psql "$DATABASE_URL" -f respaldo.sql
+git fetch origin respaldo-automatico
+git show origin/respaldo-automatico:respaldos/20261004_030000_datos.sql > respaldo.sql
+node scripts/verificar-respaldo.mjs respaldo.sql   # debe decir OK
 ```
 
-> ⚠️ **Antes de restaurar, haz una copia de lo que hay ahora.** El `psql` escribe
-> sobre la base. Si restauras un respaldo viejo, **pierdes todo lo que se registró
-> después de esa fecha**.
+### 5.2 Opción A — PostgreSQL local con Docker
+
+```bash
+# Base limpia (puerto 5433 para no chocar con nada)
+docker run -d --name vermas-restore \
+  -e POSTGRES_PASSWORD=prueba -p 5433:5432 postgres:17
+```
+
+El volcado fue hecho en Supabase, así que referencia roles y funciones que un
+Postgres pelado no tiene. Se crean antes de restaurar:
+
+```bash
+docker exec -i vermas-restore psql -U postgres -d postgres <<'SQL'
+create schema if not exists auth;
+
+create table if not exists auth.users (
+  id uuid primary key default gen_random_uuid(),
+  email text unique,
+  raw_user_meta_data jsonb default '{}'::jsonb,
+  created_at timestamptz default now()
+);
+
+create or replace function auth.uid() returns uuid
+  language sql stable as $$ select null::uuid $$;
+create or replace function auth.role() returns text
+  language sql stable as $$ select 'authenticated'::text $$;
+
+do $$
+begin
+  if not exists (select 1 from pg_roles where rolname = 'anon') then
+    create role anon nologin noinherit;
+  end if;
+  if not exists (select 1 from pg_roles where rolname = 'authenticated') then
+    create role authenticated nologin noinherit;
+  end if;
+  if not exists (select 1 from pg_roles where rolname = 'service_role') then
+    create role service_role nologin noinherit bypassrls;
+  end if;
+end $$;
+SQL
+```
+
+Restaurar con `ON_ERROR_STOP=1` (si algo falla, se ve en el acto):
+
+```bash
+docker exec -i vermas-restore psql -U postgres -d postgres \
+  -v ON_ERROR_STOP=1 < respaldo.sql
+```
+
+### 5.3 Opción B — Proyecto de prueba de Supabase
+
+1. Crear un proyecto gratuito **aparte** del de producción.
+2. Copiar su cadena del **Session pooler**.
+3. `psql "$DATABASE_URL_PRUEBA" -v ON_ERROR_STOP=1 -f respaldo.sql`
+4. Crear un usuario de prueba en Authentication → Users (los usuarios no vienen
+   en el respaldo).
+
+### 5.4 Comprobar que los datos están
+
+```sql
+select 'pacientes' as tabla, count(*) from public.pacientes_perfil
+union all select 'consultas', count(*) from public.consultas_clinicas
+union all select 'ventas', count(*) from public.pedidos_ventas
+union all select 'items', count(*) from public.pedido_items
+union all select 'pagos', count(*) from public.pagos
+union all select 'inventario', count(*) from public.inventario
+union all select 'precios', count(*) from public.lista_precios;
+
+-- Debe haber políticas y las funciones críticas
+select count(*) as politicas from pg_policies where schemaname = 'public';
+select proname from pg_proc p
+  join pg_namespace n on n.oid = p.pronamespace
+ where n.nspname = 'public'
+   and proname in ('aplicar_operaciones','guardar_consulta_clinica_v2','crear_venta');
+```
+
+Los conteos deben coincidir con los que imprimió el verificador al crear el
+respaldo. Si cambian, el respaldo no es de la fecha que crees.
+
+### 5.5 Probar la app contra la copia
+
+```bash
+# .env.local (no se sube: está en .gitignore)
+VITE_SUPABASE_URL=https://<proyecto-de-prueba>.supabase.co
+VITE_SUPABASE_ANON_KEY=<anon key del proyecto de prueba>
+npm run dev
+```
+
+Recorrido mínimo:
+
+1. Iniciar sesión con el usuario de prueba.
+2. Abrir el historial y comprobar que aparecen pacientes y ventas.
+3. Guardar una consulta nueva y una venta.
+4. Recargar y confirmar que siguen ahí.
+
+Anota el tiempo total del simulacro. Si un día hay que restaurar de verdad, ese
+número es el que importa.
+
+### 5.6 Limpiar
+
+```bash
+docker rm -f vermas-restore
+```
 
 ---
 
@@ -158,55 +256,40 @@ psql "$DATABASE_URL" -f respaldo.sql
 
 Lo anterior protege **los datos**. No protege los archivos.
 
-### Qué hay que respaldar aparte
-
 | Bucket | Contenido | Límite por archivo |
 |---|---|---|
 | `comprobantes_pagos` | Comprobantes de pago | 10 MB |
 | `inventario_imagenes` | Fotos del inventario | 10 MB |
 
 Los dos son privados (`public = false`), así que un respaldo público los expondría.
-No es un detalle menor.
 
-### La opción recomendada
+- **`inventario_imagenes`**: se puede automatizar; son fotos de producto y se
+  pueden volver a tomar.
+- **`comprobantes_pagos`**: es el delicado y merece una decisión aparte. Hoy, si
+  alguien borra uno desde la app, se pierde.
 
-El respaldo del **`inventario_imagenes`** sí conviene automatizar: son fotos de
-producto y se pueden volver a tomar. El de **`comprobantes_pagos`** es el delicado
-y merece una decisión aparte.
-
-### Para empezar hoy, sin instalar nada
-
-El Supabase Dashboard permite **descargar los archivos de un bucket** a mano
-(Storage → bucket → Download). Es suficiente para una copia mensual y no requiere
-configurar nada.
-
-### Para automatizarlo (opción gratuita)
-
-Las **GitHub Actions también pueden descargar un bucket** usando la misma clave que
-usa la app, guardando todo en la misma rama de respaldos.
+Para empezar sin configurar nada, el Dashboard permite descargar un bucket a mano
+(Storage → bucket → Download): sirve para una copia mensual.
 
 Decisión pendiente: **¿qué pasa con los comprobantes de pago si alguien borra
-uno por error desde la app?** Hoy la respuesta es "se pierde". Conviene decidirlo
-antes de que ocurra.
+uno por error desde la app?**
 
 ---
 
 ## 7. Checklist
 
-- [ ] Copiar la cadena de conexión desde Supabase → Project Settings → Database
-- [ ] Registrarla como secreto `DATABASE_URL` en GitHub (Settings → Secrets → Actions)
-- [ ] Crear `.github/workflows/respaldo-diario.yml` con la sección 4
-- [ ] Lanzar la primera ejecución a mano y verificar el archivo `.sql`
+- [ ] Copiar la cadena del **Session pooler** desde Supabase
+- [ ] Registrarla como secreto `DATABASE_URL` en GitHub
+- [x] Crear `.github/workflows/respaldo-diario.yml`
+- [x] Verificar el volcado antes de publicarlo (`scripts/verificar-respaldo.mjs`)
+- [ ] Lanzar la primera ejecución a mano y ver el `.sql` en la rama
+- [ ] Hacer el simulacro de restauración (sección 5) y anotar el tiempo
 - [ ] Decidir qué hacer con las fotos (`comprobantes_pagos` en especial)
-- [ ] Probar una restauración en un entorno de pruebas **antes** de confiar en ella
-
-> El último punto es el que más se salta la gente. Un respaldo que nunca se ha
-> restaurado **no es un respaldo**: es la ilusión de tenerlo. Pruébalo una vez.
 
 ---
 
 ## 8. Nota sobre los datos de hoy
 
-Este documento no modificó la base de datos. No se ejecutó ninguna migración,
-ningún borrado masivo ni ninguna operación destructiva. El único cambio en el
-repositorio es este archivo de texto.
+Este documento y la automatización no modificaron la base de datos. No se ejecutó
+ninguna migración, ningún borrado masivo ni ninguna operación destructiva. El
+workflow solo lee (`pg_dump`) y, si el secreto no está, ni siquiera eso.

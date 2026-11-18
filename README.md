@@ -29,7 +29,10 @@ npm run dev        # servidor de desarrollo con recarga en vivo
 | `npm run lint` | ESLint sobre todo el proyecto. |
 | `npm run test:local` | Suite de lógica y escaneo (`node --test`). |
 | `npm run test:ui` | Suite de render e interacción (Vitest + jsdom). |
-| `npm test` | Las dos suites anteriores. |
+| `npm run test:e2e` | Dos equipos (dos contextos de navegador) contra un Supabase falso. |
+| `npm test` | Las dos primeras suites. |
+| `npm run verificar:tamano` | Comprueba el presupuesto del bundle tras `npm run build` (la CI lo ejecuta). |
+| `npm run verificar:respaldo -- archivo.sql` | Comprueba que un volcado de `pg_dump` sea restaurable. |
 
 ## Variables de entorno (opcionales)
 
@@ -71,9 +74,12 @@ localDb.js (Dexie / IndexedDB)  ⇄  syncEngine.js  ⇄  Supabase
 - **`src/repositorio/`** — capa de acceso a datos sobre la base local.
 - **`src/useGestor.js`** — orquestador. Compone los hooks de `src/hooks/` (uno
   por dominio) y expone una única API a `App.jsx`.
-- **`src/App.jsx`** — navegación entre vistas. Las vistas se importan de forma
-  **estática a propósito**: el service worker precachea un único bundle para que
-  todo funcione sin conexión. Por eso no se usa `React.lazy`.
+- **`src/App.jsx`** — navegación entre vistas. Las vistas se cargan con
+  `React.lazy` para no descargar código que aún no se usa. El offline sigue
+  garantizado porque Workbox precachea **todos** los chunks del build
+  (`globPatterns` incluye `**/*.js`): al instalar la PWA quedan guardados
+  aunque nunca se abran. `scripts/verificar-tamano.mjs` impide que el arranque
+  o el total crezcan por encima del presupuesto.
 
 ## Despliegue
 
@@ -96,9 +102,10 @@ medio llenar.
 ## Tests
 
 ```bash
-npm test          # las dos suites
+npm test          # lógica + render
 npm run test:local   # lógica + escaneo de fuentes (node --test)
 npm run test:ui      # render e interacción (Vitest + jsdom)
+npm run test:e2e     # dos equipos (Playwright; ver abajo)
 ```
 
 - **`test:local`** (`src/**/*.test.js`): **lógica pura** (reglas de precio, sync,
@@ -108,11 +115,23 @@ npm run test:ui      # render e interacción (Vitest + jsdom)
 - **`test:ui`** (`src/**/*.test.jsx`): monta componentes de React de verdad con
   Vitest + jsdom + Testing Library para comprobar comportamiento e interacción
   (por ejemplo, el diálogo de confirmación de una venta anulada).
+- **`test:e2e`** (`e2e/*.spec.js`): dos contextos de navegador aislados = dos
+  equipos, compartiendo un Supabase falso que reproduce el versionado de
+  consultas (40001) y el control de stock (23514). Cubre trabajar sin internet,
+  reconectar, editar la misma ficha y vender la misma unidad. La app, su Dexie y
+  su motor de sync son los reales.
+
+  ```bash
+  npx playwright install chromium   # una vez por máquina
+  npm run test:e2e
+  # sin la descarga de Playwright, con un navegador ya instalado:
+  PLAYWRIGHT_CANAL=msedge npm run test:e2e
+  ```
 
 ## Documentación
 
 - `docs/ROLES_Y_USUARIOS.md` — roles **admin / personal** y tope de 3 usuarios
   (cómo aplicarlo, comprobarlo y cambiarlo).
-- `docs/RESPALDO_SERVIDOR.md` — plan de respaldo del servidor (pendiente de
-  activar).
+- `docs/RESPALDO_SERVIDOR.md` — respaldo diario del servidor, verificador de
+  volcados y simulacro de restauración.
 - `supabase/audit/` — consultas SQL de diagnóstico (solo lectura).

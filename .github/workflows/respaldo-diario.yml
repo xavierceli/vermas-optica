@@ -1,0 +1,112 @@
+name: Respaldo diario
+
+# ---------------------------------------------------------------------------
+# Respaldo diario de la base de Supabase.
+#
+# Requiere UN secreto del repositorio:
+#   DATABASE_URL = cadena de conexion "Session pooler" (usuario postgres)
+#
+# Si el secreto no existe, el trabajo termina con un aviso y NO falla: asi el
+# cron diario no llena la bandeja de errores mientras se termina de configurar.
+#
+# El respaldo se guarda en la rama `respaldo-automatico`, sin mezclarse con el
+# codigo de la app. Antes de publicarlo se verifica con
+# scripts/verificar-respaldo.mjs: un volcado cortado no llega a la rama.
+#
+# Para restaurar: docs/RESPALDO_SERVIDOR.md, seccion "Simulacro de restauracion".
+# ---------------------------------------------------------------------------
+
+on:
+  schedule:
+    - cron: '0 3 * * *' # cada noche a las 03:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: respaldo-diario
+  cancel-in-progress: false
+
+jobs:
+  respaldo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Comprobar si DATABASE_URL esta configurada
+        id: configurado
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -n "$DATABASE_URL" ]; then
+            echo "listo=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "listo=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=Respaldo sin configurar::Falta el secreto DATABASE_URL. El respaldo no se genero."
+          fi
+
+      - uses: actions/checkout@v5
+        if: steps.configurado.outputs.listo == 'true'
+        with:
+          fetch-depth: 0
+
+      # Se usa la imagen oficial de PostgreSQL 17 para que `pg_dump` sea de la
+      # misma version que el servidor de Supabase. Un cliente mas viejo aborta
+      # con "server version mismatch".
+      - name: Generar el volcado (solo el esquema public)
+        if: steps.configurado.outputs.listo == 'true'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          set -euo pipefail
+          mkdir -p respaldos
+          archivo="respaldos/$(date -u +%Y%m%d_%H%M%S)_datos.sql"
+          docker run --rm \
+            -e DATABASE_URL \
+            postgres:17-alpine \
+            sh -c 'pg_dump "$DATABASE_URL" --no-owner --schema=public --format=plain' \
+            > "$archivo"
+          test -s "$archivo" || { echo "::error::El volcado quedo vacio."; exit 1; }
+          echo "ARCHIVO=$archivo" >> "$GITHUB_ENV"
+
+      - name: Verificar que el respaldo sea restaurable
+        if: steps.configurado.outputs.listo == 'true'
+        run: |
+          node scripts/verificar-respaldo.mjs "$ARCHIVO" | tee salida-respaldo.txt
+          {
+            echo '### Respaldo del servidor'
+            echo '```'
+            cat salida-respaldo.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publicar en la rama respaldo-automatico
+        if: steps.configurado.outputs.listo == 'true'
+        run: |
+          set -euo pipefail
+          git config user.name "respaldo automatico"
+          git config user.email "respaldo@localhost"
+
+          git fetch origin respaldo-automatico || true
+          if git show-ref --verify --quiet refs/remotes/origin/respaldo-automatico; then
+            # La rama ya existe: se parte de ella para no perder los respaldos
+            # anteriores.
+            git checkout -B respaldo-automatico origin/respaldo-automatico
+          else
+            # Primera vez: rama huerfana (sin historia del codigo) y se quita
+            # todo lo que no sea respaldos.
+            git checkout --orphan respaldo-automatico
+            git rm -rf --cached . > /dev/null
+          fi
+
+          mkdir -p respaldos
+          cp "$ARCHIVO" respaldos/
+          git add respaldos
+          git commit -m "Respaldo $(date -u +%Y-%m-%d\ %H:%M) UTC"
+          git push origin respaldo-automatico
+
+      - name: Recordar que falta configurar
+        if: steps.configurado.outputs.listo != 'true'
+        run: |
+          echo "### Respaldo no generado" >> "$GITHUB_STEP_SUMMARY"
+          echo "Falta el secreto **DATABASE_URL**. Ver docs/RESPALDO_SERVIDOR.md." >> "$GITHUB_STEP_SUMMARY"

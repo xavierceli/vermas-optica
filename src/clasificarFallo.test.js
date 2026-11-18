@@ -149,3 +149,45 @@ test('el mensaje de descarte explica por que no se reintenta', () => {
   const texto = mensajeDeFallo('Item de venta inválido', 'descartada');
   assert.match(texto, /no se reintenta/i);
 });
+
+// --- Otro equipo edito la misma ficha (versionado optimista) -----------------
+// El servidor responde 40001 cuando la version que tenia el equipo no coincide
+// con la que hay en la nube. Es el caso de dos equipos guardando la misma
+// consulta clinica. NUNCA se debe descartar: el trabajo local es valido.
+
+test('un choque de version es conflicto, no descarte', () => {
+  const motivos = [
+    'La evaluación clínica fue modificada en otro dispositivo (servidor 7, local 5).',
+    'La venta fue modificada en otro dispositivo (servidor 3, local 1).',
+    '40001',
+    'could not serialize access due to concurrent update',
+    'version conflict'
+  ];
+  for (const motivo of motivos) {
+    assert.equal(clasificarFallo(motivo), 'conflict', `"${motivo}" debe ser conflicto`);
+  }
+});
+
+test('un choque de version no se descarta ni agotando los intentos', () => {
+  assert.equal(
+    clasificarFallo('La evaluación clínica fue modificada en otro dispositivo', { intentos: 99, maxIntentos: 5 }),
+    'conflict',
+    'descartarlo perderia la edicion que el usuario acaba de hacer'
+  );
+});
+
+test('el mensaje de choque de version dice que no se perdio nada y como seguir', () => {
+  const texto = mensajeDeFallo(
+    'La evaluación clínica fue modificada en otro dispositivo (servidor 7, local 5).',
+    'conflict'
+  );
+  assert.match(texto, /No se perdi[oó] nada/i);
+  assert.match(texto, /sigue guardada en este equipo/i);
+  assert.match(texto, /revisiones/i, 'debe explicar que la version anterior es recuperable');
+});
+
+test('el mensaje de stock sigue siendo el de inventario, no el de version', () => {
+  const texto = mensajeDeFallo('Stock insuficiente para producto 5', 'conflict');
+  assert.match(texto, /armaz[oó]n|producto en conflicto/i);
+  assert.doesNotMatch(texto, /otro dispositivo/i);
+});

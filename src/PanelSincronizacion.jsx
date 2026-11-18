@@ -162,6 +162,16 @@ export default function PanelSincronizacion({ abierta, cerrar, gestor, soloProbl
               {estadoSync.phase === 'syncing' ? ' Sincronizando ahora…' : ''}
               {ultimaSync ? ` Última sincronización: ${ultimaSync}.` : ''}
             </p>
+            {estadoSync.almacenamiento && (
+              <p
+                className={`text-xs mt-1 font-bold ${estadoSync.almacenamiento.porcentaje >= 80 ? 'text-amber-800' : 'text-gray-500'}`}
+              >
+                Almacenamiento del equipo: {estadoSync.almacenamiento.porcentaje} % usado
+                {estadoSync.almacenamiento.porcentaje >= 80
+                  ? ' — libera espacio en Respaldo y espacio.'
+                  : '.'}
+              </p>
+            )}
             <p className="text-xs text-gray-500 mt-0.5">
               {itemsAMostrar.length === 0 
                 ? 'No hay operaciones pendientes ni bloqueadas.'

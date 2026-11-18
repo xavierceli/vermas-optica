@@ -459,3 +459,28 @@ test('FASE 1: si el precio cambio en otro equipo, gana el servidor (sin combo)',
   assert.equal(fila.combo_id, undefined, 'un precio editado en otro equipo no debe conservar el combo');
   assert.equal(Number(fila.venta), 55);
 });
+
+test('vender desde una consulta existente NO borra la evaluacion clinica local', async () => {
+  await reset();
+  await localDb.inventory.put(product(1));
+  const consultationId = sale().consultation_id;
+
+  await guardarConsultaLocal({
+    patient: patient(),
+    consultation: { id: consultationId, fecha: '2026-09-24', k1_d_od: '42', esfera_od: '-1.00' }
+  });
+  // La consulta ya subio al servidor: el equipo la tiene sincronizada.
+  await localDb.consultations.update(consultationId, { syncStatus: 'synced' });
+
+  await guardarVentaLocal({
+    patient: patient(),
+    consultationId,
+    sale: sale()
+  });
+
+  const consulta = await localDb.consultations.get(consultationId);
+  assert.equal(consulta.k1_d_od, '42', 'la medida no puede desaparecer del dispositivo');
+  assert.equal(consulta.esfera_od, '-1.00', 'la refraccion no puede desaparecer del dispositivo');
+  assert.equal(consulta.syncStatus, 'synced',
+    'no debe quedar pendiente sin una operacion que la vuelva a subir');
+});

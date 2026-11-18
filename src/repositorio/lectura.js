@@ -9,6 +9,21 @@
 import { localDb, createUuid, getMeta, setMeta, nowIso } from '../localDb.js';
 import { safeString, safeNum, archivada, normalizeCedula, buildInventoryIndex, deriveItems, locateInventory } from './base.js';
 
+/**
+ * Version de la consulta que vino del servidor.
+ *
+ * `vista_pacientes_versionada` la entrega como sync_version_consulta. Si el
+ * servidor es antiguo (sin la migracion 024) o la vista no expone la version,
+ * devuelve null y el equipo se comporta como antes: sin bloqueo optimista,
+ * pero sin perder filas.
+ */
+export const versionDesdeFila = row => {
+  const bruto = row?.sync_version_consulta ?? row?.sync_version ?? null;
+  if (bruto === null || bruto === undefined || bruto === '') return null;
+  const numero = Number(bruto);
+  return Number.isFinite(numero) ? numero : null;
+};
+
 export const cacheServerHistorialImpl = async rows => {
   const [localPatients, localConsultations, localSales, cedulasLocales, cedulasServidor] = await Promise.all([
     localDb.patients.toArray(),
@@ -62,6 +77,7 @@ export const cacheServerHistorialImpl = async rows => {
     if (!localConsultation || localConsultation.syncStatus !== 'pending') {
       nextConsultations.push({
         ...row, id: consultationId, patientId, fecha: row.fecha,
+        syncVersion: versionDesdeFila(row),
         syncStatus: 'synced', updatedAt: nowIso()
       });
     }
@@ -90,7 +106,13 @@ export const cacheServerHistorialImpl = async rows => {
         });
       }
     }
-    remoteRecords.push({ ...row, id: `remote:${row.id}`, kind: 'historial', updatedAt: nowIso() });
+    remoteRecords.push({
+      ...row,
+      id: `remote:${row.id}`,
+      kind: 'historial',
+      syncVersion: versionDesdeFila(row),
+      updatedAt: nowIso()
+    });
   }
 
   await localDb.transaction('rw', localDb.cache, localDb.patients, localDb.consultations, localDb.sales, async () => {
@@ -100,6 +122,106 @@ export const cacheServerHistorialImpl = async rows => {
     if (nextConsultations.length > 0) await localDb.consultations.bulkPut(nextConsultations);
     if (nextSales.length > 0) await localDb.sales.bulkPut(nextSales);
   });
+};
+
+/**
+ * Aplica UNA fila del historial que llego del servidor (evento de Realtime).
+ *
+ * Reutiliza exactamente las mismas reglas que cacheServerHistorialImpl, pero
+ * para una sola fila: es lo que permite actualizar la pantalla en segundos sin
+ * volver a descargar las 20.000 consultas.
+ *
+ * Garantias:
+ *   - Nunca pisa trabajo local con syncStatus 'pending'.
+ *   - Nunca retrocede una consulta a una version anterior (eventos atrasados).
+ *   - Respeta las cedulas archivadas en cualquier equipo.
+ *   - Si la consulta esta archivada, borra su copia remota y no la revive.
+ *
+ * @returns {Promise<{aplicada: boolean, motivo?: string}>}
+ */
+export const aplicarFilaHistorialImpl = async row => {
+  const consultationId = row?.id ? String(row.id).replace(/^remote:/, '') : '';
+  if (!consultationId) return { aplicada: false, motivo: 'fila sin id' };
+
+  const patientId = row.paciente_id || row.patient_id || null;
+  const cedulaFila = normalizeCedula(row.cedula);
+
+  const [cedulasLocales, cedulasServidor, localConsultation, localPatient, localSale] = await Promise.all([
+    getMeta('cedulasArchivadas', []),
+    getMeta('cedulasArchivadasServidor', []),
+    localDb.consultations.get(consultationId),
+    patientId ? localDb.patients.get(patientId) : Promise.resolve(null),
+    row.pedido_id ? localDb.sales.get(row.pedido_id) : Promise.resolve(null)
+  ]);
+
+  const cedulasBloqueadas = new Set(
+    [...(cedulasLocales || []), ...(cedulasServidor || [])]
+      .map(normalizeCedula)
+      .filter(Boolean)
+  );
+
+  if (
+    archivada(row)
+    || (cedulaFila && cedulasBloqueadas.has(cedulaFila))
+    || (localConsultation && archivada(localConsultation))
+  ) {
+    await localDb.cache.delete(`remote:${consultationId}`);
+    return { aplicada: false, motivo: 'archivada' };
+  }
+
+  const syncVersion = versionDesdeFila(row);
+
+  // Un evento puede llegar desordenado o despues de que este equipo ya tenga
+  // una version mas nueva. En ese caso no se retrocede el dato.
+  const versionLocal = Number(localConsultation?.syncVersion);
+  if (syncVersion !== null && Number.isFinite(versionLocal) && versionLocal > syncVersion) {
+    return { aplicada: false, motivo: 'evento atrasado' };
+  }
+
+  const escribirPaciente = Boolean(patientId)
+    && (!localPatient || localPatient.syncStatus !== 'pending');
+  const escribirConsulta = !localConsultation || localConsultation.syncStatus !== 'pending';
+  const escribirVenta = Boolean(row.pedido_id)
+    && (!localSale || localSale.syncStatus !== 'pending');
+
+  await localDb.transaction(
+    'rw',
+    localDb.cache, localDb.patients, localDb.consultations, localDb.sales,
+    async () => {
+      if (escribirPaciente) {
+        await localDb.patients.put({
+          id: patientId, cedula: row.cedula, nombre: row.nombre, telefono: row.telefono,
+          correo: row.correo, fecha_nacimiento: row.fecha_nacimiento,
+          antecedentes: row.antecedentes, alias: row.alias,
+          syncStatus: 'synced', updatedAt: nowIso()
+        });
+      }
+
+      if (escribirConsulta) {
+        await localDb.consultations.put({
+          ...row, id: consultationId, patientId, fecha: row.fecha,
+          syncVersion, syncStatus: 'synced', updatedAt: nowIso()
+        });
+      }
+
+      if (escribirVenta) {
+        await localDb.sales.put({
+          ...row,
+          id: row.pedido_id, patientId, consultationId,
+          fecha: row.fecha_venta || row.fecha, abono: row.abono || '0',
+          version: localSale?.version || 0,
+          syncStatus: 'synced', updatedAt: nowIso()
+        });
+      }
+
+      await localDb.cache.put({
+        ...row, id: `remote:${consultationId}`, kind: 'historial',
+        syncVersion, updatedAt: nowIso()
+      });
+    }
+  );
+
+  return { aplicada: escribirPaciente || escribirConsulta || escribirVenta };
 };
 
 export const cacheServerCatalogImpl = async ({ inventory = [], prices = [] } = {}) => {

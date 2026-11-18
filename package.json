@@ -6,10 +6,13 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "verificar:tamano": "node scripts/verificar-tamano.mjs",
+    "verificar:respaldo": "node scripts/verificar-respaldo.mjs",
     "lint": "eslint .",
     "preview": "vite preview",
     "test:local": "node --test \"src/**/*.test.js\"",
     "test:ui": "vitest run",
+    "test:e2e": "playwright test",
     "test": "npm run test:local && npm run test:ui"
   },
   "engines": {
@@ -23,6 +26,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.65.1",
     "@testing-library/dom": "^10.4.2",
     "@testing-library/react": "^16.3.3",
     "@types/react": "^19.2.17",

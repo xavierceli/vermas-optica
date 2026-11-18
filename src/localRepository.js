@@ -35,8 +35,12 @@ import {
   guardarPrecioLocalImpl, eliminarPrecioLocalImpl
 } from './repositorio/catalogos.js';
 import {
-  cacheServerHistorialImpl, cacheServerCatalogImpl, importLegacyCacheImpl, obtenerSnapshotLocal
+  cacheServerHistorialImpl, cacheServerCatalogImpl, importLegacyCacheImpl, obtenerSnapshotLocal,
+  aplicarFilaHistorialImpl
 } from './repositorio/lectura.js';
+import {
+  ejecutarMantenimientoImpl, revisarEspacioImpl
+} from './repositorio/mantenimiento.js';
 import {
   guardarAdjuntoLocalImpl, leerAdjuntoLocalImpl,
   obtenerAdjuntosDeRefImpl, contarAdjuntosPendientesImpl
@@ -133,6 +137,15 @@ export { normalizeCedula, obtenerContadorEscaneosInventario, obtenerSnapshotLoca
 export const guardarVentaLocal = args => enColaEscritura(() => guardarVentaLocalImpl(args), 'alta', 'guardarVentaLocal');
 export const cacheServerHistorial = rows => enColaEscritura(() => cacheServerHistorialImpl(rows), 'bajo', 'cacheServerHistorial');
 export const cacheServerCatalog = datos => enColaEscritura(() => cacheServerCatalogImpl(datos), 'bajo', 'cacheServerCatalog');
+// Una sola fila del historial (evento de Realtime). Misma cola que el resto de
+// escrituras: no puede adelantarse a un guardado local a medio terminar.
+export const aplicarFilaHistorialRemota = row => enColaEscritura(() => aplicarFilaHistorialImpl(row), 'bajo', 'aplicarFilaHistorialRemota');
+
+// Mantenimiento del almacenamiento local: libera blobs ya subidos y copias de
+// cache redundantes. Pasa por la cola para no competir con un guardado.
+export const ejecutarMantenimiento = opciones =>
+  enColaEscritura(() => ejecutarMantenimientoImpl(opciones), 'bajo', 'mantenimiento');
+export const revisarEspacio = () => revisarEspacioImpl();
 export const importLegacyCache = () => enColaEscritura(() => importLegacyCacheImpl(), 'bajo', 'importLegacyCache');
 export const guardarConsultaLocal = args => enColaEscritura(() => guardarConsultaLocalImpl(args), 'alta', 'guardarConsultaLocal');
 export const registrarPagoLocal = args => enColaEscritura(() => registrarPagoLocalImpl(args), 'alta', 'registrarPagoLocal');

@@ -1,0 +1,376 @@
+===============================================================================
+VER+ OPTICA - ¿PASAR EL PROYECTO A RUST?
+Documento de contexto: contras, pros y veredicto
+Generado a partir del estado actual del repositorio (14.295 lineas de codigo de
+produccion, 7.098 lineas de tests, 23 migraciones SQL / 3.612 lineas, 223
+commits).
+===============================================================================
+
+0. RESUMEN EN 10 LINEAS
+------------------------------------------------------------------------------
+- La app es una PWA React 19 + Vite 8, offline-first, con Dexie/IndexedDB como
+  fuente de verdad local y Supabase como servidor.
+- La logica critica de negocio NO esta en JavaScript: esta en PL/pgSQL
+  (aplicar_operaciones, crear_venta, registrar_pago, anular_venta, triggers,
+  RLS). Eso no cambia si el cliente se escribe en Rust.
+- Lo que hace dificil la app es plataforma de navegador: IndexedDB, service
+  worker, Web Bluetooth, window.print(), WebCrypto, Supabase JS.
+- Rust/WASM no elimina esas dependencias: las envuelve con mas friccion.
+- Un rewrite completo no aporta nada visible al usuario final.
+- Donde Rust SI aporta es en otro producto: un cliente nativo con Tauri
+  (SQLite + BLE nativo + impresion nativa), no en reescribir la PWA.
+- Conclusion: tecnicamente posible, comercialmente no recomendable.
+- Si se quiere introducir Rust sin riesgo: portar solo logica pura a un crate
+  WASM y medir en 2 semanas.
+- Si el dolor real es la impresora / los backups / la cuota de IndexedDB, el
+  camino correcto es Tauri, no un rewrite de la PWA.
+- Si el objetivo es sustituir Supabase por un backend Rust (axum), es la peor
+  opcion de todas: se pierde auth, RLS, storage e integridad ya resueltos.
+
+
+===============================================================================
+1. CONTEXTO DEL PROYECTO (lo que hay hoy)
+------------------------------------------------------------------------------
+Arquitectura:
+
+  App.jsx -> useGestor() -> hooks/ (un hook por dominio)
+     |
+     +- useDatosLocales / useSincronizacion
+     +- useClinica / usePedidos / useInventario
+     +- useTarifario / useAutenticacion / useAvisos
+     v
+  Vistas (Login, Historial, Clinica, Inventario, Tarifario, Dashboard, Pedidos)
+     v
+  repositorio/ (lectura, escritura, payloads)
+     v
+  localDb.js (Dexie / IndexedDB) <-> syncEngine.js <-> Supabase
+
+Piezas clave:
+
+  - localDb.js: esquema Dexie v2 con 13 tablas e indices compuestos
+    (pacientes, consultas, ventas, items, pagos, inventario, precios,
+    movimientos, outbox, meta, cache, attachments).
+  - syncEngine.js (595 lineas): outbox idempotente, backoff, paginacion de
+    historial (200 por pagina, tope 20.000), clasificacion de fallos
+    (red / conflicto / descartada), timeout de 30s, deteccion de sesion
+    ausente.
+  - repositorio/ (~1.500 lineas): capa de acceso a datos local.
+  - supabase/migrations/: 23 migraciones; toda la escritura pasa por RPC
+    aplicar_operaciones y funciones PL/pgSQL. Hay triggers que bloquean el DML
+    directo del navegador (errcode 42501) y RLS solo-lectura para el cliente.
+  - src/reglas.js: replica en JS el redondeo exacto de PostgreSQL
+    round(venta - venta * descuento / 100, 2). Ya existe duplicacion
+    deliberada entre JS y SQL.
+  - d30Printer.js: driver Web Bluetooth (Phomemo D30) + Canvas para generar
+    la etiqueta como bitmap.
+  - impresiones.js (622 lineas): genera HTML A4 y usa window.open() +
+    window.print().
+  - seguridad.js: PIN local con PBKDF2-SHA256 (210.000 iteraciones) via
+    WebCrypto.
+  - PWA con Workbox en modo "prompt": el service worker debe ser JS y espera
+    a que el usuario confirme la actualizacion.
+  - Tests: node:test para logica pura y escaneo de fuentes; Vitest + jsdom +
+    Testing Library para render e interaccion.
+  - Bundle de produccion: 862 kB de JS + 48 kB de CSS (dist total 1,3 MB).
+
+Reparto aproximado del codigo de produccion:
+
+  Vistas React (.jsx) ................ ~4.000 lineas
+  Repositorio + DB local ............. ~1.650 lineas
+  Sincronizacion .....................   ~600 lineas
+  Impresion (HTML + BLE) .............   ~815 lineas
+  Reglas / calculos / utilidades ..... ~1.500 lineas
+  Hooks .............................. ~1.600 lineas
+  Resto (auth, avisos, seguridad,
+  respaldo, errores, etc.) ........... ~4.100 lineas
+
+
+===============================================================================
+2. CONTRAS DE PASAR A RUST
+===============================================================================
+
+2.1. La logica de negocio ya vive en PostgreSQL, no en el cliente
+------------------------------------------------------------------------------
+Las operaciones criticas (venta, pago, anulacion, consulta clinica) se aplican
+en el servidor mediante aplicar_operaciones y funciones PL/pgSQL, con triggers
+que impiden escribir directamente desde el navegador. Un cliente Rust seguiria
+llamando exactamente a los mismos RPC. El rewrite no mejora integridad,
+seguridad ni consistencia: eso ya esta resuelto y ademas esta bien resuelto.
+
+2.2. Se añade una TERCERA copia de las mismas reglas
+------------------------------------------------------------------------------
+Hoy las reglas de precio existen dos veces: en src/reglas.js y en PL/pgSQL.
+Portarlas a Rust crea una tercera implementacion que hay que mantener
+sincronizada al centavo. Mas codigo, mas divergencia, mas bugs de redondeo.
+Si se hace el port, hay que borrar la copia JS; si no se borra, el proyecto
+empeora.
+
+2.3. La persistencia local depende de IndexedDB (Dexie)
+------------------------------------------------------------------------------
+Dexie ofrece indices compuestos, transacciones, cursores y blobs con una
+ergonomia que en Rust no existe igual. Las alternativas son:
+  - rexie / indexed_db de web-sys: mucho mas verboso, sin la comodidad de
+    consultas encadenadas.
+  - SQLite + OPFS: es una MIGRACION DE DATOS distinta, no un port. Hay que
+    disenar el esquema, migrar dispositivos en produccion y reescribir toda la
+    capa repositorio/.
+Ninguna de las dos es "traducir el codigo", y ambas tocan la parte mas
+delicada del sistema.
+
+2.4. Web Bluetooth no existe en Rust/WASM
+------------------------------------------------------------------------------
+d30Printer.js usa navigator.bluetooth y Canvas. web-sys no expone Web Bluetooth
+de forma utilizable; habria que escribir glue con JavaScript igualmente (o
+usar wasm-bindgen para llamar a la API del navegador). En la PWA no se gana
+nada. Ademas, Web Bluetooth no existe en Safari/iOS, problema que Rust tampoco
+resuelve.
+
+2.5. La impresion A4 es HTML + window.print()
+------------------------------------------------------------------------------
+impresiones.js construye documentos HTML con CSS @page y llama window.print().
+En WASM se seguiria necesitando el DOM y el dialogo del navegador. Rust no
+mejora la impresion dentro del navegador; solo tendria sentido con impresion
+nativa (PDF + driver del sistema), que es otro producto.
+
+2.6. El service worker y la PWA deben seguir siendo JavaScript
+------------------------------------------------------------------------------
+Workbox, el registro del SW y la estrategia "prompt" (AvisoActualizacion.jsx)
+son JS por definicion. Ese codigo no se puede portar. Quedaria una app mixta
+Rust/WASM + JS, con dos toolchains y dos modelos mentales en el mismo repo.
+
+2.7. El SDK de Supabase no tiene equivalente maduro en Rust
+------------------------------------------------------------------------------
+Supabase JS resuelve auth con refresh de tokens, sesiones, storage firmado y
+realtime. En Rust habria que hablar GoTrue/PostgREST/Storage a mano o con
+crates menos maduros, y reimplementar la renovacion de sesion, el manejo de
+errores y los reintentos. Es superficie nueva de bugs en la parte que hoy
+funciona sin mantenimiento.
+
+2.8. Se invalidan ~7.100 lineas de tests
+------------------------------------------------------------------------------
+La red de seguridad actual es enorme: node:test para logica y escaneo de
+fuentes, Vitest + jsdom para interaccion real de componentes. Un rewrite en
+Rust deja esos tests inservibles de golpe. Habria que reescribirlos ANTES de
+poder confiar en el port, y los tests de UI no tienen equivalente directo.
+
+2.9. Se reescribe la UI sin beneficio para el usuario
+------------------------------------------------------------------------------
+~4.000 lineas de JSX con accesibilidad, foco, atajos de teclado, avisos,
+formularios largos y pruebas de interaccion. Leptos o Dioxus obligan a
+rehacerlas y a resolver de nuevo accesibilidad y comportamiento del navegador.
+El usuario no percibiria mejora; si acaso, un arranque mas lento.
+
+2.10. WASM no siempre es mas rapido en este caso
+------------------------------------------------------------------------------
+El cuello de botella de esta app es IndexedDB y la red (latencia de Supabase),
+no la CPU. El coste de arranque y el tamaño del binario WASM (~varios cientos
+de kB solo del runtime) pueden empeorar el tiempo de primera carga en moviles
+modestos, que es justo el perfil de uso en mostrador.
+
+2.11. Coste y riesgo organizativos
+------------------------------------------------------------------------------
+  - 4 a 8 meses de una persona para un rewrite completo.
+  - Dos toolchains (npm + cargo), dos CI (Vitest + cargo test + wasm-pack +
+    clippy), dos formas de desplegar.
+  - Curva de aprendizaje de Rust (ownership, lifetimes, async, wasm-bindgen)
+    sobre un equipo que hoy escribe JS.
+  - Alto riesgo de quedarse a medias con dos versiones vivas y divergentes,
+    que es el peor resultado posible para un sistema con datos de pacientes.
+
+2.12. Datos sensibles y validacion en produccion
+------------------------------------------------------------------------------
+Es un sistema con fichas clinicas y ventas reales. Cualquier migracion de
+persistencia (IndexedDB -> SQLite/OPFS, o cliente nuevo) exige plan de
+respaldo, reconciliacion y pruebas con datos reales. El riesgo de perdida de
+datos no lo justifica una mejora puramente tecnica.
+
+2.13. Sustituir Supabase por un backend Rust empeora el proyecto
+------------------------------------------------------------------------------
+Reimplementar auth, RLS, storage y 23 migraciones en axum + sqlx es reescribir
+lo mas solido del sistema y volver a introducir a mano la autorizacion que hoy
+esta garantizada en la base de datos. Rust no aporta nada aqui: resta.
+
+
+===============================================================================
+3. PROS DE PASAR A RUST (por que si, y en que condiciones)
+===============================================================================
+
+3.1. Tipos fuertes en el contrato de sincronizacion
+------------------------------------------------------------------------------
+El outbox, los payloads de aplicar_operaciones y los estados de sync son JSON
+sin esquema. Un crate Rust con serde + enums permite modelar tipos de
+operacion, estados y resultados de forma exhaustiva, y que el compilador
+impida estados imposibles (por ejemplo, "descartada" con reintento). Con
+ts-rs o JSON Schema se pueden generar los tipos para el frontend y para el
+contrato SQL. Esto si reduce bugs reales del syncEngine.
+
+3.2. Una sola fuente de verdad ejecutable
+------------------------------------------------------------------------------
+Si se porta la logica pura a Rust y se elimina la copia de src/reglas.js, el
+redondeo, las fechas, la paginacion y la clasificacion de fallos quedan en un
+unico sitio, compilado y testeado con cargo test. Es la unica forma de que un
+port a Rust sea una mejora y no una copia mas.
+
+3.3. Correccion garantizada por el compilador
+------------------------------------------------------------------------------
+Rust elimina clases enteras de error: condiciones de carrera en el motor de
+sync (estado compartido entre ciclos), nulos inesperados, mutaciones
+accidentales y errores de concurrencia. En una app que escribe en local y sube
+en segundo plano, eso tiene valor tangible.
+
+3.4. Rendimiento predecible en logica pura
+------------------------------------------------------------------------------
+Calculo de precios, combos, estadisticas, paginacion y reconciliacion de
+historial se benefician de codigo nativo/WASM determinista, sin GC y con
+tiempos estables. El impacto no es enorme (el cuello es la red), pero es real
+en el procesamiento de lotes grandes del outbox.
+
+3.5. Tauri: el escenario donde Rust gana de verdad
+------------------------------------------------------------------------------
+Si el objetivo es dejar de depender de las limitaciones del navegador, Tauri
+resuelve exactamente los tres dolores actuales:
+  - Persistencia: SQLite local en Rust (rusqlite/sqlx) en lugar de IndexedDB.
+    Sin cuotas de almacenamiento, backups y exportacion triviales.
+  - Impresora: BLE nativo con btleplug, sin las restricciones y la fragilidad
+    de Web Bluetooth (hoy solo Chrome/Edge).
+  - Impresion: PDF nativo (printpdf) o driver del sistema, en lugar de
+    window.open() + print().
+  Ademas permite reutilizar la UI React actual dentro de Tauri, de modo que el
+  port a Rust se limita al nucleo (DB + sync + BLE) y no a las 4.000 lineas de
+  vistas. Es el unico camino donde Rust cambia el producto para mejor.
+
+3.6. Robustez offline reforzada
+------------------------------------------------------------------------------
+Un nucleo Rust con SQLite transaccional y un outbox tipado hace el modo sin
+conexion mas fuerte: transacciones atomicas reales, WAL, recuperacion ante
+cierre abrupto y verificacion de integridad. Hoy IndexedDB ya funciona, pero
+SQLite es un estandar mas predecible para respaldos y auditoria.
+
+3.7. Un solo binario, sin runtime de Node
+------------------------------------------------------------------------------
+En el escenario nativo, la app se distribuye como un ejecutable con la logica
+incluida: no depende de la version de Node, ni del navegador, ni de que el
+service worker este actualizado. Menos clase de fallos "el navegador sirve el
+bundle viejo", que ya os ha dado problemas (de ahi __BUILD_ID__).
+
+3.8. Ecosistema de calidad y seguridad
+------------------------------------------------------------------------------
+cargo test, clippy, rustfmt, fuzzing y auditoria de dependencias (cargo audit)
+son de primera nivel. Para un sistema con datos clinicos, la ausencia de
+undefined behavior y de dependencias npm transitivas enormes es una ventaja
+defendible.
+
+3.9. Piloto de bajo riesgo posible
+------------------------------------------------------------------------------
+Se puede introducir Rust sin comprometer el producto: crear un crate
+vermas-core compilado a WASM con reglas de precio, validaciones, fechas y
+clasificacion de fallos, y ejecutar los mismos casos de test en cargo test y
+en Vitest. En 2 o 3 semanas se sabe si aporta. Si no aporta, se descarta sin
+haber tocado la PWA.
+
+3.10. Futuro multiplataforma
+------------------------------------------------------------------------------
+Un nucleo Rust reutilizable permite, mas adelante, la misma logica en la PWA
+(WASM), en escritorio (Tauri), en movil (Tauri mobile) y en herramientas CLI de
+respaldo o migracion. Hoy toda la logica esta atada al entorno del navegador.
+
+
+===============================================================================
+4. COMPARATIVA DE ESCENARIOS
+===============================================================================
+
+A) Rewrite completo de la PWA a Rust/WASM (Leptos o Dioxus)
+   Esfuerzo: 4 a 8 meses.   Riesgo: ALTO.   Beneficio al usuario: NULO.
+   -> NO RECOMENDADO. Se reescribe UI, DB, sync y tests para acabar con un
+      bundle mas pesado, Web Bluetooth igual de limitado y el service worker
+      en JS de todos modos.
+
+B) Cliente nativo con Tauri + Rust (reutilizando la UI React)
+   Esfuerzo: 6 a 10 semanas para un MVP; 3 a 4 meses si se porta la UI.
+   Riesgo: MEDIO.   Beneficio al usuario: ALTO.
+   -> RECOMENDADO si el dolor es impresora, backups o cuota de IndexedDB.
+      Rust se queda con DB + sync + BLE; React sigue siendo la UI.
+
+C) Migracion incremental: crate vermas-core en WASM (solo logica pura)
+   Esfuerzo: 2 a 3 semanas.   Riesgo: BAJO.   Beneficio: MEDIO.
+   -> RECOMENDADO como primer paso controlado. Condicion: borrar la copia JS
+      de las reglas portadas para no tener tres implementaciones.
+
+D) Sustituir Supabase por backend Rust (axum + sqlx)
+   Esfuerzo: 6+ meses.   Riesgo: MUY ALTO.   Beneficio: NEGATIVO.
+   -> NO RECOMENDADO. Se pierde auth, RLS, storage y 23 migraciones que hoy
+      son la garantia de integridad. Habria que reimplementar la autorizacion
+      a mano, con datos clinicos y de ventas en juego.
+
+
+===============================================================================
+5. QUE MODULOS SON PORTABLES (Y CUALES NO)
+===============================================================================
+
+  Modulo                                    Lineas   Portabilidad   Valor
+  ---------------------------------------------------------------------------
+  reglas.js, calculoPrecio.js, cobros.js       ~700   ALTA           Bajo
+  fechas.js, paginacion.js                     ~200   ALTA           Bajo
+  clasificarFallo.js, validacion.js            ~250   ALTA           Medio
+  syncEngine.js (maquina de estados)            595   MEDIA          Medio
+  seguridad.js (PBKDF2)                         166   MEDIA          Neutro
+  localDb.js + repositorio/                  ~1.650   BAJA           Negativo
+  d30Printer.js                                 192   MUY BAJA       Negativo
+                                                    (Web Bluetooth)  (ALTO en
+                                                                     nativo)
+  impresiones.js                                622   BAJA           Negativo
+                                                    (HTML + print)   (ALTO en
+                                                                     nativo)
+  Vistas React (13 archivos .jsx)            ~4.000   BAJA/MEDIA     Negativo
+  service worker / PWA                            -   NULA (JS)      -
+  Migraciones y funciones PL/pgSQL            3.612   NULA (ya estan
+                                                    en el sitio
+                                                    correcto)      -
+  Supabase Auth/Storage/Realtime                  -   BAJA           Negativo
+
+
+===============================================================================
+6. RIESGOS CONCRETOS A VIGILAR SI SE DECIDE AVANZAR
+------------------------------------------------------------------------------
+  - Tres fuentes de verdad para las mismas reglas (JS, PL/pgSQL, Rust).
+    Mitigacion: borrar la copia JS del modulo portado.
+  - Perdida de la red de tests actual (~7.100 lineas). Mitigacion: portar los
+    casos de test junto con el codigo, no despues.
+  - Migracion de datos locales en dispositivos reales. Mitigacion: respaldo
+    previo, doble lectura y reconciliacion, y no borrar IndexedDB hasta
+    verificar.
+  - iOS/Safari: ni Web Bluetooth ni Tauri cubren ese caso. Si el equipo usa
+    iPad, la impresora sigue siendo un problema aparte.
+  - Service worker y actualizaciones: debe seguir siendo JS; mantener la
+    estrategia "prompt" para no perder formularios a medio llenar.
+  - Doble toolchain y doble CI: presupuestar mantenimiento, no solo el
+    desarrollo inicial.
+  - Rendimiento de arranque de WASM en moviles modestos: medir antes de
+    comprometerse.
+  - No mezclar el port con redisenos de UI o cambios de esquema: un cambio a
+    la vez, con la CI en verde.
+
+
+===============================================================================
+7. VEREDICTO
+------------------------------------------------------------------------------
+1. Pasar la PWA completa a Rust NO se justifica. El 80% del codigo es UI y
+   plumbing de navegador, y la logica critica ya esta protegida en PostgreSQL.
+   El rewrite cuesta meses, invalida los tests e introduce una tercera copia
+   de las reglas sin mejorar nada perceptible para el usuario.
+
+2. Rust SI tiene sentido en un producto distinto: un cliente nativo Tauri con
+   SQLite, BLE nativo e impresion nativa. Ahi resuelve dolores reales
+   (impresora D30, backups, cuota de almacenamiento, dependencia de Chrome).
+
+3. Si se quiere introducir Rust sin arriesgar, empezar por el escenario C:
+   crate vermas-core en WASM con logica pura, mismos casos de test en cargo
+   test y Vitest, y decision en 2 o 3 semanas.
+
+4. Descartar el escenario D (backend Rust en lugar de Supabase): reescribe lo
+   mas solido del sistema y empeora la seguridad.
+
+Decision sugerida: mantener la PWA en React y no portar nada todavia; si
+aparece la necesidad de escritorio/impresora, abrir una linea Tauri y portar
+solo DB + sync + BLE.
+===============================================================================
