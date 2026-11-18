@@ -4,6 +4,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import RespaldoDatos from './RespaldoDatos.jsx';
 import AccesoSinConexion from './AccesoSinConexion.jsx';
+import { resumenTiempoReal } from './tiempoRealResumen.js';
 
 const TIPOS = {
   GUARDAR_CONSULTA: 'Consulta clínica', CREAR_VENTA: 'Venta', EDITAR_VENTA: 'Edición de venta',
@@ -135,6 +136,14 @@ export default function PanelSincronizacion({ abierta, cerrar, gestor, soloProbl
     ? new Date(estadoSync.lastSync).toLocaleString('es-EC')
     : null;
 
+  // Tiempo real: aviso discreto solo si lleva caido de verdad. El sondeo de
+  // 30 s sigue trayendo los cambios, asi que no es una alarma.
+  const avisoTiempoReal = resumenTiempoReal({
+    estado: gestor?.tiempoReal?.estado,
+    caidoMs: gestor?.tiempoReal?.caidoMs,
+    online: estadoSync.online !== false
+  });
+
   return (
     <div 
       className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[150] p-4"
@@ -170,6 +179,21 @@ export default function PanelSincronizacion({ abierta, cerrar, gestor, soloProbl
                 {estadoSync.almacenamiento.porcentaje >= 80
                   ? ' — libera espacio en Respaldo y espacio.'
                   : '.'}
+              </p>
+            )}
+            {avisoTiempoReal.nivel !== 'oculto' && (
+              <p
+                role="status"
+                aria-live="polite"
+                className={`text-xs mt-1 font-semibold ${
+                  avisoTiempoReal.nivel === 'aviso'
+                    ? 'text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1'
+                    : avisoTiempoReal.nivel === 'ok'
+                      ? 'text-green-700'
+                      : 'text-gray-500'
+                }`}
+              >
+                {avisoTiempoReal.mensaje}
               </p>
             )}
             <p className="text-xs text-gray-500 mt-0.5">

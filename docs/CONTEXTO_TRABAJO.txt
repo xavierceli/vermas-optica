@@ -1,7 +1,7 @@
 ===============================================================================
 VER+ OPTICA - CONTEXTO DE TRABAJO
 Registro de lo realizado y de lo que queda pendiente
-Ultima actualizacion: tareas 1 a 7 completadas
+Ultima actualizacion: tareas 1 a 8 completadas
 ===============================================================================
 
 Como usar este archivo:
@@ -566,7 +566,70 @@ ACCION MANUAL PENDIENTE
 
 
 ===============================================================================
-8. CHECKLIST DE MIGRACIONES
+8. TAREA COMPLETADA: AVISO VISIBLE SI REALTIME LLEVA CAIDO (#8)
+===============================================================================
+
+PROBLEMA QUE RESOLVIA
+------------------------------------------------------------------------------
+  - Si el canal de tiempo real se caia, solo quedaba un warning en la consola
+    del navegador. El usuario no sabia por que los cambios de otro equipo
+    tardaban hasta 30 s, y parecia que la app estaba lenta o rota.
+  - Tampoco habia forma de distinguir un parpadeo normal de una caida larga.
+
+QUE SE HIZO
+------------------------------------------------------------------------------
+  1. src/tiempoRealResumen.js (logica pura)
+     - Decide el mensaje segun estado/caidoMs/online.
+     - Umbral de aviso: 5 minutos. Antes solo dice "reconectando".
+     - Sin internet o canal apagado (modo PIN): no muestra nada, para no
+       duplicar el aviso de conexion que ya existe.
+
+  2. src/tiempoReal.js
+     - Guarda desde cuando esta en el estado actual y la ultima vez que llego
+       un evento valido (prueba de que el canal funciona).
+     - estadoTiempoReal() ahora devuelve { estado, conectado, desde, caidoMs,
+       ultimoEvento }.
+     - Avisa a la interfaz en cada cambio de estado (alCambiarEstado).
+
+  3. src/hooks/useSincronizacion.js + src/useGestor.js
+     - Exponen `tiempoReal` y lo refrescan cada 30 s para que "lleva X min"
+       avance aunque no ocurra nada.
+
+  4. src/PanelSincronizacion.jsx
+     - Linea discreta: verde si esta conectado, gris "reconectando" si acaba
+       de fallar, ambar a partir de 5 minutos con el recordatorio de que el
+       sondeo de 30 s sigue trayendo los cambios.
+
+ARCHIVOS TOCADOS
+------------------------------------------------------------------------------
+  Nuevos:
+    src/tiempoRealResumen.js
+    src/tiempoRealResumen.test.js
+    src/PanelSincronizacion.test.jsx
+  Modificados:
+    src/tiempoReal.js
+    src/hooks/useSincronizacion.js
+    src/useGestor.js
+    src/PanelSincronizacion.jsx
+
+COMO SE VERIFICO
+------------------------------------------------------------------------------
+  - 7 pruebas de la logica del aviso (apagado, conectado, offline, parpadeo,
+    umbral exacto, 12 minutos, dato invalido).
+  - 3 pruebas de interfaz del panel (aviso a los 6 min, verde si conectado,
+    no duplicar el aviso sin internet).
+  - npm run lint limpio; 605 de logica + 41 de UI; build 189,1 kB inicial /
+    244,7 kB total (limites 220/400).
+
+ACCION MANUAL PENDIENTE
+------------------------------------------------------------------------------
+  - Ninguna. El aviso aparece solo en el panel de sincronizacion.
+  - Para verlo en pruebas: cortar la red del equipo >5 min con la app abierta
+    (el canal falla, el sondeo sigue). No hace falta forzarlo en produccion.
+
+
+===============================================================================
+9. CHECKLIST DE MIGRACIONES
 ===============================================================================
   [x] 202609240024_versionado_consultas.sql    -> aplicada (vista verificada)
   [x] 202609240025_realtime_publicacion.sql    -> aplicada (5 tablas publicadas)
@@ -577,15 +640,11 @@ ACCION MANUAL PENDIENTE
 
 
 ===============================================================================
-9. QUE FALTA POR HACER
+10. QUE FALTA POR HACER
 ===============================================================================
 
 PRIORIDAD ALTA (siguiente tarea recomendada)
 ------------------------------------------------------------------------------
-  [ ] Alerta visible si Realtime lleva mucho caido
-      - Hoy solo se registra un warning en consola y el sondeo de 30 s sigue.
-      - Opcional: mostrar el estado del canal en PanelSincronizacion.
-
   [ ] Observabilidad de conflictos
       - PanelSincronizacion ya cuenta conflictos. Valorar registrar cuantos
         son de version, por usuario/dispositivo, para detectar patrones.
@@ -604,7 +663,7 @@ PRIORIDAD BAJA / NO RECOMENDADO AHORA
 
 
 ===============================================================================
-10. ESTADO ACTUAL DEL PROYECTO (resumen)
+11. ESTADO ACTUAL DEL PROYECTO (resumen)
 ===============================================================================
   - App: PWA React 19 + Vite 8, offline-first con Dexie/IndexedDB.
   - Backend: Supabase (23 + 2 migraciones), escritura solo por RPC.
@@ -616,13 +675,15 @@ PRIORIDAD BAJA / NO RECOMENDADO AHORA
       * frescura entre equipos: segundos, con sondeo de 30 s como respaldo
         (tarea 2);
       * garantia automatica con dos navegadores y un backend compartido
-        (tarea 5).
+        (tarea 5);
+      * aviso en el panel si el tiempo real lleva mas de 5 min caido, sin
+        ocultar que el sondeo de 30 s sigue (tarea 8).
   - Rendimiento: vistas por demanda, impresion fuera del arranque,
     presupuesto de bundle en CI (tarea 3).
   - Almacenamiento: limpieza diaria de adjuntos subidos y cache redundante,
     aviso de cuota al 80 % y uso visible en el panel (tarea 4).
-  - Pruebas: 598 de logica + 38 de UI + 4 E2E de dos equipos.
-  - Bundle: 189 kB gzip inicial / 244 kB total.
+  - Pruebas: 605 de logica + 41 de UI + 4 E2E de dos equipos.
+  - Bundle: 189,1 kB gzip inicial / 244,7 kB total.
   - Respaldo: diario, verificado y con simulacro automatico de restauracion
     (tareas 6 y 7).
   - Despliegue: Vercel + Supabase.

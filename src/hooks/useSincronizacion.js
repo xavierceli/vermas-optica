@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { iniciarMotorSync, detenerMotorSync, suscribirSync, sinSesionActiva } from '../syncEngine';
-import { iniciarTiempoReal, detenerTiempoReal } from '../tiempoReal';
+import { iniciarTiempoReal, detenerTiempoReal, estadoTiempoReal } from '../tiempoReal';
 
 // ---------------------------------------------------------------------------
 // ESTADO DE SINCRONIZACION
@@ -17,6 +17,10 @@ export function useSincronizacion(estaAutenticado, obtenerDatos, modoSinConexion
   const [syncEstado, setSyncEstado] = useState({
     phase: 'idle', online: true, pending: 0, conflicts: 0, lastSync: null, lastError: null
   });
+  // Estado del canal de tiempo real, para que el panel pueda avisar si lleva
+  // demasiado caido. Se refresca cuando cambia el canal y cada 30 s (para que
+  // "lleva X minutos" avance aunque no pase nada).
+  const [tiempoReal, setTiempoReal] = useState(() => estadoTiempoReal());
 
   useEffect(() => {
     // Solo arrancar el motor de sincronización si el usuario ya inició sesión
@@ -30,19 +34,26 @@ export function useSincronizacion(estaAutenticado, obtenerDatos, modoSinConexion
     const puedeTiempoReal = !modoSinConexion && !sinSesionActiva();
     if (puedeTiempoReal && typeof obtenerDatos === 'function') {
       iniciarTiempoReal({
-        alCambiar: () => { void obtenerDatos({ sync: false }); }
+        alCambiar: () => { void obtenerDatos({ sync: false }); },
+        // El panel se repinta en cuanto el canal cambia de estado.
+        alCambiarEstado: () => setTiempoReal(estadoTiempoReal())
       });
     }
+
+    const relojTiempoReal = setInterval(() => {
+      setTiempoReal(estadoTiempoReal());
+    }, 30000);
 
     // Al cerrar sesión (o desmontar) el motor se detiene: sin esto, el intervalo
     // de 30 s y los listeners online/offline/focus seguían vivos tras el logout
     // re-leyendo el outbox para nadie. El canal de tiempo real, igual.
     return () => {
+      clearInterval(relojTiempoReal);
       desuscribir();
       void detenerTiempoReal();
       detenerMotorSync();
     };
   }, [estaAutenticado, modoSinConexion, obtenerDatos]);
 
-  return { syncEstado };
+  return { syncEstado, tiempoReal };
 }

@@ -37,9 +37,13 @@ const TIEMPO_LIMITE_MS = 10000;
 let canal = null;
 let iniciado = false;
 let alCambiar = null;
+let alCambiarEstado = null;
 let pendientes = new Map();
 let temporizador = null;
 let estadoCanal = 'apagado';
+// Cuando empezo el estado actual y ultima prueba de que el canal entrega datos.
+let estadoDesde = Date.now();
+let ultimoEvento = null;
 // Cada arranque usa un topic distinto. En desarrollo (StrictMode) el efecto se
 // monta, se limpia y se vuelve a montar: el cierre del canal anterior es
 // asincrono y reutilizar el mismo topic provocaria un "already subscribed".
@@ -68,6 +72,19 @@ const claveDeEvento = (tabla, fila) => {
   return `${tabla}:${fila?.id}`;
 };
 
+const fijarEstado = nuevo => {
+  if (estadoCanal === nuevo) return;
+  estadoCanal = nuevo;
+  estadoDesde = Date.now();
+  if (typeof alCambiarEstado === 'function') {
+    try {
+      alCambiarEstado();
+    } catch (error) {
+      console.warn('[tiempo real] el aviso de estado a la interfaz fallo:', error?.message || error);
+    }
+  }
+};
+
 const encolar = evento => {
   const tabla = evento?.table;
   const fila = evento?.new || {};
@@ -79,6 +96,9 @@ const encolar = evento => {
   }
 
   if (tabla === 'pagos' && !fila.pedido_id) return;
+
+  // Llego un evento valido: el canal esta vivo, aunque luego falle al aplicar.
+  ultimoEvento = Date.now();
 
   pendientes.set(claveDeEvento(tabla, fila), { tabla, fila });
 
@@ -160,13 +180,15 @@ const vaciar = async () => {
  *   `alCambiar` se llama (una vez por lote) cuando ya se escribio algo nuevo en
  *   IndexedDB. La app lo usa para releer el snapshot local.
  */
-export const iniciarTiempoReal = ({ alCambiar: notificar } = {}) => {
+export const iniciarTiempoReal = ({ alCambiar: notificar, alCambiarEstado: notificarEstado } = {}) => {
   if (iniciado || typeof window === 'undefined') return;
 
   iniciado = true;
   alCambiar = typeof notificar === 'function' ? notificar : null;
+  alCambiarEstado = typeof notificarEstado === 'function' ? notificarEstado : null;
   pendientes = new Map();
-  estadoCanal = 'conectando';
+  ultimoEvento = null;
+  fijarEstado('conectando');
 
   const miGeneracion = ++generacion;
   canal = supabase.channel(`vermas-cambios-${miGeneracion}`);
@@ -184,7 +206,7 @@ export const iniciarTiempoReal = ({ alCambiar: notificar } = {}) => {
 
   canal.subscribe(estado => {
     if (miGeneracion !== generacion) return;
-    estadoCanal = estado;
+    fijarEstado(estado);
     if (estado === 'CHANNEL_ERROR' || estado === 'TIMED_OUT') {
       // Supabase reintenta solo. Mientras tanto, el sondeo de 30 s sigue vivo.
       console.warn(
@@ -206,7 +228,9 @@ export const detenerTiempoReal = async () => {
     temporizador = null;
   }
   pendientes = new Map();
-  estadoCanal = 'apagado';
+  ultimoEvento = null;
+  fijarEstado('apagado');
+  alCambiarEstado = null;
 
   const actual = canal;
   canal = null;
@@ -219,16 +243,27 @@ export const detenerTiempoReal = async () => {
   }
 };
 
-/** Estado del canal para diagnostico: 'apagado' | 'conectando' | 'SUBSCRIBED'... */
-export const estadoTiempoReal = () => estadoCanal;
+/** Estado del canal para diagnostico y para el panel de sincronizacion. */
+export const estadoTiempoReal = () => ({
+  estado: estadoCanal,
+  conectado: estadoCanal === 'SUBSCRIBED',
+  desde: estadoDesde,
+  caidoMs: estadoCanal === 'SUBSCRIBED' || estadoCanal === 'apagado'
+    ? 0
+    : Math.max(0, Date.now() - estadoDesde),
+  ultimoEvento
+});
 
 /** Solo para pruebas: reinicia el estado del modulo. */
 export const reiniciarTiempoRealParaPruebas = () => {
   iniciado = false;
   alCambiar = null;
+  alCambiarEstado = null;
   pendientes = new Map();
   temporizador = null;
   canal = null;
   estadoCanal = 'apagado';
+  estadoDesde = Date.now();
+  ultimoEvento = null;
   generacion += 1;
 };

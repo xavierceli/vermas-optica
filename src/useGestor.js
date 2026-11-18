@@ -75,14 +75,14 @@ export function useGestor() {
     rol, esAdmin
   } = useAutenticacion({ mostrarToast, solicitarConfirmacion, obtenerDatos, limpiarDatos });
 
-  const { syncEstado } = useSincronizacion(estaAutenticado, obtenerDatos, modoSinConexion);
+  const { syncEstado, tiempoReal } = useSincronizacion(estaAutenticado, obtenerDatos, modoSinConexion);
 
   return {
     guardando,
     obtenerDatos, solicitarConfirmacion, confirmar, cancelarConfirmacion, aceptarConfirmacion,
     estaAutenticado, cargandoAuth, cerrarSesion, rol, esAdmin,
     modoSinConexion, entrarSinConexion, dispositivo, configurarAccesoSinConexion, desactivarAccesoSinConexion,
-    toast, confirmDialog, setConfirmDialog, vistaActual, setVistaActual, syncEstado, sincronizarAhora,
+    toast, confirmDialog, setConfirmDialog, vistaActual, setVistaActual, syncEstado, tiempoReal, sincronizarAhora,
     obtenerDetalleCola, reintentarOperacion, descartarOperacion, descartarTodoLoAtascado,
     historial, ventasArchivadas, ventasLocales, inventario, listaPrecios, paciente, setPaciente, estadoInicial, editandoId, setEditandoId,
     cedulasArchivadas, 
