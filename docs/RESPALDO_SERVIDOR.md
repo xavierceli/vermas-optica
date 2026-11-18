@@ -259,27 +259,63 @@ docker rm -f vermas-restore
 
 ---
 
-## 6. Las fotos: el punto ciego
+## 6. Las fotos: respaldo mensual manual
 
 Lo anterior protege **los datos**. No protege los archivos.
 
-| Bucket | Contenido | Límite por archivo |
-|---|---|---|
-| `comprobantes_pagos` | Comprobantes de pago | 10 MB |
-| `inventario_imagenes` | Fotos del inventario | 10 MB |
+| Bucket | Contenido | Límite por archivo | ¿Obligatorio? |
+|---|---|---|---|
+| `comprobantes_pagos` | Evidencia de pagos | 10 MB | **Sí, todos los meses** |
+| `inventario_imagenes` | Fotos de productos | 10 MB | Recomendado (se pueden volver a tomar) |
 
-Los dos son privados (`public = false`), así que un respaldo público los expondría.
+Los dos son privados. **Decisión tomada:** copia manual una vez al mes. Es la
+opción con menos configuración y sin claves sensibles adicionales.
 
-- **`inventario_imagenes`**: se puede automatizar; son fotos de producto y se
-  pueden volver a tomar.
-- **`comprobantes_pagos`**: es el delicado y merece una decisión aparte. Hoy, si
-  alguien borra uno desde la app, se pierde.
+### Cuándo
 
-Para empezar sin configurar nada, el Dashboard permite descargar un bucket a mano
-(Storage → bucket → Download): sirve para una copia mensual.
+El **día 1 de cada mes** (o el primer día hábil). Duración: 5–10 minutos.
 
-Decisión pendiente: **¿qué pasa con los comprobantes de pago si alguien borra
-uno por error desde la app?**
+### Paso a paso
+
+1. Abre Supabase → **Storage**.
+2. Entra al bucket **`comprobantes_pagos`**.
+3. Selecciona todo (casilla de la cabecera) → **Download**.
+   - Si hay muchas carpetas, descárgalas por año/mes.
+4. Repite con **`inventario_imagenes`** (opcional pero recomendado).
+5. Guarda los archivos en **dos sitios**:
+   - un disco externo o USB,
+   - una carpeta privada en Google Drive / OneDrive.
+6. Nombra la carpeta con el mes: `VERMAS-fotos-2026-11`.
+7. Comprueba que se descargó todo:
+   - el número de archivos coincide con el que muestra Supabase,
+   - abre 2 o 3 al azar y confirma que se ven.
+
+### Seguridad
+
+Los comprobantes contienen datos de pacientes y montos.
+
+- No compartas enlaces públicos ni los subas a un chat.
+- La nube debe ser una cuenta **privada con verificación en dos pasos**.
+- Si el disco se pierde, esos datos quedan expuestos: guárdalo bajo llave.
+
+### Cuánto tiempo conservar
+
+- **Nube:** todos los meses (cada carpeta pesa poco).
+- **Disco local:** los últimos 12 meses; los más viejos se pueden borrar del
+  disco, no de la nube.
+
+### Registro (rellena una línea cada mes)
+
+| Mes | Comprobantes (nº) | Inventario (nº) | Copia en disco | Copia en nube | Quién |
+|---|---|---|---|---|---|
+| 2026-11 |  |  |  |  |  |
+| 2026-12 |  |  |  |  |  |
+| 2027-01 |  |  |  |  |  |
+
+> Si un comprobante se borra en la app **antes** de la copia mensual, se pierde.
+> Por eso la copia es mensual y no anual. Si algún día se quiere automatizar, se
+> puede añadir un workflow con la clave `service_role`; mientras tanto, esta
+> rutina cubre el riesgo con cero configuración.
 
 ---
 

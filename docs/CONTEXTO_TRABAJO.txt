@@ -496,8 +496,9 @@ ACCION MANUAL PENDIENTE
   - Ejecutar el simulacro de restauracion (seccion 5 del documento) y anotar
     el tiempo. NO se pudo ejecutar en esta sesion: no hay credenciales de
     Supabase ni Docker/psql en el entorno.
-  - Decidir que se hara con los comprobantes de pago, que no entran en el
-    respaldo de la base.
+  - DECIDIDO: los comprobantes de pago se copian a mano el dia 1 de cada mes
+    (Storage -> bucket -> Download, a disco y a nube privada). Procedimiento en
+    docs/RESPALDO_SERVIDOR.md seccion 6. No se automatiza por ahora.
 
 
 ===============================================================================
