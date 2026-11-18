@@ -551,14 +551,17 @@ COMO SE VERIFICO
     conteos, tablas faltantes). Total: 598 de logica + 38 de UI, 0 fallos.
   - YAML de los dos workflows validado.
   - npm run lint limpio; build 189,1 kB inicial / 244,2 kB total.
-  - El workflow en si NO se pudo ejecutar desde aqui (requiere lanzarlo en
-    GitHub); la primera ejecucion real es la que lo confirma.
+  - Simulacro ejecutado en GitHub Actions el 2026-11-18: VERDE. Restauracion
+    completa, 9/9 funciones, politicas RLS y conteos coincidentes con el
+    volcado. Las dependencias que hubo que anadir al preludio fueron:
+    esquema public, esquema extensions (gen_random_uuid), auth.jwt(),
+    auth.email() y los roles internos de Supabase (supabase_admin, etc.).
 
 ACCION MANUAL PENDIENTE
 ------------------------------------------------------------------------------
-  - Actions -> Simulacro de restauracion -> Run workflow. Debe salir verde y
-    mostrar los conteos tabla por tabla.
-  - Si falla, el paso rojo indica la tabla o funcion exacta; con eso se corrige.
+  - Hecho: el simulacro automatico ya se ejecuto en verde.
+  - Opcional: ensayo manual con la app contra la copia (seccion 5.2-5.5 del
+    documento de respaldo) para medir el tiempo real de recuperacion.
 
 
 ===============================================================================
@@ -578,11 +581,6 @@ ACCION MANUAL PENDIENTE
 
 PRIORIDAD ALTA (siguiente tarea recomendada)
 ------------------------------------------------------------------------------
-  [ ] Ejecutar el simulacro automático de restauración
-      - Workflow listo (tarea 7). Solo falta pulsar Run workflow y verlo verde.
-      - Despues, opcional: simulacro manual con la app contra la copia
-        (docs/RESPALDO_SERVIDOR.md seccion 5.2-5.5) y anotar el tiempo.
-
   [ ] Alerta visible si Realtime lleva mucho caido
       - Hoy solo se registra un warning en consola y el sondeo de 30 s sigue.
       - Opcional: mostrar el estado del canal en PanelSincronizacion.

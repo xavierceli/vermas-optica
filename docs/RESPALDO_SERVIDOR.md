@@ -1,8 +1,8 @@
 # Respaldo del servidor (Supabase)
 
-> **Estado:** la automatización, el verificador y el simulacro automático de
-> restauración ya están en el repositorio. Falta registrar el secreto
-> `DATABASE_URL` (hecho) y ejecutar el simulacro al menos una vez.
+> **Estado:** respaldo diario activo, verificado y **con restauración probada**
+> (simulacro automático en verde el 2026-11-18). Falta decidir el respaldo de los
+> comprobantes de pago y, si se quiere, el ensayo manual con la app.
 >
 > Un respaldo que nunca se restauró **no es un respaldo**: es la ilusión de
 > tenerlo. Por eso la última sección es un simulacro paso a paso.
@@ -290,7 +290,7 @@ uno por error desde la app?**
 - [x] Verificar el volcado antes de publicarlo (`scripts/verificar-respaldo.mjs`)
 - [ ] Lanzar la primera ejecución a mano y ver el `.sql` en la rama
 - [x] Simulacro automático de restauración (`simulacro-restauracion.yml`)
-- [ ] Ejecutar el simulacro una vez y ver el resumen en verde
+- [x] Simulacro automático ejecutado en verde (2026-11-18): restauración completa y conteos coincidentes
 - [ ] Hacer el simulacro manual con la app (sección 5.2–5.5) y anotar el tiempo
 - [ ] Decidir qué hacer con las fotos (`comprobantes_pagos` en especial)
 
