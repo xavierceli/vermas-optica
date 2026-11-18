@@ -189,6 +189,11 @@ Postgres pelado no tiene. Se crean antes de restaurar:
 docker exec -i vermas-restore psql -U postgres -d postgres <<'SQL'
 create schema if not exists auth;
 
+-- Supabase instala pgcrypto en `extensions` y el volcado usa
+-- extensions.gen_random_uuid() en los valores por defecto.
+create schema if not exists extensions;
+create extension if not exists pgcrypto with schema extensions;
+
 create table if not exists auth.users (
   id uuid primary key default gen_random_uuid(),
   email text unique,
@@ -204,13 +209,13 @@ create or replace function auth.role() returns text
 do $$
 begin
   if not exists (select 1 from pg_roles where rolname = 'anon') then
-    create role anon nologin noinherit;
+    execute 'create role anon nologin noinherit';
   end if;
   if not exists (select 1 from pg_roles where rolname = 'authenticated') then
-    create role authenticated nologin noinherit;
+    execute 'create role authenticated nologin noinherit';
   end if;
   if not exists (select 1 from pg_roles where rolname = 'service_role') then
-    create role service_role nologin noinherit bypassrls;
+    execute 'create role service_role nologin noinherit bypassrls';
   end if;
 end $$;
 SQL

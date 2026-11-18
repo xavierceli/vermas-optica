@@ -16,6 +16,11 @@
 
 create schema if not exists auth;
 
+-- Supabase instala pgcrypto en el esquema `extensions`, y las tablas del
+-- volcado usan `extensions.gen_random_uuid()` en sus valores por defecto.
+create schema if not exists extensions;
+create extension if not exists pgcrypto with schema extensions;
+
 create table if not exists auth.users (
   id uuid primary key default gen_random_uuid(),
   email text unique,
@@ -41,5 +46,3 @@ begin
     execute 'create role service_role nologin noinherit bypassrls';
   end if;
 end $$;
-
-create extension if not exists pgcrypto;
