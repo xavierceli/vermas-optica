@@ -186,43 +186,12 @@ El volcado fue hecho en Supabase, así que referencia roles y funciones que un
 Postgres pelado no tiene. Se crean antes de restaurar:
 
 ```bash
-docker exec -i vermas-restore psql -U postgres -d postgres <<'SQL'
-create schema if not exists auth;
+# El preludio vive en el repositorio: crea auth, extensions, los roles internos
+# de Supabase y las funciones auth.uid()/role()/jwt()/email().
+docker exec -i vermas-restore psql -U postgres -d postgres   -v ON_ERROR_STOP=1 < scripts/restauracion/preludio.sql
 
--- Supabase instala pgcrypto en `extensions` y el volcado usa
--- extensions.gen_random_uuid() en los valores por defecto.
-create schema if not exists extensions;
-create extension if not exists pgcrypto with schema extensions;
-
-create table if not exists auth.users (
-  id uuid primary key default gen_random_uuid(),
-  email text unique,
-  raw_user_meta_data jsonb default '{}'::jsonb,
-  created_at timestamptz default now()
-);
-
-create or replace function auth.uid() returns uuid
-  language sql stable as $$ select null::uuid $$;
-create or replace function auth.role() returns text
-  language sql stable as $$ select 'authenticated'::text $$;
-create or replace function auth.jwt() returns jsonb
-  language sql stable as $$ select '{}'::jsonb $$;
-create or replace function auth.email() returns text
-  language sql stable as $$ select null::text $$;
-
-do $$
-begin
-  if not exists (select 1 from pg_roles where rolname = 'anon') then
-    execute 'create role anon nologin noinherit';
-  end if;
-  if not exists (select 1 from pg_roles where rolname = 'authenticated') then
-    execute 'create role authenticated nologin noinherit';
-  end if;
-  if not exists (select 1 from pg_roles where rolname = 'service_role') then
-    execute 'create role service_role nologin noinherit bypassrls';
-  end if;
-end $$;
-SQL
+# Recrea en auth.users los ids que referencia public.perfiles.
+node scripts/preparar-restauracion.mjs respaldo-sin-schema.sql   | docker exec -i vermas-restore psql -U postgres -d postgres -v ON_ERROR_STOP=1
 ```
 
 Restaurar con `ON_ERROR_STOP=1` (si algo falla, se ve en el acto):

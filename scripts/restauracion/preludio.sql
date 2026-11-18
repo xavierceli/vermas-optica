@@ -40,15 +40,23 @@ create or replace function auth.jwt() returns jsonb
 create or replace function auth.email() returns text
   language sql stable as $$ select null::text $$;
 
+-- Roles internos de Supabase que aparecen en los GRANT del volcado.
+-- Solo hace falta que existan para que la restauracion no aborte.
 do $$
+declare
+  rol text;
 begin
-  if not exists (select 1 from pg_roles where rolname = 'anon') then
-    execute 'create role anon nologin noinherit';
-  end if;
-  if not exists (select 1 from pg_roles where rolname = 'authenticated') then
-    execute 'create role authenticated nologin noinherit';
-  end if;
-  if not exists (select 1 from pg_roles where rolname = 'service_role') then
-    execute 'create role service_role nologin noinherit bypassrls';
-  end if;
+  foreach rol in array array['anon', 'authenticated', 'service_role',
+                              'supabase_admin', 'dashboard_user',
+                              'supabase_auth_admin', 'supabase_storage_admin',
+                              'pgbouncer', 'authenticator']
+  loop
+    if not exists (select 1 from pg_roles where rolname = rol) then
+      if rol in ('service_role', 'supabase_admin') then
+        execute format('create role %I nologin noinherit bypassrls', rol);
+      else
+        execute format('create role %I nologin noinherit', rol);
+      end if;
+    end if;
+  end loop;
 end $$;
