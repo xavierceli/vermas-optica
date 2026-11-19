@@ -4,6 +4,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import RespaldoDatos from './RespaldoDatos.jsx';
 import AccesoSinConexion from './AccesoSinConexion.jsx';
+import CopiaMensualFotos from './CopiaMensualFotos.jsx';
 import { resumenTiempoReal } from './tiempoRealResumen.js';
 import { CATEGORIAS_CONFLICTO, resumirConflictos } from './conflictos.js';
 import { listarRevisionesConsulta } from './repositorio/revisiones.js';
@@ -498,8 +499,9 @@ export default function PanelSincronizacion({ abierta, cerrar, gestor, soloProbl
             </ul>
           )}
 
-          {/* Va dentro del area que se desplaza (y no fija abajo) para no robarle
-              alto a la lista de la cola en pantallas bajas. */}
+          {/* Van dentro del area que se desplaza (y no fijos abajo) para no
+              robarle alto a la lista de la cola en pantallas bajas. */}
+          {!soloProblemas && <CopiaMensualFotos />}
           {!soloProblemas && <AccesoSinConexion gestor={gestor} />}
         </div>
 

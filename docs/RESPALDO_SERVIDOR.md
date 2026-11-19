@@ -1,8 +1,9 @@
 # Respaldo del servidor (Supabase)
 
 > **Estado:** respaldo diario activo, verificado y **con restauración probada**
-> (simulacro automático en verde el 2026-11-18). Falta decidir el respaldo de los
-> comprobantes de pago y, si se quiere, el ensayo manual con la app.
+> (simulacro automático en verde el 2026-11-18). Los comprobantes se copian a
+> mano el día 1 de cada mes y el panel de la app recuerda la fecha. Falta, si se
+> quiere, el ensayo manual con la app.
 >
 > Un respaldo que nunca se restauró **no es un respaldo**: es la ilusión de
 > tenerlo. Por eso la última sección es un simulacro paso a paso.
@@ -18,7 +19,7 @@ Auditado el 4 de octubre de 2026. Actualizado con la automatización.
 | Respaldo del dispositivo (IndexedDB) | ✅ Funciona | Lo que el equipo tiene sin sincronizar |
 | Respaldo automático de Supabase | ✅ Activo (gratis) | Hasta ~7 días de historial |
 | **Respaldo diario propio del servidor** | 🟡 Automatización lista, secreto pendiente | El histórico largo |
-| **Fotos de comprobantes e inventario** | ❌ **No se respaldan** | Evidencia de pagos y del inventario |
+| **Fotos de comprobantes e inventario** | 🟡 Copia manual mensual con recordatorio en el panel | Evidencia de pagos y del inventario |
 
 El único rastro de un respaldo manual es
 `supabase/backups/202609240012_rls_solo_lectura.sql.bak` (copiado en septiembre).
@@ -271,6 +272,11 @@ Lo anterior protege **los datos**. No protege los archivos.
 Los dos son privados. **Decisión tomada:** copia manual una vez al mes. Es la
 opción con menos configuración y sin claves sensibles adicionales.
 
+> El panel de sincronización de la app tiene un bloque **🖼️ Copia mensual de
+> fotos y comprobantes** que muestra la fecha de la última copia confirmada en
+> ese equipo y avisa al pasar 31 días. El botón solo anota la fecha en el
+> dispositivo: la copia real sigue siendo manual, con los pasos de abajo.
+
 ### Cuándo
 
 El **día 1 de cada mes** (o el primer día hábil). Duración: 5–10 minutos.
@@ -329,7 +335,7 @@ Los comprobantes contienen datos de pacientes y montos.
 - [x] Simulacro automático de restauración (`simulacro-restauracion.yml`)
 - [x] Simulacro automático ejecutado en verde (2026-11-18): restauración completa y conteos coincidentes
 - [ ] Hacer el simulacro manual con la app (sección 5.2–5.5) y anotar el tiempo
-- [ ] Decidir qué hacer con las fotos (`comprobantes_pagos` en especial)
+- [x] Decidir qué hacer con las fotos: copia manual mensual con recordatorio en el panel de la app
 
 ---
 

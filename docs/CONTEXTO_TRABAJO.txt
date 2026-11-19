@@ -1,7 +1,7 @@
 ===============================================================================
 VER+ OPTICA - CONTEXTO DE TRABAJO
 Registro de lo realizado y de lo que queda pendiente
-Ultima actualizacion: tareas 1 a 10 completadas
+Ultima actualizacion: tareas 1 a 11 completadas
 ===============================================================================
 
 Como usar este archivo:
@@ -756,11 +756,63 @@ ACCION MANUAL PENDIENTE
 
 
 ===============================================================================
-11. CHECKLIST DE MIGRACIONES
+11. TAREA COMPLETADA: RECORDATORIO DE LA COPIA MENSUAL DE FOTOS
+===============================================================================
+
+PROBLEMA QUE RESOLVIA
+------------------------------------------------------------------------------
+  - El respaldo automatico copia las tablas, nunca los archivos de Storage.
+    Los comprobantes de pago solo existen en el bucket y no se pueden
+    reconstruir.
+  - La copia es manual el dia 1 de cada mes y el unico registro era una tabla
+    dentro de un documento. Si se olvidaba, nadie lo notaba hasta necesitar un
+    comprobante ya borrado.
+
+QUE SE HIZO
+------------------------------------------------------------------------------
+  1. src/copiaMensual.js (nuevo)
+     - estadoCopiaMensual(): compara la fecha de la ultima copia con hoy y
+       avisa si nunca se hizo o si pasaron 31 dias o mas.
+     - Cuenta dias de calendario: una copia a las 23:30 sigue siendo "de ayer".
+     - Un reloj adelantado no genera dias negativos.
+
+  2. src/repositorio/copiaMensual.js (nuevo)
+     - Guarda y lee la fecha confirmada en la meta de Dexie de este equipo.
+
+  3. src/CopiaMensualFotos.jsx (nuevo)
+     - Bloque dentro del panel de sincronizacion, junto al respaldo del
+       dispositivo: fecha de la ultima copia o aviso en ambar, explicacion de
+       que el boton solo anota la fecha (no copia archivos) y boton "Ya hice
+       la copia de este mes".
+
+  4. src/PanelSincronizacion.jsx
+     - El bloque aparece solo en el panel normal, no en "Resolver problemas"
+       (ahi lo que urge es la cola).
+
+Pruebas nuevas:
+  src/copiaMensual.test.js                 (7 casos)
+  src/PanelSincronizacion.test.jsx         (3 casos de interfaz)
+
+COMO SE VERIFICO
+------------------------------------------------------------------------------
+  - npm run lint limpio.
+  - 633 pruebas de logica + 48 de interfaz, 0 fallos.
+  - Build: 193,6 kB inicial / 248,6 kB total (limites 220/400).
+
+ACCION MANUAL PENDIENTE
+------------------------------------------------------------------------------
+  - Ninguna. La fecha se guarda solo en este equipo; no hay migracion.
+  - Para probar el aviso sin esperar un mes: DevTools -> Application ->
+    IndexedDB -> vermas-local -> meta, borrar la clave copiaMensualFotos y
+    reabrir el panel.
+
+
+===============================================================================
+12. CHECKLIST DE MIGRACIONES
 ===============================================================================
   [x] 202609240024_versionado_consultas.sql    -> aplicada (vista verificada)
   [x] 202609240025_realtime_publicacion.sql    -> aplicada (5 tablas publicadas)
-  [ ] 202609240026_revisiones_consulta.sql     -> PENDIENTE de aplicar
+  [x] 202609240026_revisiones_consulta.sql     -> aplicada (boton "Versiones")
 
   Las anteriores (001 a 023) ya estan aplicadas en produccion.
   Las tres nuevas son idempotentes: se pueden ejecutar dos veces sin efecto.
@@ -768,20 +820,24 @@ ACCION MANUAL PENDIENTE
 
 
 ===============================================================================
-12. QUE FALTA POR HACER
+13. QUE FALTA POR HACER
 ===============================================================================
 
 PRIORIDAD ALTA (siguiente tarea recomendada)
 ------------------------------------------------------------------------------
-  [ ] Aplicar la migracion 026 y probar el boton "Versiones" en un conflicto
-      real (o de prueba) de ficha clinica.
-  [ ] Ninguna otra tarea funcional pendiente.
+  [ ] Ninguna tarea funcional pendiente.
       - Recomendado, sin codigo nuevo: revisar el resumen de conflictos tras
         unas semanas de uso real. Si aparece un patron (p. ej. el mismo equipo
         chocando siempre), ahi si conviene investigar esa causa concreta.
+      - Probar el boton "Versiones" la proxima vez que haya un conflicto real
+        de ficha clinica.
 
 PRIORIDAD BAJA / NO RECOMENDADO AHORA
 ------------------------------------------------------------------------------
+  [ ] No automatizar la copia mensual de Storage.
+      - Requiere la clave service_role (la unica que puede listar y descargar
+        buckets privados); mientras esa clave no exista en GitHub, el riesgo de
+        filtracion vale mas que ahorrar 10 minutos al mes.
   [ ] No migrar la app a Rust.
       - Analisis completo en docs/PASO_A_RUST.txt.
       - Resumen: la logica critica ya vive en PostgreSQL; el 80 % del codigo es
@@ -794,11 +850,10 @@ PRIORIDAD BAJA / NO RECOMENDADO AHORA
 
 
 ===============================================================================
-13. ESTADO ACTUAL DEL PROYECTO (resumen)
+14. ESTADO ACTUAL DEL PROYECTO (resumen)
 ===============================================================================
   - App: PWA React 19 + Vite 8, offline-first con Dexie/IndexedDB.
-  - Backend: Supabase (25 migraciones; la 026 pendiente de aplicar), escritura
-    solo por RPC.
+  - Backend: Supabase (26 migraciones, todas aplicadas), escritura solo por RPC.
   - Sin internet: funciona todo (PIN local incluido).
   - Multi-equipo:
       * stock y pagos: ya era seguro en el servidor (FOR UPDATE, idempotencia,
@@ -817,9 +872,10 @@ PRIORIDAD BAJA / NO RECOMENDADO AHORA
   - Rendimiento: vistas por demanda, impresion fuera del arranque,
     presupuesto de bundle en CI (tarea 3).
   - Almacenamiento: limpieza diaria de adjuntos subidos y cache redundante,
-    aviso de cuota al 80 % y uso visible en el panel (tarea 4).
-  - Pruebas: 626 de logica + 45 de UI + 4 E2E de dos equipos.
-  - Bundle: 191,8 kB gzip inicial / 246,8 kB total.
+    aviso de cuota al 80 % y uso visible en el panel (tarea 4); recordatorio
+    mensual de la copia manual de fotos y comprobantes (tarea 11).
+  - Pruebas: 633 de logica + 48 de UI + 4 E2E de dos equipos.
+  - Bundle: 193,6 kB gzip inicial / 248,6 kB total.
   - Respaldo: diario, verificado y con simulacro automatico de restauracion
     (tareas 6 y 7).
   - Despliegue: Vercel + Supabase.

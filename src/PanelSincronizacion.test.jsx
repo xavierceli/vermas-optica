@@ -2,6 +2,10 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, within, fireEvent, waitFor } from '@testing-library/react';
 import PanelSincronizacion from './PanelSincronizacion.jsx';
 import { listarRevisionesConsulta } from './repositorio/revisiones.js';
+import {
+  leerUltimaCopiaMensual,
+  registrarCopiaMensual
+} from './repositorio/copiaMensual.js';
 
 // ---------------------------------------------------------------------------
 // El panel debe avisar cuando el tiempo real lleva caido de verdad, sin
@@ -10,6 +14,10 @@ import { listarRevisionesConsulta } from './repositorio/revisiones.js';
 vi.mock('./RespaldoDatos.jsx', () => ({ default: () => null }));
 vi.mock('./AccesoSinConexion.jsx', () => ({ default: () => null }));
 vi.mock('./repositorio/revisiones.js', () => ({ listarRevisionesConsulta: vi.fn() }));
+vi.mock('./repositorio/copiaMensual.js', () => ({
+  leerUltimaCopiaMensual: vi.fn(async () => null),
+  registrarCopiaMensual: vi.fn(async () => {})
+}));
 
 const gestorBase = {
   syncEstado: { online: true, phase: 'synced', pending: 0, lastSync: null },
@@ -196,5 +204,36 @@ describe('PanelSincronizacion y tiempo real', () => {
     expect(screen.getByText(/Esf -2\.00/)).toBeTruthy();
     expect(screen.getByText(/Control anual/)).toBeTruthy();
     expect(listarRevisionesConsulta).toHaveBeenCalledWith('consulta-1');
+  });
+
+  it('recuerda la copia mensual de fotos cuando nunca se registró', async () => {
+    leerUltimaCopiaMensual.mockResolvedValue(null);
+
+    render(<PanelSincronizacion abierta cerrar={() => {}} gestor={{ ...gestorBase }} />);
+
+    expect(await screen.findByText(/Nunca se registró la copia mensual de comprobantes/)).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Ya hice la copia/ })).toBeTruthy();
+  });
+
+  it('avisa cuando la última copia de fotos tiene más de un mes', async () => {
+    const hace45 = new Date(Date.now() - 45 * 24 * 60 * 60 * 1000).toISOString();
+    leerUltimaCopiaMensual.mockResolvedValue(hace45);
+
+    render(<PanelSincronizacion abierta cerrar={() => {}} gestor={{ ...gestorBase }} />);
+
+    expect(await screen.findByText(/está pendiente: la última fue hace 45 días/)).toBeTruthy();
+  });
+
+  it('anota la copia mensual al confirmarla y deja de avisar', async () => {
+    leerUltimaCopiaMensual.mockResolvedValue(null);
+    registrarCopiaMensual.mockClear();
+
+    render(<PanelSincronizacion abierta cerrar={() => {}} gestor={{ ...gestorBase }} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: /Ya hice la copia/ }));
+
+    await waitFor(() => expect(registrarCopiaMensual).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText(/Última copia de comprobantes/)).toBeTruthy();
+    expect(screen.queryByText(/Nunca se registró la copia mensual/)).toBeNull();
   });
 });
