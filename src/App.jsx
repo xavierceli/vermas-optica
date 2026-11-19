@@ -493,6 +493,7 @@ function App() {
               enviarWhatsApp={g.enviarWhatsApp} 
               cargarParaEditarClinico={g.cargarParaEditarClinico} 
               iniciarNuevaConsulta={g.iniciarNuevaConsulta} 
+              recuperarVersionClinica={g.recuperarVersionClinica}
               borrarHistoriaClinica={g.borrarHistoriaClinica} 
               archivarConsultaPuntual={g.archivarConsultaPuntual}
               abrirPedido={g.abrirPedido} 

@@ -8,7 +8,7 @@ import { listaSegunBusqueda } from './historial';
 
 export default function Historial({
   historialReciente,
-  enviarWhatsApp, cargarParaEditarClinico, iniciarNuevaConsulta, borrarHistoriaClinica, archivarConsultaPuntual, abrirPedido, crearNuevoPaciente,
+  enviarWhatsApp, cargarParaEditarClinico, iniciarNuevaConsulta, recuperarVersionClinica, borrarHistoriaClinica, archivarConsultaPuntual, abrirPedido, crearNuevoPaciente,
   confirmarAccion, esAdmin = false
 }) {
   const [busquedaTexto, setBusquedaTexto] = useState('');
@@ -222,6 +222,8 @@ export default function Historial({
         onToggleExpandir={toggleExpandir}
         onEliminarRegistro={eliminarRegistroDeExpediente}
         onNuevaConsulta={iniciarNuevaConsulta}
+        onRecuperarVersion={recuperarVersionClinica}
+        confirmarAccion={confirmarAccion}
         onCargarParaEditar={cargarParaEditarClinico}
         onAbrirPedido={abrirPedido}
         onVolver={() => { setExpedienteActivo(null); setRegistrosPaciente([]); }}

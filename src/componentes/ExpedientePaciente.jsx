@@ -29,6 +29,8 @@ export default function ExpedientePaciente({
   onEliminarRegistro,
   onNuevaConsulta,
   onCargarParaEditar,
+  onRecuperarVersion,
+  confirmarAccion,
   onAbrirPedido,
   onVolver
 }) {
@@ -106,6 +108,20 @@ export default function ExpedientePaciente({
         error: 'No se pudo cargar el historial de versiones. Inténtalo de nuevo.',
         lista: []
       });
+    }
+  };
+
+  // Recuperar una version abre una consulta nueva con esa medicion. Se pide
+  // confirmacion porque cambia de pantalla y conviene que el usuario sepa que
+  // no esta editando la consulta actual.
+  const recuperarVersion = revision => {
+    if (typeof onRecuperarVersion !== 'function') return;
+    const aviso = `Se abrirá una consulta NUEVA con los datos de la versión ${revision?.version}.`
+      + '\n\nLa consulta actual y su historial no se tocan, y la venta no se duplica.';
+    if (typeof confirmarAccion === 'function') {
+      confirmarAccion(aviso, async () => { onRecuperarVersion(expediente, revision); });
+    } else {
+      onRecuperarVersion(expediente, revision);
     }
   };
 
@@ -302,7 +318,7 @@ export default function ExpedientePaciente({
                                   <p className="text-xs text-gray-500">Todavía no hay versiones anteriores de esta ficha.</p>
                                 )}
 
-                                <ListaVersiones lista={versiones.lista} />
+                                <ListaVersiones lista={versiones.lista} onUsar={recuperarVersion} />
                               </section>
                             </td>
                           </tr>

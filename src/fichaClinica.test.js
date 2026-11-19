@@ -5,7 +5,8 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
   CAMPOS_DE_VENTA, CLAVES_ACEPTADAS, INV_INICIAL, PRECIO_INICIAL, TRATAMIENTOS,
-  aplicarCedula, buscarCoincidenciasPacientes, crearEstadoPaciente, datosParaCompletarPaciente, hoyISO
+  aplicarCedula, buscarCoincidenciasPacientes, crearEstadoPaciente, datosParaCompletarPaciente,
+  fichaDesdeVersion, hoyISO
 } from './fichaClinica.js';
 
 const SRC = join(dirname(fileURLToPath(import.meta.url)));
@@ -268,4 +269,80 @@ test('un campo con solo espacios cuenta como vacio', () => {
     actual: { nombre: '   ' }
   });
   assert.deepEqual(completar, { nombre: 'ANA LUCIA PEREZ' });
+});
+// --- Recuperar una version anterior como consulta nueva -------------------
+
+test('recuperar una version copia la refraccion y las notas del snapshot', () => {
+  const ficha = fichaDesdeVersion({
+    snapshot: {
+      esfera_od: '-1.25', cilindro_od: '-0.50', eje_od: '90',
+      esfera_oi: '-2.00', notas_clinicas: 'Control anual',
+      k1_d_od: '42.5', auto_esf_oi: '-2.25'
+    },
+    paciente: { cedula: '1712345678', nombre: 'ANA PEREZ', patient_id: 'pac-1' },
+    hoy: HOY
+  });
+
+  assert.equal(ficha.esfera_od, '-1.25');
+  assert.equal(ficha.cilindro_od, '-0.50');
+  assert.equal(ficha.esfera_oi, '-2.00');
+  assert.equal(ficha.k1_d_od, '42.5');
+  assert.equal(ficha.auto_esf_oi, '-2.25');
+  assert.equal(ficha.notas_clinicas, 'Control anual');
+  assert.equal(ficha.fecha, HOY);
+});
+
+test('recuperar una version abre una consulta nueva, no edita la existente', () => {
+  const ficha = fichaDesdeVersion({
+    snapshot: { id: 'consulta-vieja', paciente_id: 'pac-1', pedido_id: 'pedido-9' },
+    paciente: { cedula: '1712345678', nombre: 'ANA PEREZ', patient_id: 'pac-1' },
+    hoy: HOY
+  });
+
+  assert.equal(ficha.id, '');
+  assert.equal(ficha.pedido_id, '');
+  assert.equal(ficha.patient_id, 'pac-1');
+  assert.equal(ficha.paciente_id, 'pac-1');
+});
+
+test('recuperar una version NUNCA copia la venta: no se cobra dos veces', () => {
+  const ficha = fichaDesdeVersion({
+    snapshot: {
+      venta: '120.00', abono: '50.00', estado: 'Entregado', descuento: '10',
+      combo_id: 'combo-1', comprobante_url: 'https://x/1.jpg', accesorio_id: 'acc-1',
+      costo_armazon_int: '30', tipo_lente: 'Progresivo'
+    },
+    paciente: { cedula: '1712345678', nombre: 'ANA PEREZ' },
+    hoy: HOY
+  });
+
+  for (const campo of CAMPOS_DE_VENTA.filter(nombre => nombre !== 'notas_clinicas')) {
+    assert.ok(!ficha[campo], `no debe copiarse ${campo}`);
+  }
+  assert.equal(ficha.estado, 'Ninguno');
+  assert.equal(ficha.forma_pago, 'Efectivo');
+});
+
+test('la identidad sale del paciente actual, no del snapshot viejo', () => {
+  const ficha = fichaDesdeVersion({
+    snapshot: { nombre: 'NOMBRE VIEJO', cedula: '0000000000', telefono: '000' },
+    paciente: { cedula: '1712345678', nombre: 'ANA PEREZ', telefono: '0999999999' },
+    hoy: HOY
+  });
+
+  assert.equal(ficha.nombre, 'ANA PEREZ');
+  assert.equal(ficha.cedula, '1712345678');
+  assert.equal(ficha.telefono, '0999999999');
+});
+
+test('un snapshot con null no deja nulls en la ficha', () => {
+  const ficha = fichaDesdeVersion({
+    snapshot: { esfera_od: null, cilindro_oi: null, notas_clinicas: null },
+    paciente: { nombre: 'ANA' },
+    hoy: HOY
+  });
+
+  assert.equal(ficha.esfera_od, '');
+  assert.equal(ficha.cilindro_oi, '');
+  assert.equal(ficha.notas_clinicas, '');
 });

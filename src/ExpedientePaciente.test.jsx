@@ -27,6 +27,8 @@ const propsBase = {
   onEliminarRegistro: noop,
   onNuevaConsulta: noop,
   onCargarParaEditar: noop,
+  onRecuperarVersion: noop,
+  confirmarAccion: (mensaje, accion) => accion(),
   onAbrirPedido: noop,
   onVolver: noop
 };
@@ -85,5 +87,41 @@ describe('ExpedientePaciente y versiones anteriores', () => {
       'No se pudo cargar el historial de versiones. Inténtalo de nuevo.'
     );
     expect(screen.getByText('ANA PEREZ')).toBeTruthy();
+  });
+
+  it('recupera una versión solo después de confirmar y sin tocar la ficha actual', async () => {
+    const revision = {
+      version: 3,
+      motivo: 'edicion',
+      editado_en: '2026-03-01T10:00:00Z',
+      editado_por: 'ana@vermas',
+      snapshot: { esfera_od: '-1.25' }
+    };
+    listarRevisionesConsulta.mockResolvedValue([revision]);
+
+    const onRecuperarVersion = vi.fn();
+    const confirmarAccion = vi.fn();
+
+    render(
+      <ExpedientePaciente
+        {...propsBase}
+        registros={[consulta()]}
+        onRecuperarVersion={onRecuperarVersion}
+        confirmarAccion={confirmarAccion}
+      />
+    );
+
+    fireEvent.click(screen.getByTitle('Ver versiones anteriores de esta consulta'));
+    fireEvent.click(await screen.findByRole('button', { name: /Recuperar en consulta nueva/ }));
+
+    expect(confirmarAccion).toHaveBeenCalledTimes(1);
+    expect(onRecuperarVersion).not.toHaveBeenCalled();
+
+    const [mensaje, accion] = confirmarAccion.mock.calls[0];
+    expect(mensaje).toMatch(/consulta NUEVA/);
+    expect(mensaje).toMatch(/no se duplica/);
+
+    accion();
+    expect(onRecuperarVersion).toHaveBeenCalledWith(propsBase.expediente, revision);
   });
 });

@@ -53,7 +53,7 @@ export function useGestor() {
     paciente, setPaciente, editandoId, setEditandoId, guardando,
     manejarCambio, guardarPacienteClinico, borrarHistoriaClinica,
     archivarConsultaPuntual, cargarParaEditarClinico, iniciarNuevaConsulta,
-    crearNuevoPaciente, edadActual, claseInputRef, intentosGuardado
+    recuperarVersionClinica, crearNuevoPaciente, edadActual, claseInputRef, intentosGuardado
   } = useClinica({
     hoy, estadoInicial, historial, setHistorial, setVentasLocales, setVentasArchivadas,
     mostrarToast, obtenerDatos, setVistaActual
@@ -87,7 +87,7 @@ export function useGestor() {
     obtenerDetalleCola, obtenerResumenConflictos, reintentarOperacion, descartarOperacion, descartarTodoLoAtascado,
     historial, ventasArchivadas, ventasLocales, inventario, listaPrecios, paciente, setPaciente, estadoInicial, editandoId, setEditandoId,
     cedulasArchivadas, 
-    guardarPacienteClinico, manejarCambio, borrarHistoriaClinica, archivarConsultaPuntual, cargarParaEditarClinico, iniciarNuevaConsulta, crearNuevoPaciente, edadActual, claseInputRef, intentosGuardado,
+    guardarPacienteClinico, manejarCambio, borrarHistoriaClinica, archivarConsultaPuntual, cargarParaEditarClinico, iniciarNuevaConsulta, recuperarVersionClinica, crearNuevoPaciente, edadActual, claseInputRef, intentosGuardado,
     busqueda, setBusqueda, pedidosFiltrados, stats, enviarWhatsApp,
     nuevoPrecio, setNuevoPrecio, precioInicial, editandoPrecioId, setEditandoPrecioId,
     manejarCambioPrecio, guardarPrecio, guardarCombo, busquedaPrecio, setBusquedaPrecio, listaPreciosFiltrada, cargarParaEditarPrecio, eliminarPrecio,

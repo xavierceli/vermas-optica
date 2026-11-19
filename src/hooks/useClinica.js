@@ -8,7 +8,7 @@ import { eliminarPacienteDefinitivo } from '../eliminacionPaciente';
 import { limpiarHtml } from '../escape';
 import { validarFichaClinica } from '../validacion';
 import { aplicarAvisoQueratometria } from '../reglas';
-import { aplicarCedula, crearEstadoPaciente, hoyISO, CAMPOS_DE_VENTA, TRATAMIENTOS } from '../fichaClinica';
+import { aplicarCedula, crearEstadoPaciente, fichaDesdeVersion, hoyISO, CAMPOS_DE_VENTA, TRATAMIENTOS } from '../fichaClinica';
 
 // ---------------------------------------------------------------------------
 // FICHA CLINICA
@@ -236,8 +236,22 @@ export function useClinica({
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, [setVistaActual]);
 
-  const crearNuevoPaciente = useCallback((sugerenciaTexto = '') => {
-    const limpio = safeString(sugerenciaTexto).trim();
+  // Recuperar una version anterior abre una CONSULTA NUEVA con esa medicion.
+  // No se edita la ficha actual ni se copia la venta: recuperar datos clinicos
+  // no debe crear un cobro duplicado.
+  const recuperarVersionClinica = useCallback((item, version) => {
+    setPaciente(fichaDesdeVersion({
+      snapshot: version?.snapshot,
+      paciente: item,
+      hoy: hoyISO()
+    }));
+    setEditandoId(null);
+    setVistaActual('nueva_medicion');
+    mostrarToast('Datos de la versión cargados en una consulta nueva. Revísalos y guarda cuando estén listos.', 'success', 8000);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [setVistaActual, mostrarToast]);
+
+  const crearNuevoPaciente = useCallback((sugerenciaTexto = '') => {    const limpio = safeString(sugerenciaTexto).trim();
     const esNumero = /^\d+$/.test(limpio);
     const nuevaFicha = {
       ...crearEstadoPaciente(hoyISO()),
@@ -262,6 +276,6 @@ export function useClinica({
     paciente, setPaciente, editandoId, setEditandoId, guardando,
     manejarCambio, guardarPacienteClinico, borrarHistoriaClinica,
     archivarConsultaPuntual, cargarParaEditarClinico, iniciarNuevaConsulta,
-    crearNuevoPaciente, edadActual, claseInputRef, intentosGuardado
+    recuperarVersionClinica, crearNuevoPaciente, edadActual, claseInputRef, intentosGuardado
   };
 }

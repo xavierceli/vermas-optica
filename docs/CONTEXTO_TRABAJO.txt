@@ -1,7 +1,7 @@
 ===============================================================================
 VER+ OPTICA - CONTEXTO DE TRABAJO
 Registro de lo realizado y de lo que queda pendiente
-Ultima actualizacion: tareas 1 a 13 completadas
+Ultima actualizacion: tareas 1 a 14 completadas
 ===============================================================================
 
 Como usar este archivo:
@@ -893,7 +893,52 @@ ACCION MANUAL PENDIENTE
 
 
 ===============================================================================
-14. CHECKLIST DE MIGRACIONES
+14. TAREA COMPLETADA: RECUPERAR UNA VERSION ANTERIOR
+===============================================================================
+
+PROBLEMA QUE RESOLVIA
+------------------------------------------------------------------------------
+  - Con la tarea 12 las versiones ya se podian LEER, pero no recuperar: si una
+    ficha quedaba incompleta tras un conflicto, ver la version vieja no
+    bastaba; habia que copiar los valores a mano, campo por campo.
+  - Recuperar debia ser seguro: nunca editar la consulta actual ni duplicar la
+    venta (seria cobrar dos veces el mismo pedido).
+
+QUE SE HIZO
+------------------------------------------------------------------------------
+  1. src/fichaClinica.js
+     - fichaDesdeVersion(): ficha nueva con refraccion, queratometria,
+       autoref, lensometria y notas del snapshot.
+     - La identidad sale del paciente actual, no del snapshot viejo; la fecha
+       es la de hoy.
+     - No copia id ni pedido_id, y deja vacios todos los campos de venta.
+
+  2. src/hooks/useClinica.js
+     - recuperarVersionClinica(): carga esa ficha, abre "Clinica" en modo
+       consulta nueva (sin id) y avisa con un toast.
+
+  3. src/componentes/ListaVersiones.jsx y ExpedientePaciente.jsx
+     - Boton "Recuperar en consulta nueva" en cada version del expediente.
+     - Pide confirmacion y explica que la consulta actual no se toca.
+     - El panel de sincronizacion no muestra el boton: ahi solo se consulta.
+
+Pruebas nuevas:
+  src/fichaClinica.test.js                 (5 casos)
+  src/ExpedientePaciente.test.jsx          (1 caso de interfaz)
+
+COMO SE VERIFICO
+------------------------------------------------------------------------------
+  - npm run lint limpio.
+  - 638 pruebas de logica + 57 de interfaz, 0 fallos.
+  - Build: 194,6 kB inicial / 250,2 kB total (limites 220/400).
+
+ACCION MANUAL PENDIENTE
+------------------------------------------------------------------------------
+  - Ninguna. Usa la RPC de la migracion 026, ya aplicada.
+
+
+===============================================================================
+15. CHECKLIST DE MIGRACIONES
 ===============================================================================
   [x] 202609240024_versionado_consultas.sql    -> aplicada (vista verificada)
   [x] 202609240025_realtime_publicacion.sql    -> aplicada (5 tablas publicadas)
@@ -905,7 +950,7 @@ ACCION MANUAL PENDIENTE
 
 
 ===============================================================================
-15. QUE FALTA POR HACER
+16. QUE FALTA POR HACER
 ===============================================================================
 
 PRIORIDAD ALTA (siguiente tarea recomendada)
@@ -935,7 +980,7 @@ PRIORIDAD BAJA / NO RECOMENDADO AHORA
 
 
 ===============================================================================
-16. ESTADO ACTUAL DEL PROYECTO (resumen)
+17. ESTADO ACTUAL DEL PROYECTO (resumen)
 ===============================================================================
   - App: PWA React 19 + Vite 8, offline-first con Dexie/IndexedDB.
   - Backend: Supabase (26 migraciones, todas aplicadas), escritura solo por RPC.
@@ -953,14 +998,15 @@ PRIORIDAD BAJA / NO RECOMENDADO AHORA
       * conflictos clasificados por tipo (version clinica / stock), con equipo,
         usuario e historico de 90 dias en el panel (tarea 9);
       * versiones anteriores de una ficha consultables desde el panel y desde
-        el expediente del paciente, sin SQL (tareas 10 y 12).
+        el expediente, y recuperables como consulta nueva sin duplicar la
+        venta (tareas 10, 12 y 14).
   - Rendimiento: vistas por demanda, impresion fuera del arranque,
     presupuesto de bundle en CI (tarea 3).
   - Almacenamiento: limpieza diaria de adjuntos subidos y cache redundante,
     aviso de cuota al 80 % y uso visible en el panel (tarea 4); recordatorio
     mensual de la copia manual de fotos y comprobantes (tarea 11).
-  - Pruebas: 633 de logica + 56 de UI + 4 E2E de dos equipos.
-  - Bundle: 194,3 kB gzip inicial / 249,8 kB total.
+  - Pruebas: 638 de logica + 57 de UI + 4 E2E de dos equipos.
+  - Bundle: 194,6 kB gzip inicial / 250,2 kB total.
   - Soporte: el panel de problemas resume los ultimos errores del equipo y
     permite copiarlos con la version y el estado de la cola (tarea 13).
   - Respaldo: diario, verificado y con simulacro automatico de restauracion

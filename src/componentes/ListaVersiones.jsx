@@ -12,7 +12,7 @@ const fechaLegible = valor => {
   return Number.isFinite(fecha.getTime()) ? fecha.toLocaleString('es-EC') : 'fecha desconocida';
 };
 
-export default function ListaVersiones({ lista = [] }) {
+export default function ListaVersiones({ lista = [], onUsar = null }) {
   if (lista.length === 0) return null;
 
   return (
@@ -44,6 +44,16 @@ export default function ListaVersiones({ lista = [] }) {
             )}
             {revision.motivo && (
               <p className="text-[10px] text-gray-400 mt-1">Motivo: {revision.motivo}</p>
+            )}
+            {typeof onUsar === 'function' && (
+              <button
+                type="button"
+                onClick={() => onUsar(revision)}
+                className="mt-1.5 text-[11px] font-bold px-2 py-1 rounded bg-teal-50 text-teal-800 border border-teal-200 hover:bg-teal-100 transition-colors"
+                title="Abrir estos datos en una consulta nueva"
+              >
+                ↩ Recuperar en consulta nueva
+              </button>
             )}
           </li>
         );

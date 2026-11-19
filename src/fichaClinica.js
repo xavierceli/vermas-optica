@@ -114,6 +114,48 @@ export const TRATAMIENTOS = [
 
 const LONGITUD_CEDULA = 10;
 
+/**
+ * Campos que describen la medicion. Al recuperar una version anterior se copian
+ * solo estos: la identidad viene del paciente actual y la venta NUNCA se
+ * duplica (seria cobrar dos veces el mismo pedido).
+ */
+export const CAMPOS_CLINICOS = [
+  'avsl_od', 'avsc_od', 'esfera_od', 'cilindro_od', 'eje_od', 'adicion_od', 'dnp_od', 'altura_od', 'avcl_od', 'avcc_od',
+  'avsl_oi', 'avsc_oi', 'esfera_oi', 'cilindro_oi', 'eje_oi', 'adicion_oi', 'dnp_oi', 'altura_oi', 'avcl_oi', 'avcc_oi',
+  'k1_d_od', 'k2_d_od', 'k1_mm_od', 'k2_mm_od', 'eje_k1_od', 'eje_k2_od', 'astig_corneal_od', 'eje_astig_od', 'obs_k_od',
+  'k1_d_oi', 'k2_d_oi', 'k1_mm_oi', 'k2_mm_oi', 'eje_k1_oi', 'eje_k2_oi', 'astig_corneal_oi', 'eje_astig_oi', 'obs_k_oi',
+  'auto_esf_od', 'auto_cil_od', 'auto_eje_od', 'auto_esf_oi', 'auto_cil_oi', 'auto_eje_oi',
+  'auto_esf_od_2', 'auto_cil_od_2', 'auto_eje_od_2', 'auto_esf_oi_2', 'auto_cil_oi_2', 'auto_eje_oi_2',
+  'lenso_esf_od', 'lenso_cil_od', 'lenso_eje_od', 'lenso_add_od', 'lenso_avl_od', 'lenso_avc_od',
+  'lenso_esf_oi', 'lenso_cil_oi', 'lenso_eje_oi', 'lenso_add_oi', 'lenso_avl_oi', 'lenso_avc_oi',
+  'notas_clinicas'
+];
+
+/**
+ * Ficha nueva (sin id) con los datos clinicos de una version anterior. La
+ * fecha es la de hoy y los datos del paciente salen del expediente actual,
+ * no del snapshot: lo que se recupera es la medicion, no una identidad vieja.
+ */
+export const fichaDesdeVersion = ({ snapshot = {}, paciente = {}, hoy = hoyISO() } = {}) => {
+  const ficha = crearEstadoPaciente(hoy);
+
+  for (const campo of ['cedula', 'nombre', 'alias', 'telefono', 'correo', 'fecha_nacimiento', 'antecedentes']) {
+    ficha[campo] = aTexto(paciente?.[campo]);
+  }
+
+  const idPaciente = aTexto(paciente?.patient_id || paciente?.paciente_id || paciente?.id);
+  if (idPaciente) {
+    ficha.patient_id = idPaciente;
+    ficha.paciente_id = idPaciente;
+  }
+
+  for (const campo of CAMPOS_CLINICOS) {
+    ficha[campo] = aTexto(snapshot?.[campo]);
+  }
+
+  return ficha;
+};
+
 export const CLAVES_ACEPTADAS = ['paciente', 'value', 'historial', 'hoy'];
 
 /**
