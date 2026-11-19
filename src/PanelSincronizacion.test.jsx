@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, within, fireEvent, waitFor } from '@testing-library/react';
 import PanelSincronizacion from './PanelSincronizacion.jsx';
 
 // ---------------------------------------------------------------------------
@@ -102,5 +102,59 @@ describe('PanelSincronizacion y tiempo real', () => {
 
     expect(screen.getByText(/Chrome en Windows/)).toBeTruthy();
     expect(screen.getByText(/ana@vermas/)).toBeTruthy();
+  });
+
+  it('pide confirmación antes de descartar y conserva la operación si se cancela', async () => {
+    const descartarOperacion = vi.fn(async () => {});
+    const confirmar = vi.fn(async () => false);
+
+    render(
+      <PanelSincronizacion
+        abierta
+        cerrar={() => {}}
+        gestor={{
+          ...gestorBase,
+          confirmar,
+          descartarOperacion,
+          obtenerDetalleCola: vi.fn(async () => [
+            { id: 'op-1', tipo: 'GUARDAR_CONSULTA', estado: 'conflict', intentos: 1, motivo: 'modificada en otro dispositivo', creada: '2026-03-01T10:00:00Z' }
+          ])
+        }}
+      />
+    );
+
+    fireEvent.click(await screen.findByTitle('Quitar de la cola de subida'));
+
+    await waitFor(() => expect(confirmar).toHaveBeenCalledTimes(1));
+    const [mensaje, etiqueta] = confirmar.mock.calls[0];
+    expect(mensaje).toMatch(/Consulta clínica/);
+    expect(mensaje).toMatch(/no llegará al servidor/);
+    expect(mensaje).toMatch(/otro equipo/);
+    expect(etiqueta).toBe('Sí, quitar');
+    expect(descartarOperacion).not.toHaveBeenCalled();
+  });
+
+  it('descarta la operación solo después de confirmar', async () => {
+    const descartarOperacion = vi.fn(async () => []);
+    const confirmar = vi.fn(async () => true);
+
+    render(
+      <PanelSincronizacion
+        abierta
+        cerrar={() => {}}
+        gestor={{
+          ...gestorBase,
+          confirmar,
+          descartarOperacion,
+          obtenerDetalleCola: vi.fn(async () => [
+            { id: 'op-2', tipo: 'CREAR_VENTA', estado: 'conflict', intentos: 1, motivo: 'Stock insuficiente', creada: '2026-03-01T10:05:00Z' }
+          ])
+        }}
+      />
+    );
+
+    fireEvent.click(await screen.findByTitle('Quitar de la cola de subida'));
+
+    await waitFor(() => expect(descartarOperacion).toHaveBeenCalledWith('op-2'));
   });
 });

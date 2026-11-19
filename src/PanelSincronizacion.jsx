@@ -98,6 +98,18 @@ export default function PanelSincronizacion({ abierta, cerrar, gestor, soloProbl
   };
 
   const descartar = async op => {
+    // Quitar una operacion de la cola es irreversible: ese cambio ya no se
+    // enviara al servidor. En un conflicto se avisa ademas de que la version
+    // del otro equipo no se toca.
+    if (typeof gestor?.confirmar === 'function') {
+      const tipo = TIPOS[op.tipo] || op.tipo;
+      const aviso = op.estado === 'conflict'
+        ? `¿Quitar «${tipo}» de la cola?\n\nNada se borra de este dispositivo, pero este cambio no llegará al servidor. El trabajo guardado por el otro equipo no se toca.`
+        : `¿Quitar «${tipo}» de la cola?\n\nNada se borra de este dispositivo, pero este cambio no llegará al servidor.`;
+      const ok = await gestor.confirmar(aviso, 'Sí, quitar');
+      if (!ok) return;
+    }
+
     setTrabajando(true);
     setErrorPanel('');
     try {
