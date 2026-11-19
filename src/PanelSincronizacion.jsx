@@ -5,6 +5,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import RespaldoDatos from './RespaldoDatos.jsx';
 import AccesoSinConexion from './AccesoSinConexion.jsx';
 import CopiaMensualFotos from './CopiaMensualFotos.jsx';
+import DiagnosticoPanel from './DiagnosticoPanel.jsx';
 import { resumenTiempoReal } from './tiempoRealResumen.js';
 import { CATEGORIAS_CONFLICTO, resumirConflictos } from './conflictos.js';
 import ListaVersiones from './componentes/ListaVersiones.jsx';
@@ -464,6 +465,12 @@ export default function PanelSincronizacion({ abierta, cerrar, gestor, soloProbl
               robarle alto a la lista de la cola en pantallas bajas. */}
           {!soloProblemas && <CopiaMensualFotos />}
           {!soloProblemas && <AccesoSinConexion gestor={gestor} />}
+          {soloProblemas && (
+            <DiagnosticoPanel
+              pendientes={ops.length}
+              online={estadoSync.online !== false}
+            />
+          )}
         </div>
 
         {/* Solo mostramos la sección de respaldo si NO se abrió en modo de resolver problemas */}

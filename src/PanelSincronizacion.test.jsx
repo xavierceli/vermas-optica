@@ -18,6 +18,7 @@ vi.mock('./repositorio/copiaMensual.js', () => ({
   leerUltimaCopiaMensual: vi.fn(async () => null),
   registrarCopiaMensual: vi.fn(async () => {})
 }));
+vi.mock('./repositorio/diagnostico.js', () => ({ leerErroresLocales: vi.fn(async () => []) }));
 
 const gestorBase = {
   syncEstado: { online: true, phase: 'synced', pending: 0, lastSync: null },
@@ -235,5 +236,19 @@ describe('PanelSincronizacion y tiempo real', () => {
     await waitFor(() => expect(registrarCopiaMensual).toHaveBeenCalledTimes(1));
     expect(await screen.findByText(/Última copia de comprobantes/)).toBeTruthy();
     expect(screen.queryByText(/Nunca se registró la copia mensual/)).toBeNull();
+  });
+
+  it('en modo resolver problemas ofrece el diagnóstico y no el recordatorio de fotos', async () => {
+    render(
+      <PanelSincronizacion
+        abierta
+        cerrar={() => {}}
+        soloProblemas
+        gestor={{ ...gestorBase }}
+      />
+    );
+
+    expect(await screen.findByText(/Diagnóstico para pedir ayuda/)).toBeTruthy();
+    expect(screen.queryByText(/Copia mensual de fotos y comprobantes/)).toBeNull();
   });
 });

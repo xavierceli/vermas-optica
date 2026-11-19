@@ -1,7 +1,7 @@
 ===============================================================================
 VER+ OPTICA - CONTEXTO DE TRABAJO
 Registro de lo realizado y de lo que queda pendiente
-Ultima actualizacion: tareas 1 a 12 completadas
+Ultima actualizacion: tareas 1 a 13 completadas
 ===============================================================================
 
 Como usar este archivo:
@@ -851,7 +851,49 @@ ACCION MANUAL PENDIENTE
 
 
 ===============================================================================
-13. CHECKLIST DE MIGRACIONES
+13. TAREA COMPLETADA: DIAGNOSTICO VISIBLE EN EL PANEL
+===============================================================================
+
+PROBLEMA QUE RESOLVIA
+------------------------------------------------------------------------------
+  - La app ya guardaba los ultimos 20 errores en este equipo (ErrorBoundary y
+    captura global), pero solo se veian cuando una pantalla reventaba.
+  - Un fallo repetido que no rompe la pantalla quedaba invisible: al pedir
+    ayuda, el unico recurso era describirlo de memoria.
+
+QUE SE HIZO
+------------------------------------------------------------------------------
+  1. src/DiagnosticoPanel.jsx (nuevo)
+     - Bloque en el panel de "Resolver problemas" con los errores guardados
+       (fecha, seccion, mensaje y repeticiones; se muestran los 5 primeros).
+     - Boton "Copiar diagnostico": arma un texto con la version desplegada,
+       la conexion, las operaciones en cola y los errores. Si el navegador
+       niega el portapapeles, lo muestra para copiarlo a mano.
+     - Nunca envia nada solo: el usuario revisa y pega el texto.
+
+  2. src/repositorio/diagnostico.js (nuevo)
+     - Lectura de la meta de Dexie, aislada para poder probar la interfaz.
+
+  3. src/PanelSincronizacion.jsx
+     - El bloque aparece solo en "Resolver problemas", junto a la cola.
+
+Pruebas nuevas:
+  src/DiagnosticoPanel.test.jsx            (4 casos de interfaz)
+  src/PanelSincronizacion.test.jsx         (1 caso de integracion)
+
+COMO SE VERIFICO
+------------------------------------------------------------------------------
+  - npm run lint limpio.
+  - 633 pruebas de logica + 56 de interfaz, 0 fallos.
+  - Build: 194,3 kB inicial / 249,8 kB total (limites 220/400).
+
+ACCION MANUAL PENDIENTE
+------------------------------------------------------------------------------
+  - Ninguna. Todo ocurre en el dispositivo; no hay migracion ni envio de datos.
+
+
+===============================================================================
+14. CHECKLIST DE MIGRACIONES
 ===============================================================================
   [x] 202609240024_versionado_consultas.sql    -> aplicada (vista verificada)
   [x] 202609240025_realtime_publicacion.sql    -> aplicada (5 tablas publicadas)
@@ -863,7 +905,7 @@ ACCION MANUAL PENDIENTE
 
 
 ===============================================================================
-14. QUE FALTA POR HACER
+15. QUE FALTA POR HACER
 ===============================================================================
 
 PRIORIDAD ALTA (siguiente tarea recomendada)
@@ -893,7 +935,7 @@ PRIORIDAD BAJA / NO RECOMENDADO AHORA
 
 
 ===============================================================================
-15. ESTADO ACTUAL DEL PROYECTO (resumen)
+16. ESTADO ACTUAL DEL PROYECTO (resumen)
 ===============================================================================
   - App: PWA React 19 + Vite 8, offline-first con Dexie/IndexedDB.
   - Backend: Supabase (26 migraciones, todas aplicadas), escritura solo por RPC.
@@ -917,8 +959,10 @@ PRIORIDAD BAJA / NO RECOMENDADO AHORA
   - Almacenamiento: limpieza diaria de adjuntos subidos y cache redundante,
     aviso de cuota al 80 % y uso visible en el panel (tarea 4); recordatorio
     mensual de la copia manual de fotos y comprobantes (tarea 11).
-  - Pruebas: 633 de logica + 51 de UI + 4 E2E de dos equipos.
-  - Bundle: 193,8 kB gzip inicial / 249,3 kB total.
+  - Pruebas: 633 de logica + 56 de UI + 4 E2E de dos equipos.
+  - Bundle: 194,3 kB gzip inicial / 249,8 kB total.
+  - Soporte: el panel de problemas resume los ultimos errores del equipo y
+    permite copiarlos con la version y el estado de la cola (tarea 13).
   - Respaldo: diario, verificado y con simulacro automatico de restauracion
     (tareas 6 y 7).
   - Despliegue: Vercel + Supabase.
