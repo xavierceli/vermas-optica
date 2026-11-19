@@ -17,6 +17,7 @@ const leer = nombre => readFileSync(join(MIGRACIONES, nombre), 'utf8');
 const m020 = leer('202609240020_normaliza_estado_stock.sql');
 const m024 = leer('202609240024_versionado_consultas.sql');
 const m025 = leer('202609240025_realtime_publicacion.sql');
+const m026 = leer('202609240026_revisiones_consulta.sql');
 
 // --- C-03: la devolucion de stock distinguia mayusculas -----------------------
 
@@ -156,4 +157,29 @@ test('025: no aborta si el entorno no tiene la publicacion de Supabase', () => {
   assert.match(m025, /no existe la publicacion supabase_realtime/i);
   assert.match(m025, /\breturn;/i,
     'en otro entorno debe salir sin romper la migracion');
+});
+
+// --- 026: historial de revisiones visible desde la app ----------------------
+
+test('026: la funcion es de solo lectura, acotada y para authenticated', () => {
+  assert.match(m026, /create or replace function public\.revisiones_consulta/);
+  assert.match(m026, /language sql\s+stable\s+security definer/i);
+  assert.match(m026, /set search_path = pg_catalog, public, pg_temp/i);
+  assert.match(m026, /revoke all on function public\.revisiones_consulta\(uuid, integer\) from public, anon;/);
+  assert.match(m026, /grant execute on function public\.revisiones_consulta\(uuid, integer\) to authenticated;/,
+    'solo un usuario con sesion puede leer el historial');
+});
+
+test('026: devuelve las versiones con limite y sin abrir la tabla', () => {
+  assert.match(m026, /from public\.consultas_clinicas_revisiones r/);
+  assert.match(m026, /order by r\.version desc/);
+  assert.match(m026, /limit greatest\(1, least\(coalesce\(p_limite, 20\), 50\)\)/,
+    'la funcion nunca debe devolver la tabla entera');
+  assert.match(m026, /left join auth\.users/, 'quien guardo la version debe poder identificarse');
+});
+
+test('026: no modifica datos ni permisos de la tabla', () => {
+  assert.doesNotMatch(m026, /\b(insert|update|delete|drop|truncate)\s+(into|from|table|public\.)/i,
+    'exponer el historial no puede abrir escritura ni borrado');
+  assert.doesNotMatch(m026, /alter table|create policy|drop policy/i);
 });

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, within, fireEvent, waitFor } from '@testing-library/react';
 import PanelSincronizacion from './PanelSincronizacion.jsx';
+import { listarRevisionesConsulta } from './repositorio/revisiones.js';
 
 // ---------------------------------------------------------------------------
 // El panel debe avisar cuando el tiempo real lleva caido de verdad, sin
@@ -8,6 +9,7 @@ import PanelSincronizacion from './PanelSincronizacion.jsx';
 // ---------------------------------------------------------------------------
 vi.mock('./RespaldoDatos.jsx', () => ({ default: () => null }));
 vi.mock('./AccesoSinConexion.jsx', () => ({ default: () => null }));
+vi.mock('./repositorio/revisiones.js', () => ({ listarRevisionesConsulta: vi.fn() }));
 
 const gestorBase = {
   syncEstado: { online: true, phase: 'synced', pending: 0, lastSync: null },
@@ -156,5 +158,43 @@ describe('PanelSincronizacion y tiempo real', () => {
     fireEvent.click(await screen.findByTitle('Quitar de la cola de subida'));
 
     await waitFor(() => expect(descartarOperacion).toHaveBeenCalledWith('op-2'));
+  });
+
+  it('muestra las versiones anteriores de una consulta en conflicto', async () => {
+    listarRevisionesConsulta.mockResolvedValue([
+      {
+        version: 2,
+        motivo: 'edicion',
+        editado_en: '2026-03-01T10:00:00Z',
+        editado_por: 'ana@vermas',
+        snapshot: {
+          fecha: '2026-03-01',
+          avsl_od: '20/20', esfera_od: '-1.00', cilindro_od: '-0.50', eje_od: '90',
+          esfera_oi: '-2.00',
+          notas_clinicas: 'Control anual'
+        }
+      }
+    ]);
+
+    render(
+      <PanelSincronizacion
+        abierta
+        cerrar={() => {}}
+        gestor={{
+          ...gestorBase,
+          obtenerDetalleCola: vi.fn(async () => [
+            { id: 'op-3', tipo: 'GUARDAR_CONSULTA', entidad: 'consulta-1', estado: 'conflict', intentos: 1, motivo: 'modificada en otro dispositivo', creada: '2026-03-01T10:00:00Z' }
+          ])
+        }}
+      />
+    );
+
+    fireEvent.click(await screen.findByTitle('Ver versiones anteriores guardadas en el servidor'));
+
+    expect(await screen.findByText(/Versión 2/)).toBeTruthy();
+    expect(screen.getByText(/Esf -1\.00/)).toBeTruthy();
+    expect(screen.getByText(/Esf -2\.00/)).toBeTruthy();
+    expect(screen.getByText(/Control anual/)).toBeTruthy();
+    expect(listarRevisionesConsulta).toHaveBeenCalledWith('consulta-1');
   });
 });

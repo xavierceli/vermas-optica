@@ -6,6 +6,8 @@ import RespaldoDatos from './RespaldoDatos.jsx';
 import AccesoSinConexion from './AccesoSinConexion.jsx';
 import { resumenTiempoReal } from './tiempoRealResumen.js';
 import { CATEGORIAS_CONFLICTO, resumirConflictos } from './conflictos.js';
+import { listarRevisionesConsulta } from './repositorio/revisiones.js';
+import { resumenDeVersion } from './revisionesResumen.js';
 
 const CATEGORIAS_PANEL = ['version_clinica', 'stock', 'version_venta', 'otro'];
 
@@ -17,6 +19,13 @@ const TIPOS = {
   UPSERT_PRECIO: 'Tarifa', ELIMINAR_PRECIO: 'Baja de tarifa',
   ARCHIVAR_CONSULTA: 'Archivo de consulta', SUBIR_ADJUNTO: 'Comprobante o foto'
 };
+
+const fechaLegible = valor => {
+  const fecha = new Date(valor);
+  return Number.isFinite(fecha.getTime()) ? fecha.toLocaleString('es-EC') : 'fecha desconocida';
+};
+
+const SIN_VERSIONES = { id: null, cargando: false, error: '', lista: [] };
 
 const ESTADOS = {
   pending: { txt: 'En espera / Cola', cls: 'bg-blue-100 text-blue-800', borde: 'border-l-blue-400' },
@@ -31,6 +40,7 @@ export default function PanelSincronizacion({ abierta, cerrar, gestor, soloProbl
   const [trabajando, setTrabajando] = useState(false);
   const [errorPanel, setErrorPanel] = useState('');
   const [resumenConflictos, setResumenConflictos] = useState(null);
+  const [versiones, setVersiones] = useState(SIN_VERSIONES);
   const ref = useRef(null);
 
   const cargar = useCallback(async () => {
@@ -83,6 +93,29 @@ export default function PanelSincronizacion({ abierta, cerrar, gestor, soloProbl
     ? resumenConflictos
     : { ...resumirConflictos(conflictosEnCola), equipo: null, activos: conflictosEnCola.length };
   const totalConflictos = resumenVisible.total || 0;
+
+  const verVersiones = async op => {
+    // Si ya esta abierta y se pulsa otra vez, se cierra. Tras un error se
+    // vuelve a intentar en vez de cerrar, porque eso es lo que espera el usuario.
+    if (versiones.id === op.id && !versiones.cargando && !versiones.error) {
+      setVersiones(SIN_VERSIONES);
+      return;
+    }
+
+    setVersiones({ id: op.id, cargando: true, error: '', lista: [] });
+    try {
+      const lista = await listarRevisionesConsulta(op.entidad);
+      setVersiones({ id: op.id, cargando: false, error: '', lista });
+    } catch (error) {
+      console.warn('[panel] no se pudo leer el historial de versiones:', error?.message || error);
+      setVersiones({
+        id: op.id,
+        cargando: false,
+        error: 'No se pudo cargar el historial de versiones. Inténtalo de nuevo.',
+        lista: []
+      });
+    }
+  };
 
   const reintentar = async op => {
     setTrabajando(true);
@@ -366,8 +399,19 @@ export default function PanelSincronizacion({ abierta, cerrar, gestor, soloProbl
                         </p>
                       </div>
 
-                      {/* Las 2 opciones individuales claras para cada registro */}
+                      {/* Las opciones individuales claras para cada registro */}
                       <div className="flex gap-2 shrink-0 items-center">
+                        {op.tipo === 'GUARDAR_CONSULTA' && op.entidad && (
+                          <button
+                            type="button"
+                            disabled={trabajando}
+                            onClick={() => verVersiones(op)}
+                            className="text-xs font-bold px-3 py-1.5 rounded-lg bg-amber-100 text-amber-900 hover:bg-amber-200 disabled:opacity-50 transition-colors"
+                            title="Ver versiones anteriores guardadas en el servidor"
+                          >
+                            🕘 Versiones
+                          </button>
+                        )}
                         <button 
                           type="button" 
                           disabled={trabajando} 
@@ -388,6 +432,66 @@ export default function PanelSincronizacion({ abierta, cerrar, gestor, soloProbl
                         </button>
                       </div>
                     </div>
+
+                    {versiones.id === op.id && (
+                      <section
+                        className="mt-3 border-t border-gray-200 pt-3"
+                        aria-label="Versiones anteriores de la consulta"
+                      >
+                        <h4 className="text-xs font-black text-gray-700 uppercase tracking-wide">
+                          Versiones anteriores
+                        </h4>
+                        <p className="text-[11px] text-gray-500 mb-2">
+                          Cada guardado previo queda conservado en el servidor. La versión más reciente aparece primero.
+                        </p>
+
+                        {versiones.cargando && (
+                          <p className="text-xs text-gray-500">Cargando versiones…</p>
+                        )}
+                        {versiones.error && (
+                          <p role="alert" className="text-xs text-red-700">{versiones.error}</p>
+                        )}
+                        {!versiones.cargando && !versiones.error && versiones.lista.length === 0 && (
+                          <p className="text-xs text-gray-500">Todavía no hay versiones anteriores de esta ficha.</p>
+                        )}
+
+                        {versiones.lista.length > 0 && (
+                          <ul className="space-y-2">
+                            {versiones.lista.map(revision => {
+                              const resumen = resumenDeVersion(revision.snapshot);
+                              return (
+                                <li
+                                  key={`${revision.version}-${revision.editado_en}`}
+                                  className="rounded-lg bg-white border border-gray-200 p-2.5"
+                                >
+                                  <p className="text-xs font-bold text-gray-800">
+                                    Versión {revision.version}
+                                    <span className="font-medium text-gray-500"> · {fechaLegible(revision.editado_en)}</span>
+                                    {revision.editado_por && (
+                                      <span className="font-medium text-gray-500"> · {revision.editado_por}</span>
+                                    )}
+                                  </p>
+                                  <p className="text-xs text-gray-700 mt-1">
+                                    <span className="font-bold">OD: </span>{resumen.od}
+                                  </p>
+                                  <p className="text-xs text-gray-700">
+                                    <span className="font-bold">OI: </span>{resumen.oi}
+                                  </p>
+                                  {resumen.notas && (
+                                    <p className="text-xs text-gray-600 mt-1">
+                                      <span className="font-bold">Notas: </span>{resumen.notas}
+                                    </p>
+                                  )}
+                                  {revision.motivo && (
+                                    <p className="text-[10px] text-gray-400 mt-1">Motivo: {revision.motivo}</p>
+                                  )}
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        )}
+                      </section>
+                    )}
                   </li>
                 );
               })}

@@ -1,7 +1,7 @@
 ===============================================================================
 VER+ OPTICA - CONTEXTO DE TRABAJO
 Registro de lo realizado y de lo que queda pendiente
-Ultima actualizacion: tareas 1 a 9 completadas
+Ultima actualizacion: tareas 1 a 10 completadas
 ===============================================================================
 
 Como usar este archivo:
@@ -705,23 +705,77 @@ ACCION MANUAL PENDIENTE
 
 
 ===============================================================================
-10. CHECKLIST DE MIGRACIONES
+10. TAREA COMPLETADA: HISTORIAL DE REVISIONES VISIBLE EN LA APP
+===============================================================================
+
+PROBLEMA QUE RESOLVIA
+------------------------------------------------------------------------------
+  - La migracion 024 guarda una copia de la ficha antes de cada edicion, pero
+    solo se podia leer con SQL en el panel de Supabase.
+  - El mensaje de conflicto decia "la version anterior queda en el historial de
+    revisiones": cierto en la base, inutil para el usuario, que no tenia donde
+    consultarlo.
+
+QUE SE HIZO
+------------------------------------------------------------------------------
+  1. supabase/migrations/202609240026_revisiones_consulta.sql (nueva)
+     - Funcion revisiones_consulta(uuid, integer): devuelve version, motivo,
+       fecha, correo de quien guardo y el snapshot, de la mas reciente a la mas
+       antigua, con limite 20 (maximo 50).
+     - SECURITY DEFINER con search_path fijo; sin permiso para public ni anon,
+       solo authenticated. No abre la tabla ni amplia la RLS.
+
+  2. src/repositorio/revisiones.js (nuevo)
+     - listarRevisionesConsulta(): llama a la RPC y devuelve la lista.
+
+  3. src/revisionesResumen.js (nuevo)
+     - resumenDeVersion(): extrae fecha, refraccion OD/OI y notas del snapshot.
+       Logica pura, probada con node --test.
+
+  4. src/PanelSincronizacion.jsx
+     - En un conflicto de GUARDAR_CONSULTA aparece el boton "Versiones".
+     - Al pulsarlo se cargan las versiones anteriores con fecha, usuario, OD/OI
+       y notas; si falla, avisa sin romper el panel.
+
+Pruebas nuevas:
+  src/revisionesResumen.test.js       (4 casos)
+  src/auditoriaSql.test.js            (3 bloques de la 026)
+  src/PanelSincronizacion.test.jsx    (1 caso de interfaz)
+
+COMO SE VERIFICO
+------------------------------------------------------------------------------
+  - npm run lint limpio.
+  - 626 pruebas de logica + 45 de interfaz, 0 fallos.
+
+ACCION MANUAL PENDIENTE
+------------------------------------------------------------------------------
+  Aplicar en Supabase (SQL Editor -> New query -> Run):
+    supabase/migrations/202609240026_revisiones_consulta.sql
+  Sin esa migracion el boton "Versiones" muestra un aviso de error; el resto de
+  la app sigue funcionando igual.
+
+
+===============================================================================
+11. CHECKLIST DE MIGRACIONES
 ===============================================================================
   [x] 202609240024_versionado_consultas.sql    -> aplicada (vista verificada)
   [x] 202609240025_realtime_publicacion.sql    -> aplicada (5 tablas publicadas)
+  [ ] 202609240026_revisiones_consulta.sql     -> PENDIENTE de aplicar
 
   Las anteriores (001 a 023) ya estan aplicadas en produccion.
-  Ambas nuevas son idempotentes: se pueden ejecutar dos veces sin efecto.
+  Las tres nuevas son idempotentes: se pueden ejecutar dos veces sin efecto.
   Si algun dia se recrea el proyecto de Supabase, aplicar en ese orden.
 
 
 ===============================================================================
-11. QUE FALTA POR HACER
+12. QUE FALTA POR HACER
 ===============================================================================
 
 PRIORIDAD ALTA (siguiente tarea recomendada)
 ------------------------------------------------------------------------------
-  [ ] Ninguna tarea funcional pendiente de la lista original.
+  [ ] Aplicar la migracion 026 y probar el boton "Versiones" en un conflicto
+      real (o de prueba) de ficha clinica.
+  [ ] Ninguna otra tarea funcional pendiente.
       - Recomendado, sin codigo nuevo: revisar el resumen de conflictos tras
         unas semanas de uso real. Si aparece un patron (p. ej. el mismo equipo
         chocando siempre), ahi si conviene investigar esa causa concreta.
@@ -740,10 +794,11 @@ PRIORIDAD BAJA / NO RECOMENDADO AHORA
 
 
 ===============================================================================
-12. ESTADO ACTUAL DEL PROYECTO (resumen)
+13. ESTADO ACTUAL DEL PROYECTO (resumen)
 ===============================================================================
   - App: PWA React 19 + Vite 8, offline-first con Dexie/IndexedDB.
-  - Backend: Supabase (23 + 2 migraciones), escritura solo por RPC.
+  - Backend: Supabase (25 migraciones; la 026 pendiente de aplicar), escritura
+    solo por RPC.
   - Sin internet: funciona todo (PIN local incluido).
   - Multi-equipo:
       * stock y pagos: ya era seguro en el servidor (FOR UPDATE, idempotencia,
@@ -756,12 +811,14 @@ PRIORIDAD BAJA / NO RECOMENDADO AHORA
       * aviso en el panel si el tiempo real lleva mas de 5 min caido, sin
         ocultar que el sondeo de 30 s sigue (tarea 8);
       * conflictos clasificados por tipo (version clinica / stock), con equipo,
-        usuario e historico de 90 dias en el panel (tarea 9).
+        usuario e historico de 90 dias en el panel (tarea 9);
+      * versiones anteriores de una ficha consultables desde el panel, sin SQL
+        (tarea 10).
   - Rendimiento: vistas por demanda, impresion fuera del arranque,
     presupuesto de bundle en CI (tarea 3).
   - Almacenamiento: limpieza diaria de adjuntos subidos y cache redundante,
     aviso de cuota al 80 % y uso visible en el panel (tarea 4).
-  - Pruebas: 619 de logica + 42 de UI + 4 E2E de dos equipos.
+  - Pruebas: 626 de logica + 45 de UI + 4 E2E de dos equipos.
   - Bundle: 191,8 kB gzip inicial / 246,8 kB total.
   - Respaldo: diario, verificado y con simulacro automatico de restauracion
     (tareas 6 y 7).
