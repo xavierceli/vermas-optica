@@ -43,6 +43,11 @@ const CONFLICTO_STOCK = [
   '23514', 'excede el stock'
 ];
 
+/** ¿El motivo describe un choque de inventario? Se exporta para poder
+ *  clasificar los conflictos ya registrados sin duplicar la lista de marcas. */
+export const esConflictoDeStock = motivo =>
+  CONFLICTO_STOCK.some(marca => String(motivo || '').toLowerCase().includes(marca));
+
 /** Fallos de red: no son rechazos del servidor, hay que reintentar tal cual. */
 const esFalloDeRed = motivo => /failed to fetch|network|load failed|timeout|aborted|fetch failed/i
   .test(String(motivo || ''));
@@ -52,7 +57,7 @@ const esFalloDeRed = motivo => /failed to fetch|network|load failed|timeout|abor
  * El dato es VALIDO, solo esta desactualizado. Nunca se descarta: se deja en
  * conflicto para que el usuario decida (reintentar o descartar a mano).
  */
-const esConflictoDeVersion = motivo => /modificad[ao] en otro dispositivo|otro equipo|\b40001\b|could not serialize access|version conflict/i
+export const esConflictoDeVersion = motivo => /modificad[ao] en otro dispositivo|otro equipo|\b40001\b|could not serialize access|version conflict/i
   .test(String(motivo || ''));
 
 /**
@@ -80,7 +85,7 @@ export const clasificarFallo = (motivo, { intentos = 0, maxIntentos = 5, tipo = 
   // 2. Conflicto de stock: NO se descarta. La venta y la evaluacion clinica van
   //    en la misma transaccion en el servidor, asi que descartar aqui tiraria
   //    tambien el examen del paciente. Se deja esperando a que se resuelva.
-  if (CONFLICTO_STOCK.some(marca => texto.includes(marca))) return 'conflict';
+  if (esConflictoDeStock(texto)) return 'conflict';
 
   // 3. Otro equipo edito la misma ficha o venta: no se pisa en silencio ni se
   //    descarta el trabajo local. Queda en conflicto hasta que el usuario lo

@@ -5,6 +5,7 @@ import { mostrarAviso } from './avisos';
 import { paginarConsulta } from './paginacion';
 import { esFalloDeRed } from './reglas';
 import { clasificarFallo, mensajeDeFallo } from './clasificarFallo';
+import { registrarConflicto } from './registroConflictos';
 import { aplicarEliminacionesRemotas, reconciliarConServidor } from './eliminacionPaciente';
 import { consultarHistorial } from './repositorio/vistaHistorial';
 
@@ -363,8 +364,10 @@ const applyResults = async results => {
       }
       await localDb.outbox.delete(operation.id);
     } else if (result.status === 'conflict') {
-      await finalizarOperacion(operation, 'conflict', result.error || 'Conflicto de datos');
-      fallos.push({ tipo: operation.type, motivo: result.error || 'Conflicto de datos', estado: 'conflict' });
+      const motivo = result.error || 'Conflicto de datos';
+      await finalizarOperacion(operation, 'conflict', motivo);
+      await registrarConflicto({ operation, motivo });
+      fallos.push({ tipo: operation.type, motivo, estado: 'conflict' });
     } else {
       const motivo = result.error || 'La operación fue rechazada por el servidor';
 
@@ -382,6 +385,7 @@ const applyResults = async results => {
       if (clasificacion === 'conflict') {
         const texto = mensajeDeFallo(motivo, 'conflict');
         await finalizarOperacion(operation, 'conflict', texto);
+        await registrarConflicto({ operation, motivo: texto });
         fallos.push({ tipo: operation.type, motivo: texto, estado: 'conflict' });
       } else if (clasificacion === 'descartada') {
         const texto = mensajeDeFallo(motivo, 'descartada');

@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { 
+import {
   sincronizarAhora, obtenerDetalleCola, 
   reintentarOperacion, descartarOperacion, descartarTodoLoAtascado 
 } from './syncEngine';
+import { obtenerResumenConflictos } from './registroConflictos';
 import { crearEstadoPaciente, hoyISO, INV_INICIAL, PRECIO_INICIAL } from './fichaClinica';
 import { useAvisos } from './hooks/useAvisos';
 import { useConfirmacion } from './hooks/useConfirmacion';
@@ -83,7 +84,7 @@ export function useGestor() {
     estaAutenticado, cargandoAuth, cerrarSesion, rol, esAdmin,
     modoSinConexion, entrarSinConexion, dispositivo, configurarAccesoSinConexion, desactivarAccesoSinConexion,
     toast, confirmDialog, setConfirmDialog, vistaActual, setVistaActual, syncEstado, tiempoReal, sincronizarAhora,
-    obtenerDetalleCola, reintentarOperacion, descartarOperacion, descartarTodoLoAtascado,
+    obtenerDetalleCola, obtenerResumenConflictos, reintentarOperacion, descartarOperacion, descartarTodoLoAtascado,
     historial, ventasArchivadas, ventasLocales, inventario, listaPrecios, paciente, setPaciente, estadoInicial, editandoId, setEditandoId,
     cedulasArchivadas, 
     guardarPacienteClinico, manejarCambio, borrarHistoriaClinica, archivarConsultaPuntual, cargarParaEditarClinico, iniciarNuevaConsulta, crearNuevoPaciente, edadActual, claseInputRef, intentosGuardado,

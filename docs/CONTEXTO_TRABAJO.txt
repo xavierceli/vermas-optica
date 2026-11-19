@@ -1,7 +1,7 @@
 ===============================================================================
 VER+ OPTICA - CONTEXTO DE TRABAJO
 Registro de lo realizado y de lo que queda pendiente
-Ultima actualizacion: tareas 1 a 8 completadas
+Ultima actualizacion: tareas 1 a 9 completadas
 ===============================================================================
 
 Como usar este archivo:
@@ -629,7 +629,83 @@ ACCION MANUAL PENDIENTE
 
 
 ===============================================================================
-9. CHECKLIST DE MIGRACIONES
+9. TAREA COMPLETADA: OBSERVABILIDAD DE CONFLICTOS (#9)
+===============================================================================
+
+PROBLEMA QUE RESOLVIA
+------------------------------------------------------------------------------
+  - El panel decia CUANTOS conflictos habia, pero no de que tipo. Un conflicto
+    de version clinica (dos equipos editaron la misma ficha) y uno de stock
+    (dos ventas por la ultima unidad) se resuelven de forma distinta, y no
+    habia forma de saber cual estaba pasando ni en que equipo.
+  - Tampoco quedaba historico: al descartar o resolver la operacion se perdia
+    el dato de que habia ocurrido, imposible detectar patrones.
+
+QUE SE HIZO
+------------------------------------------------------------------------------
+  1. src/conflictos.js (logica pura)
+     - categoriaDeConflicto(): version_clinica, stock, version_venta u otro.
+       Usa el motivo del servidor y, si es generico, el tipo de operacion.
+     - etiquetaDeNavegador(): nombre legible del equipo ("Chrome en Windows"),
+       sin datos personales.
+     - resumirConflictos(): totales por tipo y por equipo, con eventos raros
+       tolerados sin romper.
+
+  2. src/registroConflictos.js (persistencia local)
+     - Guarda cada conflicto en meta (sin migrar IndexedDB): categoria, motivo,
+       operacion, entidad, fecha, equipoId estable y correo del usuario.
+     - Limite de 200 eventos y retencion de 90 dias.
+     - obtenerResumenConflictos() suma el historico y los conflictos que siguen
+       activos en el outbox, incluso los detectados antes de esta version.
+
+  3. src/syncEngine.js
+     - Registra el conflicto en las dos vias: rechazo explicito del servidor y
+       clasificacion local (stock/version). No cambia como se resuelve.
+
+  4. src/hooks/useAutenticacion.js
+     - Guarda el correo de la sesion para etiquetar los eventos, tambien en
+       modo PIN local (se conserva el ultimo usuario).
+
+  5. src/PanelSincronizacion.jsx + src/useGestor.js
+     - Resumen visible: activos en cola, total registrado, conteo por tipo
+       (version clinica / stock / version de venta / otros), equipo e id corto,
+       usuario y fecha del ultimo conflicto.
+
+ARCHIVOS TOCADOS
+------------------------------------------------------------------------------
+  Nuevos:
+    src/conflictos.js
+    src/conflictos.test.js
+    src/registroConflictos.js
+  Modificados:
+    src/clasificarFallo.js (helpers exportados)
+    src/syncEngine.js
+    src/useGestor.js
+    src/hooks/useAutenticacion.js
+    src/PanelSincronizacion.jsx
+    src/PanelSincronizacion.test.jsx
+    e2e/apoyo.js y e2e/dos-equipos.spec.js
+
+COMO SE VERIFICO
+------------------------------------------------------------------------------
+  - 14 pruebas de logica: clasificacion clinica/stock/venta/otro, resumen por
+    equipo, datos raros, etiqueta del navegador y contrato del panel/motor.
+  - 1 prueba nueva de interfaz: el panel muestra 2 de version clinica, 1 de
+    stock, el equipo y el usuario.
+  - 2 aserciones E2E: un conflicto real de version y uno de stock quedan
+    registrados con su categoria y equipoId.
+  - npm run lint limpio; 619 de logica + 42 de UI + 4 E2E, 0 fallos.
+  - Build: 191,8 kB inicial / 246,8 kB total (limites 220/400).
+
+ACCION MANUAL PENDIENTE
+------------------------------------------------------------------------------
+  - Ninguna. Todo ocurre en el dispositivo; no hay migracion ni tabla nueva.
+  - El historico se puede ver abriendo el panel de sincronizacion cuando haya
+    al menos un conflicto registrado o activo.
+
+
+===============================================================================
+10. CHECKLIST DE MIGRACIONES
 ===============================================================================
   [x] 202609240024_versionado_consultas.sql    -> aplicada (vista verificada)
   [x] 202609240025_realtime_publicacion.sql    -> aplicada (5 tablas publicadas)
@@ -640,14 +716,15 @@ ACCION MANUAL PENDIENTE
 
 
 ===============================================================================
-10. QUE FALTA POR HACER
+11. QUE FALTA POR HACER
 ===============================================================================
 
 PRIORIDAD ALTA (siguiente tarea recomendada)
 ------------------------------------------------------------------------------
-  [ ] Observabilidad de conflictos
-      - PanelSincronizacion ya cuenta conflictos. Valorar registrar cuantos
-        son de version, por usuario/dispositivo, para detectar patrones.
+  [ ] Ninguna tarea funcional pendiente de la lista original.
+      - Recomendado, sin codigo nuevo: revisar el resumen de conflictos tras
+        unas semanas de uso real. Si aparece un patron (p. ej. el mismo equipo
+        chocando siempre), ahi si conviene investigar esa causa concreta.
 
 PRIORIDAD BAJA / NO RECOMENDADO AHORA
 ------------------------------------------------------------------------------
@@ -663,7 +740,7 @@ PRIORIDAD BAJA / NO RECOMENDADO AHORA
 
 
 ===============================================================================
-11. ESTADO ACTUAL DEL PROYECTO (resumen)
+12. ESTADO ACTUAL DEL PROYECTO (resumen)
 ===============================================================================
   - App: PWA React 19 + Vite 8, offline-first con Dexie/IndexedDB.
   - Backend: Supabase (23 + 2 migraciones), escritura solo por RPC.
@@ -677,13 +754,15 @@ PRIORIDAD BAJA / NO RECOMENDADO AHORA
       * garantia automatica con dos navegadores y un backend compartido
         (tarea 5);
       * aviso en el panel si el tiempo real lleva mas de 5 min caido, sin
-        ocultar que el sondeo de 30 s sigue (tarea 8).
+        ocultar que el sondeo de 30 s sigue (tarea 8);
+      * conflictos clasificados por tipo (version clinica / stock), con equipo,
+        usuario e historico de 90 dias en el panel (tarea 9).
   - Rendimiento: vistas por demanda, impresion fuera del arranque,
     presupuesto de bundle en CI (tarea 3).
   - Almacenamiento: limpieza diaria de adjuntos subidos y cache redundante,
     aviso de cuota al 80 % y uso visible en el panel (tarea 4).
-  - Pruebas: 605 de logica + 41 de UI + 4 E2E de dos equipos.
-  - Bundle: 189,1 kB gzip inicial / 244,7 kB total.
+  - Pruebas: 619 de logica + 42 de UI + 4 E2E de dos equipos.
+  - Bundle: 191,8 kB gzip inicial / 246,8 kB total.
   - Respaldo: diario, verificado y con simulacro automatico de restauracion
     (tareas 6 y 7).
   - Despliegue: Vercel + Supabase.

@@ -131,6 +131,9 @@ export function useAutenticacion({ mostrarToast, solicitarConfirmacion, obtenerD
       fijarSesionAusente(false);
       setModoSinConexion(false);
       void cargarRol();
+      // El correo se guarda para poder etiquetar los conflictos de este equipo
+      // sin volver a consultar la sesion en cada evento.
+      void setMeta('usuarioEmail', session.user?.email || null);
       obtenerDatos();
       setCargandoAuth(false);
     }).catch((err) => {
@@ -170,6 +173,7 @@ export function useAutenticacion({ mostrarToast, solicitarConfirmacion, obtenerD
           setEstaAutenticado(true);
           fijarSesionAusente(false);
           void cargarRol();
+          void setMeta('usuarioEmail', session.user?.email || null);
           obtenerDatos();
         }
         setCargandoAuth(false);

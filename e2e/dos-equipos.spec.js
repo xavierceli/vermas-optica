@@ -21,6 +21,7 @@ import {
   sincronizar,
   leerOutbox,
   leerConsulta,
+  leerConflictos,
   leerInventario,
   leerVenta,
   pacienteDemo,
@@ -111,6 +112,14 @@ test('dos equipos que editan la misma consulta: el segundo recibe conflicto y no
     // B conserva su edicion en el dispositivo: nada se pierde.
     const localB = await leerConsulta(equipoB.page, CONSULTA);
     expect(localB.k1_d_od).toBe('99');
+
+    // El conflicto queda registrado con su tipo y el equipo que lo sufrio, que
+    // es lo que alimenta el resumen del panel.
+    const registrados = await leerConflictos(equipoB.page);
+    const evento = registrados.find(fila => fila.operacionId === conflicto.id);
+    expect(evento?.categoria).toBe('version_clinica');
+    expect(evento?.equipoId).toBeTruthy();
+    expect(evento?.equipo).toBeTruthy();
   } finally {
     await equipoA.context.close();
     await equipoB.context.close();
@@ -172,6 +181,11 @@ test('dos equipos que venden el mismo producto: el servidor rechaza el stock ine
     // corregirlas cuando le llegue el aviso; no desaparecen.
     expect((await leerVenta(equipoB.page, 'venta-equipo-b'))?.estado).toBe('En laboratorio');
     expect((await leerConsulta(equipoB.page, CONSULTA))?.k1_d_od).toBe('42');
+
+    const registrados = await leerConflictos(equipoB.page);
+    const evento = registrados.find(fila => fila.operacionId === conflicto.id);
+    expect(evento?.categoria).toBe('stock');
+    expect(evento?.equipoId).toBeTruthy();
   } finally {
     await equipoA.context.close();
     await equipoB.context.close();

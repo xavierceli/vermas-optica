@@ -95,6 +95,12 @@ export const leerConsulta = (page, id) => page.evaluate(async id => {
   return (await localDb.consultations.get(id)) || null;
 }, id);
 
+export const leerConflictos = page => page.evaluate(async () => {
+  const { localDb } = await import('/src/localDb.js');
+  const fila = await localDb.meta.get('conflictosRegistrados');
+  return Array.isArray(fila?.value) ? fila.value : [];
+});
+
 export const leerInventario = (page, id) => page.evaluate(async id => {
   const { localDb } = await import('/src/localDb.js');
   return (await localDb.inventory.get(id)) || null;

@@ -5,6 +5,9 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import RespaldoDatos from './RespaldoDatos.jsx';
 import AccesoSinConexion from './AccesoSinConexion.jsx';
 import { resumenTiempoReal } from './tiempoRealResumen.js';
+import { CATEGORIAS_CONFLICTO, resumirConflictos } from './conflictos.js';
+
+const CATEGORIAS_PANEL = ['version_clinica', 'stock', 'version_venta', 'otro'];
 
 const TIPOS = {
   GUARDAR_CONSULTA: 'Consulta clínica', CREAR_VENTA: 'Venta', EDITAR_VENTA: 'Edición de venta',
@@ -27,13 +30,21 @@ export default function PanelSincronizacion({ abierta, cerrar, gestor, soloProbl
   const [cargando, setCargando] = useState(false);
   const [trabajando, setTrabajando] = useState(false);
   const [errorPanel, setErrorPanel] = useState('');
+  const [resumenConflictos, setResumenConflictos] = useState(null);
   const ref = useRef(null);
 
   const cargar = useCallback(async () => {
     if (!gestor?.obtenerDetalleCola) return;
     setCargando(true);
     try {
-      setOps(await gestor.obtenerDetalleCola());
+      const [detalle, resumen] = await Promise.all([
+        gestor.obtenerDetalleCola(),
+        typeof gestor.obtenerResumenConflictos === 'function'
+          ? gestor.obtenerResumenConflictos().catch(() => null)
+          : Promise.resolve(null)
+      ]);
+      setOps(detalle);
+      setResumenConflictos(resumen);
       setErrorPanel('');
     } catch {
       setErrorPanel('No se pudo consultar la cola de sincronización. Inténtalo de nuevo.');
@@ -62,6 +73,16 @@ export default function PanelSincronizacion({ abierta, cerrar, gestor, soloProbl
     ? ops.filter(o => o.estado !== 'descartada') 
     : ops;
   const problemas = ops.filter(o => o.estado !== 'pending' && o.estado !== 'descartada');
+
+  // Si el gestor no expone el registro histórico (o aún no hay eventos), se
+  // resume lo que sí está en la cola: nunca se oculta un conflicto activo.
+  const conflictosEnCola = ops
+    .filter(o => o.estado === 'conflict')
+    .map(o => ({ motivo: o.motivo, tipoOperacion: o.tipo }));
+  const resumenVisible = resumenConflictos?.total > 0
+    ? resumenConflictos
+    : { ...resumirConflictos(conflictosEnCola), equipo: null, activos: conflictosEnCola.length };
+  const totalConflictos = resumenVisible.total || 0;
 
   const reintentar = async op => {
     setTrabajando(true);
@@ -229,6 +250,74 @@ export default function PanelSincronizacion({ abierta, cerrar, gestor, soloProbl
             </p>
           )}
           {cargando && <p className="text-sm text-gray-500 text-center py-4">Consultando cola…</p>}
+
+          {!cargando && totalConflictos > 0 && (
+            <section
+              aria-labelledby="titulo-conflictos"
+              className="mb-4 rounded-xl border border-amber-200 bg-amber-50/60 p-3.5"
+            >
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <h3 id="titulo-conflictos" className="text-sm font-black text-amber-900">
+                  Resumen de conflictos
+                </h3>
+                <span className="text-[11px] font-bold text-amber-800">
+                  {resumenVisible.activos > 0
+                    ? `${resumenVisible.activos} activo(s) en la cola`
+                    : 'Ninguno activo ahora'}
+                  {' · '}{totalConflictos} registrado(s)
+                </span>
+              </div>
+
+              <dl className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2.5">
+                {CATEGORIAS_PANEL.map(clave => {
+                  const categoria = CATEGORIAS_CONFLICTO[clave];
+                  const cantidad = resumenVisible.porCategoria?.[clave] || 0;
+                  return (
+                    <div key={clave} data-testid={`conflicto-${clave}`} className="rounded-lg bg-white/80 border border-amber-100 px-2.5 py-2">
+                      <dt className="text-[10px] font-bold text-gray-600 uppercase tracking-wide">
+                        <span aria-hidden="true">{categoria.icono} </span>{categoria.etiqueta}
+                      </dt>
+                      <dd className={`text-lg font-black ${cantidad > 0 ? 'text-amber-900' : 'text-gray-400'}`}>
+                        {cantidad}
+                      </dd>
+                    </div>
+                  );
+                })}
+              </dl>
+
+              <p className="text-[10px] text-gray-500 mt-1.5">
+                Conteo de los conflictos registrados; los que siguen activos están incluidos.
+              </p>
+
+              {resumenVisible.equipo && (
+                <p className="text-[11px] text-gray-700 mt-2 break-words">
+                  <span className="font-bold">Equipo: </span>{resumenVisible.equipo.etiqueta}
+                  <span className="font-mono text-gray-500" title={resumenVisible.equipo.id}>
+                    {' '}#{String(resumenVisible.equipo.id || '').slice(0, 8)}
+                  </span>
+                  {resumenVisible.equipo.usuario ? ` · ${resumenVisible.equipo.usuario}` : ''}
+                </p>
+              )}
+
+              {resumenVisible.porEquipo?.length > 1 && (
+                <ul className="text-[11px] text-gray-700 mt-1 space-y-0.5">
+                  {resumenVisible.porEquipo.map(equipo => (
+                    <li key={equipo.equipoId}>
+                      {equipo.equipo}: <strong>{equipo.total}</strong>
+                      {equipo.usuario ? ` (${equipo.usuario})` : ''}
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {resumenVisible.ultimo && Number.isFinite(Date.parse(resumenVisible.ultimo)) && (
+                <p className="text-[10px] text-gray-500 mt-1.5">
+                  Último conflicto: {new Date(resumenVisible.ultimo).toLocaleString('es-EC')}
+                  {' · '}se conservan 90 días en este equipo
+                </p>
+              )}
+            </section>
+          )}
           
           {!cargando && itemsAMostrar.length === 0 && (
             <div className="text-center py-10">
