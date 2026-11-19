@@ -7,8 +7,8 @@ import AccesoSinConexion from './AccesoSinConexion.jsx';
 import CopiaMensualFotos from './CopiaMensualFotos.jsx';
 import { resumenTiempoReal } from './tiempoRealResumen.js';
 import { CATEGORIAS_CONFLICTO, resumirConflictos } from './conflictos.js';
+import ListaVersiones from './componentes/ListaVersiones.jsx';
 import { listarRevisionesConsulta } from './repositorio/revisiones.js';
-import { resumenDeVersion } from './revisionesResumen.js';
 
 const CATEGORIAS_PANEL = ['version_clinica', 'stock', 'version_venta', 'otro'];
 
@@ -19,11 +19,6 @@ const TIPOS = {
   UPSERT_INVENTARIO: 'Producto de inventario', ELIMINAR_INVENTARIO: 'Baja de producto',
   UPSERT_PRECIO: 'Tarifa', ELIMINAR_PRECIO: 'Baja de tarifa',
   ARCHIVAR_CONSULTA: 'Archivo de consulta', SUBIR_ADJUNTO: 'Comprobante o foto'
-};
-
-const fechaLegible = valor => {
-  const fecha = new Date(valor);
-  return Number.isFinite(fecha.getTime()) ? fecha.toLocaleString('es-EC') : 'fecha desconocida';
 };
 
 const SIN_VERSIONES = { id: null, cargando: false, error: '', lista: [] };
@@ -456,41 +451,7 @@ export default function PanelSincronizacion({ abierta, cerrar, gestor, soloProbl
                           <p className="text-xs text-gray-500">Todavía no hay versiones anteriores de esta ficha.</p>
                         )}
 
-                        {versiones.lista.length > 0 && (
-                          <ul className="space-y-2">
-                            {versiones.lista.map(revision => {
-                              const resumen = resumenDeVersion(revision.snapshot);
-                              return (
-                                <li
-                                  key={`${revision.version}-${revision.editado_en}`}
-                                  className="rounded-lg bg-white border border-gray-200 p-2.5"
-                                >
-                                  <p className="text-xs font-bold text-gray-800">
-                                    Versión {revision.version}
-                                    <span className="font-medium text-gray-500"> · {fechaLegible(revision.editado_en)}</span>
-                                    {revision.editado_por && (
-                                      <span className="font-medium text-gray-500"> · {revision.editado_por}</span>
-                                    )}
-                                  </p>
-                                  <p className="text-xs text-gray-700 mt-1">
-                                    <span className="font-bold">OD: </span>{resumen.od}
-                                  </p>
-                                  <p className="text-xs text-gray-700">
-                                    <span className="font-bold">OI: </span>{resumen.oi}
-                                  </p>
-                                  {resumen.notas && (
-                                    <p className="text-xs text-gray-600 mt-1">
-                                      <span className="font-bold">Notas: </span>{resumen.notas}
-                                    </p>
-                                  )}
-                                  {revision.motivo && (
-                                    <p className="text-[10px] text-gray-400 mt-1">Motivo: {revision.motivo}</p>
-                                  )}
-                                </li>
-                              );
-                            })}
-                          </ul>
-                        )}
+                        <ListaVersiones lista={versiones.lista} />
                       </section>
                     )}
                   </li>

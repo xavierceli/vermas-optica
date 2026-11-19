@@ -4,9 +4,18 @@
 // Es la pantalla que se abre al tocar una tarjeta del historial: la cabecera con
 // sus datos, el resumen clinico de cada visita y la tabla de sus compras.
 // ---------------------------------------------------------------------------
-import { Fragment, useMemo } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { safeString, safeNum, calcularEdad } from '../utilidades.js';
 import { resumenConsulta } from '../historial.js';
+import ListaVersiones from './ListaVersiones.jsx';
+import { listarRevisionesConsulta } from '../repositorio/revisiones.js';
+
+const SIN_VERSIONES = { id: null, cargando: false, error: '', lista: [] };
+
+const tieneIdDeServidor = reg => {
+  const id = safeString(reg?.id).trim();
+  return Boolean(id) && !id.startsWith('temp_');
+};
 
 export default function ExpedientePaciente({
   expediente,
@@ -71,6 +80,34 @@ export default function ExpedientePaciente({
       return (tienePedidoId || tieneMontoVenta) && tieneEstadoValido;
     });
   }, [registrosUnicos]);
+
+  // Las versiones viven en el servidor: solo se piden para consultas que ya
+  // tienen id real. Las que aun estan solo en este equipo no tienen historial.
+  const [versiones, setVersiones] = useState(SIN_VERSIONES);
+
+  const verVersiones = async reg => {
+    const id = safeString(reg?.id).trim();
+    if (!id || id.startsWith('temp_')) return;
+
+    if (versiones.id === id && !versiones.cargando && !versiones.error) {
+      setVersiones(SIN_VERSIONES);
+      return;
+    }
+
+    setVersiones({ id, cargando: true, error: '', lista: [] });
+    try {
+      const lista = await listarRevisionesConsulta(id);
+      setVersiones({ id, cargando: false, error: '', lista });
+    } catch (error) {
+      console.warn('[expediente] no se pudo leer el historial de versiones:', error?.message || error);
+      setVersiones({
+        id,
+        cargando: false,
+        error: 'No se pudo cargar el historial de versiones. Inténtalo de nuevo.',
+        lista: []
+      });
+    }
+  };
 
   return (
     <div className="bg-white rounded-xl shadow-lg border-t-4 border-teal-600 overflow-hidden">
@@ -221,16 +258,55 @@ export default function ExpedientePaciente({
                           </td>
                           
                           <td className="p-2 border-l text-center bg-red-50/20">
-                            <button 
-                              type="button" 
-                              onClick={() => onEliminarRegistro(reg)} 
-                              className="text-xs bg-red-100 text-red-700 hover:bg-red-200 p-1.5 rounded font-bold transition-colors shadow-sm" 
-                              title="Eliminar esta consulta clínica puntual"
-                            >
-                              🗑️
-                            </button>
+                            <div className="flex items-center justify-center gap-1">
+                              {tieneIdDeServidor(reg) && (
+                                <button
+                                  type="button"
+                                  onClick={() => verVersiones(reg)}
+                                  className="text-xs bg-amber-100 text-amber-800 hover:bg-amber-200 p-1.5 rounded font-bold transition-colors shadow-sm"
+                                  title="Ver versiones anteriores de esta consulta"
+                                >
+                                  🕘
+                                </button>
+                              )}
+                              <button 
+                                type="button" 
+                                onClick={() => onEliminarRegistro(reg)} 
+                                className="text-xs bg-red-100 text-red-700 hover:bg-red-200 p-1.5 rounded font-bold transition-colors shadow-sm" 
+                                title="Eliminar esta consulta clínica puntual"
+                              >
+                                🗑️
+                              </button>
+                            </div>
                           </td>
                         </tr>
+
+                        {versiones.id === regId && (
+                          <tr className="bg-amber-50/40 border-b">
+                            <td colSpan="19" className="p-3 sm:p-4 text-left">
+                              <section aria-label="Versiones anteriores de la consulta">
+                                <h4 className="text-xs font-black text-gray-700 uppercase tracking-wide">
+                                  Versiones anteriores
+                                </h4>
+                                <p className="text-[11px] text-gray-500 mb-2">
+                                  Cada guardado previo queda conservado en el servidor. La versión más reciente aparece primero.
+                                </p>
+
+                                {versiones.cargando && (
+                                  <p className="text-xs text-gray-500">Cargando versiones…</p>
+                                )}
+                                {versiones.error && (
+                                  <p role="alert" className="text-xs text-red-700">{versiones.error}</p>
+                                )}
+                                {!versiones.cargando && !versiones.error && versiones.lista.length === 0 && (
+                                  <p className="text-xs text-gray-500">Todavía no hay versiones anteriores de esta ficha.</p>
+                                )}
+
+                                <ListaVersiones lista={versiones.lista} />
+                              </section>
+                            </td>
+                          </tr>
+                        )}
                         
                         {filasExpandidas[regId] && (
                           <tr className="bg-slate-50 border-b shadow-inner">

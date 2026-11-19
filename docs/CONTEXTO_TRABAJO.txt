@@ -1,7 +1,7 @@
 ===============================================================================
 VER+ OPTICA - CONTEXTO DE TRABAJO
 Registro de lo realizado y de lo que queda pendiente
-Ultima actualizacion: tareas 1 a 11 completadas
+Ultima actualizacion: tareas 1 a 12 completadas
 ===============================================================================
 
 Como usar este archivo:
@@ -808,7 +808,50 @@ ACCION MANUAL PENDIENTE
 
 
 ===============================================================================
-12. CHECKLIST DE MIGRACIONES
+12. TAREA COMPLETADA: VERSIONES TAMBIEN DESDE EL EXPEDIENTE
+===============================================================================
+
+PROBLEMA QUE RESOLVIA
+------------------------------------------------------------------------------
+  - El boton "Versiones" vivia solo en el panel de sincronizacion, que muestra
+    operaciones pendientes, fallidas o en conflicto. Al resolverse la
+    operacion, la ficha desaparecia de la cola y el historial volvia a quedar
+    inaccesible desde la app.
+  - Quien notaba semanas despues que le faltaba un dato no tenia donde mirar
+    sin abrir SQL en Supabase.
+
+QUE SE HIZO
+------------------------------------------------------------------------------
+  1. src/componentes/ListaVersiones.jsx (nuevo)
+     - Presentacion unica de las versiones (fecha, autor, OD/OI, notas y
+       motivo), compartida por el panel y por el expediente.
+
+  2. src/componentes/ExpedientePaciente.jsx
+     - Boton de reloj en cada consulta con id del servidor; al pulsarlo se
+       cargan sus versiones dentro de la misma tabla del expediente.
+     - Las consultas que aun solo existen en este equipo (id temporal) no
+       muestran el boton: no tienen historial en el servidor.
+     - Si el servidor no responde, avisa dentro del expediente sin romperlo.
+
+  3. src/PanelSincronizacion.jsx
+     - Usa la misma ListaVersiones, sin duplicar el formato.
+
+Pruebas nuevas:
+  src/ExpedientePaciente.test.jsx          (3 casos de interfaz)
+
+COMO SE VERIFICO
+------------------------------------------------------------------------------
+  - npm run lint limpio.
+  - 633 pruebas de logica + 51 de interfaz, 0 fallos.
+  - Build: 193,8 kB inicial / 249,3 kB total (limites 220/400).
+
+ACCION MANUAL PENDIENTE
+------------------------------------------------------------------------------
+  - Ninguna. Usa la RPC de la migracion 026, ya aplicada.
+
+
+===============================================================================
+13. CHECKLIST DE MIGRACIONES
 ===============================================================================
   [x] 202609240024_versionado_consultas.sql    -> aplicada (vista verificada)
   [x] 202609240025_realtime_publicacion.sql    -> aplicada (5 tablas publicadas)
@@ -820,7 +863,7 @@ ACCION MANUAL PENDIENTE
 
 
 ===============================================================================
-13. QUE FALTA POR HACER
+14. QUE FALTA POR HACER
 ===============================================================================
 
 PRIORIDAD ALTA (siguiente tarea recomendada)
@@ -850,7 +893,7 @@ PRIORIDAD BAJA / NO RECOMENDADO AHORA
 
 
 ===============================================================================
-14. ESTADO ACTUAL DEL PROYECTO (resumen)
+15. ESTADO ACTUAL DEL PROYECTO (resumen)
 ===============================================================================
   - App: PWA React 19 + Vite 8, offline-first con Dexie/IndexedDB.
   - Backend: Supabase (26 migraciones, todas aplicadas), escritura solo por RPC.
@@ -867,15 +910,15 @@ PRIORIDAD BAJA / NO RECOMENDADO AHORA
         ocultar que el sondeo de 30 s sigue (tarea 8);
       * conflictos clasificados por tipo (version clinica / stock), con equipo,
         usuario e historico de 90 dias en el panel (tarea 9);
-      * versiones anteriores de una ficha consultables desde el panel, sin SQL
-        (tarea 10).
+      * versiones anteriores de una ficha consultables desde el panel y desde
+        el expediente del paciente, sin SQL (tareas 10 y 12).
   - Rendimiento: vistas por demanda, impresion fuera del arranque,
     presupuesto de bundle en CI (tarea 3).
   - Almacenamiento: limpieza diaria de adjuntos subidos y cache redundante,
     aviso de cuota al 80 % y uso visible en el panel (tarea 4); recordatorio
     mensual de la copia manual de fotos y comprobantes (tarea 11).
-  - Pruebas: 633 de logica + 48 de UI + 4 E2E de dos equipos.
-  - Bundle: 193,6 kB gzip inicial / 248,6 kB total.
+  - Pruebas: 633 de logica + 51 de UI + 4 E2E de dos equipos.
+  - Bundle: 193,8 kB gzip inicial / 249,3 kB total.
   - Respaldo: diario, verificado y con simulacro automatico de restauracion
     (tareas 6 y 7).
   - Despliegue: Vercel + Supabase.
