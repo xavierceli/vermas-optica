@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, within, fireEvent, waitFor } from '@testing-library/react';
 import PanelSincronizacion from './PanelSincronizacion.jsx';
 import { listarRevisionesConsulta } from './repositorio/revisiones.js';
+import { cargarConsultaServidor } from './repositorio/consultaServidor.js';
 import {
   leerUltimaCopiaMensual,
   registrarCopiaMensual
@@ -14,6 +15,7 @@ import {
 vi.mock('./RespaldoDatos.jsx', () => ({ default: () => null }));
 vi.mock('./AccesoSinConexion.jsx', () => ({ default: () => null }));
 vi.mock('./repositorio/revisiones.js', () => ({ listarRevisionesConsulta: vi.fn() }));
+vi.mock('./repositorio/consultaServidor.js', () => ({ cargarConsultaServidor: vi.fn() }));
 vi.mock('./repositorio/copiaMensual.js', () => ({
   leerUltimaCopiaMensual: vi.fn(async () => null),
   registrarCopiaMensual: vi.fn(async () => {})
@@ -205,6 +207,89 @@ describe('PanelSincronizacion y tiempo real', () => {
     expect(screen.getByText(/Esf -2\.00/)).toBeTruthy();
     expect(screen.getByText(/Control anual/)).toBeTruthy();
     expect(listarRevisionesConsulta).toHaveBeenCalledWith('consulta-1');
+  });
+
+  it('compara el cambio clínico pendiente con lo que ya está en el servidor', async () => {
+    cargarConsultaServidor.mockReset();
+    cargarConsultaServidor.mockResolvedValue({
+      fecha: '2026-03-01 10:30',
+      avsl_od: '20/20', esfera_od: '-1.00', cilindro_od: '-0.50', eje_od: '90',
+      esfera_oi: '-2.50',
+      notas_clinicas: 'Control anual'
+    });
+
+    render(
+      <PanelSincronizacion
+        abierta
+        cerrar={() => {}}
+        gestor={{
+          ...gestorBase,
+          obtenerDetalleCola: vi.fn(async () => [
+            {
+              id: 'op-4',
+              tipo: 'GUARDAR_CONSULTA',
+              entidad: 'consulta-1',
+              estado: 'conflict',
+              intentos: 1,
+              motivo: 'modificada en otro dispositivo',
+              creada: '2026-03-01T10:00:00Z',
+              payload: {
+                p_consulta_id: 'consulta-1',
+                p_payload: {
+                  base_version: 2,
+                  consulta: {
+                    fecha: '2026-03-01 10:30',
+                    avsl_od: '20/20', esfera_od: '-1.00', cilindro_od: '-0.50', eje_od: '90',
+                    esfera_oi: '-2.00',
+                    notas_clinicas: 'Control anual'
+                  }
+                }
+              }
+            }
+          ])
+        }}
+      />
+    );
+
+    expect(await screen.findByText('Tu cambio pendiente')).toBeTruthy();
+    expect(screen.getAllByText(/Esf -2\.00/).length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole('button', { name: /Ver lo guardado en el servidor/ }));
+
+    expect(await screen.findByText(/Distinto en: Ojo izquierdo/)).toBeTruthy();
+    expect(cargarConsultaServidor).toHaveBeenCalledWith('consulta-1');
+    expect(screen.getByText(/Esf -2\.50/)).toBeTruthy();
+  });
+
+  it('avisa si no se pudo leer la versión del servidor', async () => {
+    cargarConsultaServidor.mockReset();
+    cargarConsultaServidor.mockRejectedValueOnce(new Error('sin conexión'));
+
+    render(
+      <PanelSincronizacion
+        abierta
+        cerrar={() => {}}
+        gestor={{
+          ...gestorBase,
+          obtenerDetalleCola: vi.fn(async () => [
+            {
+              id: 'op-5',
+              tipo: 'GUARDAR_CONSULTA',
+              entidad: 'consulta-2',
+              estado: 'conflict',
+              intentos: 1,
+              motivo: 'modificada en otro dispositivo',
+              creada: '2026-03-01T10:00:00Z',
+              payload: { p_payload: { consulta: { esfera_od: '-1.00' } } }
+            }
+          ])
+        }}
+      />
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: /Ver lo guardado en el servidor/ }));
+
+    expect(await screen.findByText(/No se pudo leer la versión del servidor/)).toBeTruthy();
   });
 
   it('recuerda la copia mensual de fotos cuando nunca se registró', async () => {

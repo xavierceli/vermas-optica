@@ -9,7 +9,10 @@ import DiagnosticoPanel from './DiagnosticoPanel.jsx';
 import { resumenTiempoReal } from './tiempoRealResumen.js';
 import { CATEGORIAS_CONFLICTO, resumirConflictos } from './conflictos.js';
 import ListaVersiones from './componentes/ListaVersiones.jsx';
+import ComparacionConflicto from './componentes/ComparacionConflicto.jsx';
+import { resumenCambioPendiente } from './comparacionClinica.js';
 import { listarRevisionesConsulta } from './repositorio/revisiones.js';
+import { cargarConsultaServidor } from './repositorio/consultaServidor.js';
 
 const CATEGORIAS_PANEL = ['version_clinica', 'stock', 'version_venta', 'otro'];
 
@@ -38,6 +41,7 @@ export default function PanelSincronizacion({ abierta, cerrar, gestor, soloProbl
   const [errorPanel, setErrorPanel] = useState('');
   const [resumenConflictos, setResumenConflictos] = useState(null);
   const [versiones, setVersiones] = useState(SIN_VERSIONES);
+  const [comparacion, setComparacion] = useState({ id: null, cargando: false, error: '', servidor: null });
   const ref = useRef(null);
 
   const cargar = useCallback(async () => {
@@ -110,6 +114,26 @@ export default function PanelSincronizacion({ abierta, cerrar, gestor, soloProbl
         cargando: false,
         error: 'No se pudo cargar el historial de versiones. Inténtalo de nuevo.',
         lista: []
+      });
+    }
+  };
+
+  const comparar = async op => {
+    // La version del servidor se trae solo cuando el usuario lo pide: abrir el
+    // panel no debe lanzar una consulta por cada conflicto.
+    if (comparacion.id === op.id && (comparacion.cargando || comparacion.servidor)) return;
+
+    setComparacion({ id: op.id, cargando: true, error: '', servidor: null });
+    try {
+      const servidor = await cargarConsultaServidor(op.entidad);
+      setComparacion({ id: op.id, cargando: false, error: '', servidor });
+    } catch (error) {
+      console.warn('[panel] no se pudo leer la consulta del servidor:', error?.message || error);
+      setComparacion({
+        id: op.id,
+        cargando: false,
+        error: 'No se pudo leer la versión del servidor. Revisa la conexión e inténtalo de nuevo.',
+        servidor: null
       });
     }
   };
@@ -373,6 +397,7 @@ export default function PanelSincronizacion({ abierta, cerrar, gestor, soloProbl
             <ul className="space-y-3">
               {itemsAMostrar.map(op => {
                 const e = ESTADOS[op.estado] || ESTADOS.pending;
+                const pendiente = op.tipo === 'GUARDAR_CONSULTA' ? resumenCambioPendiente(op.payload) : null;
                 return (
                   <li key={op.id} className={`border-l-4 ${e.borde} bg-gray-50 rounded-r-lg p-3.5 border border-gray-100 shadow-xs`}>
                     <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -454,6 +479,16 @@ export default function PanelSincronizacion({ abierta, cerrar, gestor, soloProbl
 
                         <ListaVersiones lista={versiones.lista} />
                       </section>
+                    )}
+
+                    {pendiente && op.estado === 'conflict' && (
+                      <ComparacionConflicto
+                        pendiente={pendiente}
+                        servidor={comparacion.id === op.id ? comparacion.servidor : null}
+                        cargando={comparacion.id === op.id && comparacion.cargando}
+                        error={comparacion.id === op.id ? comparacion.error : ''}
+                        onCargar={() => comparar(op)}
+                      />
                     )}
                   </li>
                 );

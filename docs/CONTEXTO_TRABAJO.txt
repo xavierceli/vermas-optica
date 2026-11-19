@@ -1,7 +1,7 @@
 ===============================================================================
 VER+ OPTICA - CONTEXTO DE TRABAJO
 Registro de lo realizado y de lo que queda pendiente
-Ultima actualizacion: tareas 1 a 14 completadas
+Ultima actualizacion: tareas 1 a 15 completadas
 ===============================================================================
 
 Como usar este archivo:
@@ -938,7 +938,64 @@ ACCION MANUAL PENDIENTE
 
 
 ===============================================================================
-15. CHECKLIST DE MIGRACIONES
+15. TAREA COMPLETADA: COMPARAR UN CONFLICTO CLINICO CON EL SERVIDOR
+===============================================================================
+
+PROBLEMA QUE RESOLVIA
+------------------------------------------------------------------------------
+  - Ante un conflicto de ficha clinica, el panel decia la causa y mostraba las
+    versiones anteriores, pero no QUE cambio quedo en la cola ni QUE habia
+    guardado el otro equipo. "Reintentar" y "Descartar" se elegian a ciegas.
+  - Riesgo concreto: reintentar a ciegas podia pisar una correccion del otro
+    equipo sin haberla visto (aunque queda en el historial).
+
+QUE SE HIZO
+------------------------------------------------------------------------------
+  1. src/syncEngine.js
+     - obtenerDetalleCola() ahora incluye el payload de cada operacion, para
+       que el panel pueda mostrar el cambio pendiente sin leer IndexedDB.
+
+  2. src/comparacionClinica.js (nuevo, puro)
+     - resumenCambioPendiente(payload): extrae la consulta de
+       p_payload.consulta y tolera payloads viejos o incompletos.
+     - compararClinica(pendiente, servidor): filas Fecha / Ojo derecho /
+       Ojo izquierdo / Notas con la marca "distinto".
+
+  3. src/repositorio/consultaServidor.js (nuevo)
+     - cargarConsultaServidor(id): SELECT de la fila actual en
+       consultas_clinicas. No escribe nada; la tabla ya es de lectura.
+
+  4. src/componentes/ComparacionConflicto.jsx (nuevo)
+     - Muestra "Tu cambio pendiente" desde el primer momento.
+     - Boton "Ver lo guardado en el servidor": trae la fila actual solo cuando
+       el usuario lo pide (abrir el panel no dispara consultas).
+     - Tabla comparativa que resalta lo distinto y resume "Distinto en: ...".
+     - Recuerda que Reintentar guarda tu version (la otra queda en Versiones)
+       y que Descartar deja la version del servidor.
+
+  5. src/PanelSincronizacion.jsx
+     - La comparacion aparece solo en operaciones GUARDAR_CONSULTA en estado
+       de conflicto y con payload clinico disponible.
+     - Si falla la lectura del servidor, avisa y deja reintentar el boton.
+
+Pruebas nuevas:
+  src/comparacionClinica.test.js           (5 casos de logica)
+  src/PanelSincronizacion.test.jsx         (2 casos de interfaz)
+
+COMO SE VERIFICO
+------------------------------------------------------------------------------
+  - npm run lint limpio.
+  - 643 pruebas de logica + 59 de interfaz, 0 fallos.
+  - Build: 195,8 kB inicial / 251,4 kB total (limites 220/400).
+
+ACCION MANUAL PENDIENTE
+------------------------------------------------------------------------------
+  - Ninguna. La comparacion depende del SELECT ya permitido por la RLS de la
+    migracion 012.
+
+
+===============================================================================
+16. CHECKLIST DE MIGRACIONES
 ===============================================================================
   [x] 202609240024_versionado_consultas.sql    -> aplicada (vista verificada)
   [x] 202609240025_realtime_publicacion.sql    -> aplicada (5 tablas publicadas)
@@ -950,7 +1007,7 @@ ACCION MANUAL PENDIENTE
 
 
 ===============================================================================
-16. QUE FALTA POR HACER
+17. QUE FALTA POR HACER
 ===============================================================================
 
 PRIORIDAD ALTA (siguiente tarea recomendada)
@@ -959,8 +1016,8 @@ PRIORIDAD ALTA (siguiente tarea recomendada)
       - Recomendado, sin codigo nuevo: revisar el resumen de conflictos tras
         unas semanas de uso real. Si aparece un patron (p. ej. el mismo equipo
         chocando siempre), ahi si conviene investigar esa causa concreta.
-      - Probar el boton "Versiones" la proxima vez que haya un conflicto real
-        de ficha clinica.
+      - Probar "Versiones" y "Ver lo guardado en el servidor" la proxima vez
+        que haya un conflicto real de ficha clinica.
 
 PRIORIDAD BAJA / NO RECOMENDADO AHORA
 ------------------------------------------------------------------------------
@@ -980,7 +1037,7 @@ PRIORIDAD BAJA / NO RECOMENDADO AHORA
 
 
 ===============================================================================
-17. ESTADO ACTUAL DEL PROYECTO (resumen)
+18. ESTADO ACTUAL DEL PROYECTO (resumen)
 ===============================================================================
   - App: PWA React 19 + Vite 8, offline-first con Dexie/IndexedDB.
   - Backend: Supabase (26 migraciones, todas aplicadas), escritura solo por RPC.
@@ -999,14 +1056,16 @@ PRIORIDAD BAJA / NO RECOMENDADO AHORA
         usuario e historico de 90 dias en el panel (tarea 9);
       * versiones anteriores de una ficha consultables desde el panel y desde
         el expediente, y recuperables como consulta nueva sin duplicar la
-        venta (tareas 10, 12 y 14).
+        venta (tareas 10, 12 y 14);
+      * en un conflicto clinico, el panel compara el cambio pendiente con lo
+        que ya esta en el servidor antes de reintentar o descartar (tarea 15).
   - Rendimiento: vistas por demanda, impresion fuera del arranque,
     presupuesto de bundle en CI (tarea 3).
   - Almacenamiento: limpieza diaria de adjuntos subidos y cache redundante,
     aviso de cuota al 80 % y uso visible en el panel (tarea 4); recordatorio
     mensual de la copia manual de fotos y comprobantes (tarea 11).
-  - Pruebas: 638 de logica + 57 de UI + 4 E2E de dos equipos.
-  - Bundle: 194,6 kB gzip inicial / 250,2 kB total.
+  - Pruebas: 643 de logica + 59 de UI + 4 E2E de dos equipos.
+  - Bundle: 195,8 kB gzip inicial / 251,4 kB total.
   - Soporte: el panel de problemas resume los ultimos errores del equipo y
     permite copiarlos con la version y el estado de la cola (tarea 13).
   - Respaldo: diario, verificado y con simulacro automatico de restauracion

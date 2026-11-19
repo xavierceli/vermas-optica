@@ -153,6 +153,9 @@ const subscribe = listener => {
 
 export const obtenerDetalleCola = async () => {
   const operaciones = await localDb.outbox.orderBy('createdAt').toArray();
+  // El payload viaja al panel para poder mostrar QUE cambio quedo en conflicto
+  // y compararlo con la ficha actual del servidor. Es la copia local del
+  // equipo, no sale de aqui.
   return operaciones.map(op => ({
     id: op.id,
     tipo: op.type,
@@ -160,7 +163,8 @@ export const obtenerDetalleCola = async () => {
     estado: op.status,
     intentos: op.attempts || 0,
     motivo: op.lastError || null,
-    creada: op.createdAt
+    creada: op.createdAt,
+    payload: op.payload || null
   }));
 };
 
